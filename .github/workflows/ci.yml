@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [dev, main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      # The guard keeps this job (a required status check) green until the
+      # backend exists; once backend/pyproject.toml lands, lint+tests are real.
+      - name: Lint (ruff)
+        run: |
+          if [ ! -f backend/pyproject.toml ]; then echo "backend not present yet — skipping"; exit 0; fi
+          cd backend
+          uv sync --frozen
+          uv run ruff check .
+      - name: Tests (pytest)
+        run: |
+          if [ ! -f backend/pyproject.toml ]; then echo "backend not present yet — skipping"; exit 0; fi
+          cd backend
+          uv run pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Typecheck
+        run: |
+          if [ ! -f frontend/package.json ]; then echo "frontend not present yet — skipping"; exit 0; fi
+          cd frontend
+          npm ci
+          npm run typecheck
+      - name: Build
+        run: |
+          if [ ! -f frontend/package.json ]; then echo "frontend not present yet — skipping"; exit 0; fi
+          cd frontend
+          npm run build
