@@ -19,8 +19,8 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.finance.constants import PeriodStatus, RateKind, TaxDirection
-from app.modules.finance.models import Account, FiscalPeriod, TaxCode
+from app.modules.finance.constants import BillStatus, PeriodStatus, RateKind, TaxDirection
+from app.modules.finance.models import Account, FiscalPeriod, TaxCode, VendorBill
 from app.modules.finance.service import fx as _fx
 from app.modules.finance.service import tax as _tax
 from app.modules.finance.service.tax import TaxCalculation
@@ -109,3 +109,25 @@ def calculate_line_tax(
     return _tax.calculate_line_tax(
         base_amount, tax_code, direction=direction, currency_code=currency_code
     )
+
+
+async def get_open_vendor_bills(
+    session: AsyncSession, tenant_id: uuid.UUID, partner_id: uuid.UUID
+) -> list[VendorBill]:
+    """A partner's POSTED vendor bills that still have an open balance (PLAN 4.5, D-029). Exposed
+    so procurement (later) can read a vendor's open AP without importing finance models — finance
+    is the bottom of the dependency order (STRUCTURE §5). Keyed by the opaque ``partner_id``; never
+    an FK to a vendor master. Ordered by due date so the oldest-due bills surface first."""
+    stmt = (
+        select(VendorBill)
+        .where(
+            VendorBill.tenant_id == tenant_id,
+            VendorBill.partner_id == partner_id,
+            VendorBill.status.in_(
+                (BillStatus.POSTED.value, BillStatus.PARTIALLY_PAID.value)
+            ),
+            VendorBill.open_amount > 0,
+        )
+        .order_by(VendorBill.due_date)
+    )
+    return list((await session.execute(stmt)).scalars().all())

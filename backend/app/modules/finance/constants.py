@@ -88,6 +88,30 @@ class TaxDirection(StrEnum):
     INPUT = "INPUT"
 
 
+class BillStatus(StrEnum):
+    """Lifecycle of a vendor bill (PLAN 4.5, AP). DRAFT is editable and carries no number/journal;
+    POSTED has a system number + a journal entry and an ``open_amount`` equal to the gross owed;
+    PARTIALLY_PAID/PAID track open-item clearing as payments allocate against the bill;
+    REVERSED marks a bill whose journal was reversed. Open items are keyed by an opaque
+    ``partner_id`` (D-029) — finance never references a vendor master."""
+
+    DRAFT = "DRAFT"
+    POSTED = "POSTED"
+    PARTIALLY_PAID = "PARTIALLY_PAID"
+    PAID = "PAID"
+    REVERSED = "REVERSED"
+
+
+class PaymentStatus(StrEnum):
+    """Lifecycle of a vendor payment (PLAN 4.5, AP). A payment is created and posted in one step
+    (DRAFT is the transient pre-post state); POSTED has a number + a journal entry clearing the
+    allocated bills; REVERSED marks a payment whose journal was reversed."""
+
+    DRAFT = "DRAFT"
+    POSTED = "POSTED"
+    REVERSED = "REVERSED"
+
+
 class RateKind(StrEnum):
     """Exchange-rate type (D-019). SPOT is the day's rate used for posting-time translation;
     CLOSING is the period-end rate used for unrealized-FX revaluation. Stored as the UPPER_SNAKE
@@ -118,6 +142,32 @@ JOURNAL_ENTRY_DOC_TYPE = "finance.journal_entry"
 JOURNAL_SEQUENCE_NAME = "finance.journal"
 JOURNAL_NUMBER_PREFIX = "JE"
 JOURNAL_NUMBER_PADDING = 5
+
+
+# --- Accounts Payable (PLAN 4.5) ----------------------------------------------
+# core_documents doc_types for AP documents (D-012). A vendor bill and a vendor payment each
+# register a registry entry at creation (DocumentMixin) and claim their system number at posting;
+# the docflow edge payment->bill records the clearing flow.
+AP_BILL_DOC_TYPE = "finance.vendor_bill"
+AP_PAYMENT_DOC_TYPE = "finance.vendor_payment"
+
+# core/numbering sequence keys + formats for AP documents (D-012). Both year-reset so numbers read
+# BILL-2026-00001 / PAY-2026-00001; claimed at posting, never at draft creation.
+AP_BILL_SEQUENCE_NAME = "finance.vendor_bill"
+AP_BILL_NUMBER_PREFIX = "BILL"
+AP_BILL_NUMBER_PADDING = 5
+AP_PAYMENT_SEQUENCE_NAME = "finance.vendor_payment"
+AP_PAYMENT_NUMBER_PREFIX = "PAY"
+AP_PAYMENT_NUMBER_PADDING = 5
+
+# docflow link types: a posted bill links to its journal entry ('posts'); a payment links to each
+# bill it clears ('pays').
+AP_BILL_POSTS_LINK = "posts"
+AP_PAYMENT_PAYS_LINK = "pays"
+
+# partner_type stamped on the AP control journal line so a later AP report can filter open items by
+# partner without a finance partner master (D-029 — partner_id is opaque).
+AP_PARTNER_TYPE = "VENDOR"
 
 
 # --- FX posting-default purposes (D-019) --------------------------------------
@@ -183,6 +233,10 @@ FINANCE_FX_REVALUE = "finance.fx.revalue"
 # Tax (PLAN 4.4): read the tax-code catalog vs create/edit tax codes.
 FINANCE_TAX_READ = "finance.tax.read"
 FINANCE_TAX_MANAGE = "finance.tax.manage"
+# Accounts Payable (PLAN 4.5): read bills/payments/aging, create+post bills, run payments.
+FINANCE_AP_READ = "finance.ap.read"
+FINANCE_AP_MANAGE = "finance.ap.manage"
+FINANCE_AP_PAY = "finance.ap.pay"
 
 register_permissions(
     FINANCE_ACCOUNT_READ,
@@ -196,6 +250,9 @@ register_permissions(
     FINANCE_FX_REVALUE,
     FINANCE_TAX_READ,
     FINANCE_TAX_MANAGE,
+    FINANCE_AP_READ,
+    FINANCE_AP_MANAGE,
+    FINANCE_AP_PAY,
     descriptions={
         FINANCE_ACCOUNT_READ: "Read the chart of accounts and account groups",
         FINANCE_ACCOUNT_MANAGE: "Create and edit accounts and account groups",
@@ -208,5 +265,8 @@ register_permissions(
         FINANCE_FX_REVALUE: "Run foreign-currency revaluation",
         FINANCE_TAX_READ: "Read the tax-code catalog",
         FINANCE_TAX_MANAGE: "Create and edit tax codes",
+        FINANCE_AP_READ: "Read vendor bills, payments and AP aging",
+        FINANCE_AP_MANAGE: "Create and post vendor bills",
+        FINANCE_AP_PAY: "Create vendor payments and run payment batches",
     },
 )

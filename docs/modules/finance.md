@@ -306,8 +306,11 @@ period from its posting date; other modules price in functional terms via `get_r
 | `finance.fx.revalue` | run foreign-currency revaluation |
 | `finance.tax.read` | read the tax-code catalog |
 | `finance.tax.manage` | create/edit tax codes |
+| `finance.ap.read` | read vendor bills, payments and AP aging |
+| `finance.ap.manage` | create and post vendor bills |
+| `finance.ap.pay` | create vendor payments and run payment batches |
 
-AP, AR and payment keys are registered by their own tasks (4.5+).
+AR and its payment keys are registered by their own tasks (4.6+).
 
 ## API (`/api/v1/finance`)
 
@@ -331,6 +334,53 @@ AP, AR and payment keys are registered by their own tasks (4.5+).
 - `GET/POST /tax-codes`, `GET/PATCH /tax-codes/{id}` (PLAN 4.4) — list cursor-paginated; reads
   guarded by `finance.tax.read`, writes by `finance.tax.manage`. The tax endpoints live in
   `tax_router.py` and mount into the finance router (same one-surface pattern as FX).
+- `POST /vendor-bills` (create draft, `finance.ap.manage`), `POST /vendor-bills/{id}/post`
+  (**idempotent**, `finance.ap.manage`), `GET /vendor-bills` (paginated), `GET /vendor-bills/{id}`
+  (with lines) — `finance.ap.read` (PLAN 4.5).
+- `POST /vendor-payments` (create + post a payment with allocations; **idempotent**,
+  `finance.ap.pay`), `POST /payment-runs` (run a batch; **idempotent**, `finance.ap.pay`),
+  `GET /vendor-payments` (paginated, `finance.ap.read`).
+- `GET /ap-aging?as_of=&partner_id=` — the AP aging report (`finance.ap.read`). The AP endpoints
+  live in `ap_router.py` and mount into the finance router (same one-surface pattern as FX/tax).
 
 Writes commit through `run_in_uow` (D-011), so audit rows ride the same transaction and the
 event semantics will be identical to seed/CLI once finance publishes events.
+
+## Accounts Payable (PLAN 4.5, D-029)
+
+AP is keyed by an **opaque `partner_id`** — finance is the bottom dependency, so it never
+FK-references a vendor master (that lives in procurement, above finance). Each AP document carries
+the opaque `partner_id` plus a denormalized `partner_name`; the owning module guarantees the id.
+
+**Bill → post → pay.** A `VendorBill` is created DRAFT (no number, no journal); the service computes
+input tax per line via the shared tax engine and rolls up net/tax/gross. Posting builds the journal
+entry (document_type `AP_INVOICE`): **Dr** each expense/asset line (net) + **Dr** input tax (to the
+tax code's receivable account) + **Cr** the AP control account for the gross, with the opaque
+`partner_id` stamped on the AP line. The bill then claims its gapless system number (`BILL-…`), links
+bill→journal (docflow `posts`), sets `open_amount = gross` and status POSTED, and publishes
+`VendorBillPosted`. FX translation at posting is the journal engine's standard machinery (D-019).
+
+**Open-item clearing.** A `VendorPayment` is created and posted in one step. It validates the cleared
+bills are open, same partner, same currency, none over-allocated; posts a journal entry
+(document_type `PAYMENT`): **Dr** AP control (Σ allocated) + **Cr** bank (the cash amount), reduces
+each bill's `open_amount` (status → PARTIALLY_PAID/PAID), writes `VendorPaymentAllocation` rows,
+links payment→bills (docflow `pays`), claims its number (`PAY-…`), and publishes
+`VendorPaymentPosted`. `open_amount` is the only stored balance — aging projects over it.
+
+**Realized FX at payment (D-019).** When the bill currency ≠ functional, the AP control was credited
+at the bill's posting rate (R1) but the bank pays at the payment-date rate (R2). The functional
+difference per cleared bill — `functional-at-bill-rate − functional-at-payment-rate` over the cleared
+transaction amount — is the realized gain/loss, posted to the `fx_realized_gain`/`fx_realized_loss`
+posting-default account **inside the same payment entry** so it balances in functional. The entry's
+functional amounts are set explicitly and posted with the journal engine's `skip_translation` (it
+would otherwise re-rate the whole entry at one rate); the realized-FX line is denominated in the
+functional currency. When the payment currency *is* the functional currency, R1 = R2 and there is no
+FX line.
+
+**Payment run.** `POST /payment-runs` selects POSTED/PARTIALLY_PAID bills with `open_amount > 0` due
+on or before the given date (optionally one partner), groups them by `(partner, currency)`, and pays
+each group's due bills in full — one payment per group.
+
+**Aging.** `GET /ap-aging` is a pure projection over open bills: each bill's `open_amount` lands in
+the bucket for `as_of − due_date` days (current / 1-30 / 31-60 / 61-90 / over-90), per partner and
+rolled up. An earlier `as_of` shifts balances toward the lower buckets.

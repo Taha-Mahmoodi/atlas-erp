@@ -15,6 +15,7 @@ from app.modules.finance.service.accounts import (
     reparent_account_group,
     update_account,
 )
+from app.modules.finance.service.ap_aging import vendor_aging
 from app.modules.finance.service.fx import (
     create_currency,
     create_exchange_rate,
@@ -66,6 +67,20 @@ from app.modules.finance.service.tax import (
     list_tax_codes,
     update_tax_code,
 )
+from app.modules.finance.service.vendor_bills import (
+    create_vendor_bill,
+    get_vendor_bill,
+    get_vendor_bill_lines,
+    list_vendor_bills,
+    post_vendor_bill,
+)
+from app.modules.finance.service.vendor_payments import (
+    create_and_post_payment,
+    get_payment_allocations,
+    get_vendor_payment,
+    list_vendor_payments,
+    run_payment_batch,
+)
 
 __all__ = [
     "DocumentTaxSummary",
@@ -78,11 +93,13 @@ __all__ = [
     "close_period",
     "create_account",
     "create_account_group",
+    "create_and_post_payment",
     "create_currency",
     "create_draft_entry",
     "create_exchange_rate",
     "create_fiscal_year",
     "create_tax_code",
+    "create_vendor_bill",
     "entry_totals",
     "functional_currency",
     "generate_periods",
@@ -90,9 +107,13 @@ __all__ = [
     "get_currency",
     "get_entry",
     "get_entry_with_lines",
+    "get_payment_allocations",
     "get_posting_default",
     "get_rate",
     "get_tax_code",
+    "get_vendor_bill",
+    "get_vendor_bill_lines",
+    "get_vendor_payment",
     "list_account_groups",
     "list_accounts",
     "list_currencies",
@@ -103,13 +124,18 @@ __all__ = [
     "list_posting_defaults",
     "list_revaluation_runs",
     "list_tax_codes",
+    "list_vendor_bills",
+    "list_vendor_payments",
     "open_period",
     "post_entry",
+    "post_vendor_bill",
     "reparent_account_group",
     "reverse_entry",
     "run_fx_revaluation",
+    "run_payment_batch",
     "set_functional_currency",
     "set_posting_default",
     "update_account",
     "update_tax_code",
+    "vendor_aging",
 ]

@@ -94,25 +94,35 @@ async def _require_postable_accounts(
 
 
 async def create_draft_entry(
-    session: AsyncSession, tenant_id: uuid.UUID, payload: JournalEntryCreate
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    payload: JournalEntryCreate,
+    *,
+    functional_amounts: list[tuple[Decimal, Decimal]] | None = None,
 ) -> JournalEntry:
     """Create a DRAFT entry + lines (D-017). Validates: >= 2 lines, each one-sided, all accounts
-    exist + postable + same tenant, and the entry balances (sum debits == sum credits). Registers
-    the document in core_documents with NO number (claimed at posting per D-012). Sets functional
-    == transaction for now (single functional currency, FX in 4.3). Does NOT claim a number and
-    does NOT resolve the period — both happen at posting."""
+    exist + postable + same tenant. Registers the document (no number; claimed at posting, D-012).
+    Does NOT claim a number / resolve the period — both at posting.
+
+    Default: functional == transaction, balanced in TRANSACTION terms (the posting protocol then
+    translates FX). With explicit ``functional_amounts`` ((debit, credit) per line; AP/AR clearing,
+    D-019) those become the functional amounts and the balance check is on the FUNCTIONAL sums — a
+    mixed-currency clearing entry balances only in functional, posted with skip_translation."""
     if len(payload.lines) < 2:
         raise ValidationFailedError(
             message="A journal entry needs at least two lines",
             code="finance.journal_too_few_lines",
         )
 
-    total_debit = Decimal(0)
-    total_credit = Decimal(0)
     for index, line in enumerate(payload.lines, start=1):
         _assert_line_one_sided(line, index)
-        total_debit += line.transaction_debit_amount
-        total_credit += line.transaction_credit_amount
+    # Balance on transaction sides by default, on explicit functional sides for a (mixed-currency)
+    # clearing entry where only functional must balance.
+    sides = functional_amounts or [
+        (ln.transaction_debit_amount, ln.transaction_credit_amount) for ln in payload.lines
+    ]
+    total_debit = sum((d for d, _c in sides), Decimal(0))
+    total_credit = sum((c for _d, c in sides), Decimal(0))
     if total_debit != total_credit:
         raise ValidationFailedError(
             message="Journal entry debits and credits must balance",
@@ -122,7 +132,6 @@ async def create_draft_entry(
 
     account_ids = {line.account_id for line in payload.lines}
     await _require_postable_accounts(session, tenant_id, account_ids)
-
     entry_id = uuid.uuid4()
     document = await docflow.register_document(
         session,
@@ -144,6 +153,9 @@ async def create_draft_entry(
     )
     session.add(entry)
     for index, line in enumerate(payload.lines, start=1):
+        # ``sides`` is functional == transaction by default (posting translates FX), or the explicit
+        # clearing functional amounts when supplied — either way one (debit, credit) per line.
+        func_debit, func_credit = sides[index - 1]
         session.add(
             JournalLine(
                 tenant_id=tenant_id,
@@ -153,9 +165,8 @@ async def create_draft_entry(
                 description=line.description,
                 transaction_debit_amount=line.transaction_debit_amount,
                 transaction_credit_amount=line.transaction_credit_amount,
-                # v1: functional == transaction (FX translation in 4.3).
-                functional_debit_amount=line.transaction_debit_amount,
-                functional_credit_amount=line.transaction_credit_amount,
+                functional_debit_amount=func_debit,
+                functional_credit_amount=func_credit,
                 currency_code=payload.currency_code,
                 cost_center_id=line.cost_center_id,
                 profit_center_id=line.profit_center_id,
@@ -175,12 +186,19 @@ async def post_entry(
     entry_id: uuid.UUID,
     *,
     rate_override: Decimal | None = None,
+    skip_translation: bool = False,
 ) -> JournalEntry:
     """THE posting protocol (D-017 two-flush). Validates DRAFT + balanced, resolves + checks the
     open period from posting_date (422 before touching the DB), translates foreign-currency
     functional amounts (D-019; an explicit ``rate_override`` wins over the looked-up SPOT rate),
     claims the gapless number in this transaction, then flushes the loaded lines (still DRAFT) and
     finally the POSTED header (balance + period triggers fire there). Publishes JournalEntryPosted;
+
+    ``skip_translation`` (D-019, used by AP/AR clearing): the caller has ALREADY set each line's
+    functional amounts (e.g. a payment clears its open items at the bill's frozen rate while the
+    bank is at the payment rate, with a realized-FX line absorbing the difference). The engine then
+    only validates those pre-computed functional amounts balance, never re-rating them — the one
+    case where functional != transaction × a single entry rate.
     the caller commits via uow."""
     entry = await get_entry(session, tenant_id, entry_id)
     if entry.status != EntryStatus.DRAFT.value:
@@ -199,8 +217,11 @@ async def post_entry(
 
     # FX translation (D-019): recompute functional amounts at the posting rate when the entry is in
     # a foreign currency, balancing the functional residual into the largest line. After this the
-    # functional sums (which the balance trigger checks) are exact and equal.
-    await translate_entry_lines(session, tenant_id, entry, lines, rate_override)
+    # functional sums (which the balance trigger checks) are exact and equal. Skipped when the
+    # caller pre-computed functional amounts (AP/AR clearing realized FX) — the balance check below
+    # then validates those.
+    if not skip_translation:
+        await translate_entry_lines(session, tenant_id, entry, lines, rate_override)
 
     debit, credit = entry_totals(lines)
     if debit != credit or debit <= 0:

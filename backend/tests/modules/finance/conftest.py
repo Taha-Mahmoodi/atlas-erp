@@ -24,6 +24,9 @@ from app.modules.finance import service
 from app.modules.finance.constants import (
     FINANCE_ACCOUNT_MANAGE,
     FINANCE_ACCOUNT_READ,
+    FINANCE_AP_MANAGE,
+    FINANCE_AP_PAY,
+    FINANCE_AP_READ,
     FINANCE_FX_MANAGE,
     FINANCE_FX_REVALUE,
     FINANCE_JOURNAL_POST,
@@ -50,6 +53,9 @@ _FINANCE_KEYS = (
     FINANCE_FX_REVALUE,
     FINANCE_TAX_READ,
     FINANCE_TAX_MANAGE,
+    FINANCE_AP_READ,
+    FINANCE_AP_MANAGE,
+    FINANCE_AP_PAY,
 )
 
 # A minimal but type-complete chart of accounts: one account per statement-deriving type.
@@ -130,6 +136,52 @@ async def journal_setup(
     return JournalSetup(
         tenant_id=tenant_a,
         accounts={account.code: account.id for account in accounts},
+        fiscal_year_id=year.id,
+    )
+
+
+@dataclass(frozen=True)
+class ApSetup:
+    """A tenant ready to bill + pay (PLAN 4.5): account ids by code (1000 bank, 2000 AP control,
+    5000 expense, 6000 input-tax receivable), a wired 20% input tax code id, and the open 2026
+    year. Plain ids so a rollback (expiring loaded objects) cannot break a follow-up payload."""
+
+    tenant_id: uuid.UUID
+    accounts: dict[str, uuid.UUID]
+    tax_code_id: uuid.UUID
+    fiscal_year_id: uuid.UUID
+
+
+@pytest.fixture
+async def ap_setup(db_session: AsyncSession, tenant_a: uuid.UUID) -> ApSetup:
+    """COA + an input-tax receivable account + a 20% input tax code + open year (PLAN 4.5)."""
+    from app.modules.finance.schemas import TaxCodeCreate
+
+    accounts = await seed_small_coa(db_session, tenant_a)
+    by_code = {a.code: a.id for a in accounts}
+    with tenant_context(tenant_a):
+        receivable = await service.create_account(
+            db_session,
+            tenant_a,
+            AccountCreate(code="6000", name="Input VAT receivable", account_type=AccountType.ASSET),
+        )
+        by_code["6000"] = receivable.id
+        tax_code = await service.create_tax_code(
+            db_session,
+            tenant_a,
+            TaxCodeCreate(
+                code="VAT20",
+                name="Input VAT 20%",
+                rate_percent=Decimal(20),
+                tax_receivable_account_id=receivable.id,
+            ),
+        )
+        await db_session.commit()
+    year = await seed_fiscal_year(db_session, tenant_a)
+    return ApSetup(
+        tenant_id=tenant_a,
+        accounts=by_code,
+        tax_code_id=tax_code.id,
         fiscal_year_id=year.id,
     )
 

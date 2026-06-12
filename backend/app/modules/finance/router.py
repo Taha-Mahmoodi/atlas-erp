@@ -1,10 +1,10 @@
-"""Finance HTTP layer (thin): parse -> call service -> return schema (PLAN 4.1-4.4; FX + tax split).
+"""Finance HTTP layer (thin): parse -> call service -> return schema (PLAN 4.1-4.5; sub-routers).
 
 Routes are guarded by the finance permission keys (D-009). Writes commit through ``run_in_uow``
 (D-011) so audit rows ride the same transaction; the journal post/reverse actions are IDEMPOTENT
 (D-013). Tenant scoping rides the D-007 filter plus the explicit ``current.tenant_id``. Write
 results are validated into their Read schema AFTER the uow commits. Actions are sub-resources
-(STRUCTURE §7); FX (D-019) and tax (4.4) endpoints live in their own sub-routers.
+(STRUCTURE §7); FX (D-019), tax (4.4) and AP (4.5) endpoints live in their own sub-routers.
 """
 
 import uuid
@@ -19,6 +19,7 @@ from app.core.pagination import CursorParams, cursor_params
 from app.core.rbac import require_permission
 from app.core.schemas import Page
 from app.modules.finance import service
+from app.modules.finance.ap_router import ap_router
 from app.modules.finance.constants import (
     FINANCE_ACCOUNT_MANAGE,
     FINANCE_ACCOUNT_READ,
@@ -48,11 +49,10 @@ from app.modules.finance.schemas import (
 from app.modules.finance.tax_router import tax_router
 
 router = APIRouter(prefix="/api/v1/finance", tags=["finance"])
-# FX (D-019) + tax (4.4) sub-routers mount here, so the module is one surface at /api/v1/finance.
-router.include_router(fx_router)
-router.include_router(tax_router)
+# FX (D-019), tax (4.4) + AP (4.5) sub-routers mount here, so the module is one surface.
+for _sub in (fx_router, tax_router, ap_router):
+    router.include_router(_sub)
 CursorParamsDep = Depends(cursor_params)
-
 # Module-level Depends singletons (ruff B008): each is the D-013 reservation guard for its endpoint.
 _PostIdempotentDep = Depends(Idempotent("finance.journal.post"))
 _ReverseIdempotentDep = Depends(Idempotent("finance.journal.reverse"))
