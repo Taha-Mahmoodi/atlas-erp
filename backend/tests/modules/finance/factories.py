@@ -2,8 +2,7 @@
 
 Builders go through the REAL service layer under the tenant context (D-025), so tenancy
 stamping and audit fire exactly as in production. conftest.py keeps only the thin pytest
-fixtures and imports the setup dataclasses + build_* functions from here (STRUCTURE §6/§8.4).
-"""
+fixtures (STRUCTURE §6/§8.4); the 4.10 asset builders live in factories_assets.py (cap)."""
 
 import uuid
 from dataclasses import dataclass
@@ -12,40 +11,13 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.rbac import sync_permission_catalog
+from app.core.rbac import catalog_keys, sync_permission_catalog
 from app.core.tenancy import system_context, tenant_context
 from app.modules.admin.service import assign_role, create_role, provision_tenant, provision_user
 from app.modules.finance import service
 from app.modules.finance.constants import (
     BANK_UNMATCHED_CLEARING,
     CO_ALLOCATION_CLEARING,
-    FINANCE_ACCOUNT_MANAGE,
-    FINANCE_ACCOUNT_READ,
-    FINANCE_ALLOCATION_MANAGE,
-    FINANCE_ALLOCATION_RUN,
-    FINANCE_AP_MANAGE,
-    FINANCE_AP_PAY,
-    FINANCE_AP_READ,
-    FINANCE_AR_COLLECT,
-    FINANCE_AR_MANAGE,
-    FINANCE_AR_READ,
-    FINANCE_BANK_IMPORT,
-    FINANCE_BANK_READ,
-    FINANCE_BANK_RECONCILE,
-    FINANCE_COST_CENTER_MANAGE,
-    FINANCE_COST_CENTER_READ,
-    FINANCE_FX_MANAGE,
-    FINANCE_FX_REVALUE,
-    FINANCE_JOURNAL_POST,
-    FINANCE_JOURNAL_READ,
-    FINANCE_JOURNAL_REVERSE,
-    FINANCE_PERIOD_MANAGE,
-    FINANCE_PERIOD_READ,
-    FINANCE_PROFIT_CENTER_MANAGE,
-    FINANCE_PROFIT_CENTER_READ,
-    FINANCE_STATEMENTS_READ,
-    FINANCE_TAX_MANAGE,
-    FINANCE_TAX_READ,
     FX_REALIZED_GAIN,
     FX_REALIZED_LOSS,
     FX_REVALUATION_ADJUSTMENT,
@@ -57,35 +29,9 @@ from app.modules.finance.constants import (
 from app.modules.finance.models import Account, FiscalYear
 from app.modules.finance.schemas import AccountCreate, FiscalYearCreate, TaxCodeCreate
 
-_FINANCE_KEYS = (
-    FINANCE_ACCOUNT_READ,
-    FINANCE_ACCOUNT_MANAGE,
-    FINANCE_PERIOD_READ,
-    FINANCE_PERIOD_MANAGE,
-    FINANCE_JOURNAL_READ,
-    FINANCE_JOURNAL_POST,
-    FINANCE_JOURNAL_REVERSE,
-    FINANCE_FX_MANAGE,
-    FINANCE_FX_REVALUE,
-    FINANCE_TAX_READ,
-    FINANCE_TAX_MANAGE,
-    FINANCE_AP_READ,
-    FINANCE_AP_MANAGE,
-    FINANCE_AP_PAY,
-    FINANCE_AR_READ,
-    FINANCE_AR_MANAGE,
-    FINANCE_AR_COLLECT,
-    FINANCE_COST_CENTER_READ,
-    FINANCE_COST_CENTER_MANAGE,
-    FINANCE_PROFIT_CENTER_READ,
-    FINANCE_PROFIT_CENTER_MANAGE,
-    FINANCE_ALLOCATION_MANAGE,
-    FINANCE_ALLOCATION_RUN,
-    FINANCE_STATEMENTS_READ,
-    FINANCE_BANK_READ,
-    FINANCE_BANK_IMPORT,
-    FINANCE_BANK_RECONCILE,
-)
+# EVERY registered finance.* key (importing finance.constants above registers them), so a
+# new finance permission is auto-granted to the full-rights principal (self-extending).
+_FINANCE_KEYS = tuple(sorted(key for key in catalog_keys() if key.startswith("finance.")))
 
 # A minimal but type-complete chart of accounts: one account per statement-deriving type.
 _SMALL_COA: tuple[tuple[str, str, AccountType], ...] = (
@@ -436,9 +382,8 @@ async def create_finance_principal(
     password: str = "correct-horse-battery",
     keys: tuple[str, ...] = _FINANCE_KEYS,
 ) -> FinancePrincipal:
-    """Provision a tenant + user and grant a role with the finance permission keys, through the
-    real services (D-025). ``keys`` lets a test request a narrower grant (for the 403 RBAC
-    tests)."""
+    """Provision a tenant + user and grant a role with the finance permission keys through
+    the real services (D-025); ``keys`` narrows the grant for the 403 RBAC tests."""
     tenant = await provision_tenant(session, slug=slug, name=slug.title())
     user = await provision_user(session, tenant.id, email=email, password=password)
     with system_context():

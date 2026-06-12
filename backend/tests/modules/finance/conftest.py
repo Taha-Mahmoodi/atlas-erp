@@ -36,10 +36,12 @@ from tests.modules.finance.factories import (
     seed_fiscal_year,
     seed_small_coa,
 )
+from tests.modules.finance.factories_assets import AssetSetup, build_asset_setup
 
 __all__ = [
     "ApSetup",
     "ArSetup",
+    "AssetSetup",
     "BankSetup",
     "CoSetup",
     "FinancePrincipal",
@@ -97,6 +99,13 @@ async def bank_setup(db_session: AsyncSession, tenant_a: uuid.UUID) -> BankSetup
     """COA + a cash-equivalent bank account + the ``bank_unmatched_clearing`` suspense default +
     open 2026 year (PLAN 4.9)."""
     return await build_bank_setup(db_session, tenant_a)
+
+
+@pytest.fixture
+async def asset_setup(db_session: AsyncSession, tenant_a: uuid.UUID) -> AssetSetup:
+    """COA + asset/accumulated/expense accounts + the ``asset_acquisition_clearing`` posting
+    default + open 2026 year (PLAN 4.10)."""
+    return await build_asset_setup(db_session, tenant_a)
 
 
 # --- Finance-permissioned HTTP clients ----------------------------------------

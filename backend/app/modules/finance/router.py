@@ -21,6 +21,7 @@ from app.core.schemas import Page
 from app.modules.finance import service
 from app.modules.finance.ap_router import ap_router
 from app.modules.finance.ar_router import ar_router
+from app.modules.finance.assets_router import assets_router
 from app.modules.finance.bank_router import bank_router
 from app.modules.finance.co_router import co_router
 from app.modules.finance.constants import (
@@ -53,9 +54,9 @@ from app.modules.finance.statements_router import statements_router
 from app.modules.finance.tax_router import tax_router
 
 router = APIRouter(prefix="/api/v1/finance", tags=["finance"])
-# FX/tax/AP/AR/controlling/statements/bank (4.3-4.9) sub-routers mount here (one surface).
+# FX/tax/AP/AR/CO/statements/bank/assets (4.3-4.10) sub-routers mount here (one surface).
 for _sub in (fx_router, tax_router, ap_router, ar_router, co_router, statements_router,
-             bank_router):
+             bank_router, assets_router):
     router.include_router(_sub)
 CursorParamsDep = Depends(cursor_params)
 # Module-level Depends singletons (ruff B008): each is the D-013 reservation guard for its endpoint.
