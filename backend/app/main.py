@@ -2,19 +2,20 @@
 
 import logging
 import uuid
-from contextvars import ContextVar
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DBAPIError
 from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.core.audit import actor_user_id_ctx, request_id_ctx, request_ip_ctx
 from app.core.config import Settings, get_settings
-from app.core.exceptions import AtlasError
+from app.core.exceptions import AtlasError, translate_db_guard_error
 from app.core.rbac import current_permissions
 from app.core.schemas import ErrorBody, ErrorEnvelope
 from app.core.security_router import router as security_router
@@ -24,22 +25,41 @@ logger = logging.getLogger("atlas")
 
 API_PREFIX = "/api/v1"
 
-request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
+# request_id lives in the audit module (core/audit.py owns the request-context ContextVars);
+# re-exported under the historical name so existing callers/tests keep one import.
+request_id_var = request_id_ctx
+
+
+def _client_ip(scope: Scope, trust_proxy: bool) -> str | None:
+    """Audited client IP (D-010). Default: the raw transport peer (scope['client']). Only
+    when ATLAS_TRUST_PROXY is on do we honor the LEFT-MOST X-Forwarded-For hop — otherwise a
+    client could spoof its own audited IP just by sending the header."""
+    if trust_proxy:
+        for raw_name, raw_value in scope.get("headers", ()):
+            if raw_name == b"x-forwarded-for":
+                first_hop = raw_value.decode("latin-1").split(",")[0].strip()
+                if first_hop:
+                    return first_hop
+    client = scope.get("client")
+    return client[0] if client else None
 
 
 class RequestIdMiddleware:
     """Pure-ASGI: one uuid4-hex request id per request, exposed via ContextVar,
     request.state and the X-Request-ID response header.
 
-    It ALSO owns the D-007 tenancy-ContextVar reset AND the D-009 current_permissions
-    reset: get_current_user sets both directly (no context manager), so this middleware
-    captures reset tokens in a finally block — otherwise request A's tenant/permissions
-    would leak into request B reusing the same worker/task. The tokens are captured here,
-    the vars are set deeper in the stack, and reset on the way out, so the worker always
-    restarts at the defaults (None / empty frozenset)."""
+    It ALSO owns the D-007 tenancy-ContextVar reset, the D-009 current_permissions reset,
+    and the D-010 audit-context (request_id, request_ip, actor_user_id) lifecycle:
+    get_current_user sets the tenant/permissions/actor vars directly (no context manager),
+    so this middleware captures reset tokens in a finally block — otherwise request A's
+    context would leak into request B reusing the same worker/task. request_id and
+    request_ip are seeded here at the edge; actor_user_id starts None (system/unauth) and is
+    filled by get_current_user once the principal is known. All are reset on the way out, so
+    the worker always restarts at the defaults."""
 
-    def __init__(self, app: ASGIApp) -> None:
+    def __init__(self, app: ASGIApp, trust_proxy: bool) -> None:
         self.app = app
+        self.trust_proxy = trust_proxy
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -48,6 +68,8 @@ class RequestIdMiddleware:
         request_id = uuid.uuid4().hex
         scope.setdefault("state", {})["request_id"] = request_id
         token = request_id_var.set(request_id)
+        ip_token = request_ip_ctx.set(_client_ip(scope, self.trust_proxy))
+        actor_token = actor_user_id_ctx.set(None)
         tenant_token = current_tenant_id.set(None)
         permissions_token = current_permissions.set(frozenset())
 
@@ -61,6 +83,8 @@ class RequestIdMiddleware:
         finally:
             current_permissions.reset(permissions_token)
             current_tenant_id.reset(tenant_token)
+            actor_user_id_ctx.reset(actor_token)
+            request_ip_ctx.reset(ip_token)
             request_id_var.reset(token)
 
 
@@ -111,6 +135,20 @@ async def _handle_validation_error(
     )
 
 
+async def _handle_db_guard_error(request: Request, exc: DBAPIError) -> JSONResponse:
+    # D-014: a DB trigger that raised an ATLAS_* token surfaces through the same envelope
+    # as service-level checks (e.g. ATLAS_AUDIT_APPEND_ONLY -> 409 audit.append_only). A
+    # DBAPIError WITHOUT a known token is a genuine integrity/operational fault — log it and
+    # return the opaque 500 like any unexpected error, never leaking raw DB text.
+    translated = translate_db_guard_error(exc)
+    if translated is not None:
+        return _error_response(
+            request, translated.status_code, translated.code, translated.message
+        )
+    logger.exception("Database error (request_id=%s)", _request_id(request), exc_info=exc)
+    return _error_response(request, 500, "common.internal_error", "Internal server error")
+
+
 async def _handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
     # Log with request id; never leak the traceback into the response body.
     logger.exception("Unhandled error (request_id=%s)", _request_id(request), exc_info=exc)
@@ -138,11 +176,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     # Added last == outermost user middleware: the request id exists for everything
     # below it, including CORS rejections.
-    app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(RequestIdMiddleware, trust_proxy=settings.trust_proxy)
 
     app.add_exception_handler(AtlasError, _handle_atlas_error)
     app.add_exception_handler(StarletteHTTPException, _handle_http_exception)
     app.add_exception_handler(RequestValidationError, _handle_validation_error)
+    # DBAPIError is more specific than Exception, so Starlette dispatches DB-guard tokens
+    # (D-014) here before falling through to the catch-all 500 below.
+    app.add_exception_handler(DBAPIError, _handle_db_guard_error)
     app.add_exception_handler(Exception, _handle_unexpected_error)
 
     @app.get(f"{API_PREFIX}/health")

@@ -3,6 +3,7 @@ migrated template database against Tenant + TenantSetting."""
 
 import re
 import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -12,9 +13,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import TenancyError
-from app.core.models import Base, TenantMixin, tenant_fk, tenant_unique
+from app.core.models import Base, RefreshSession, TenantMixin, tenant_fk, tenant_unique
 from app.core.tenancy import get_current_tenant_id, system_context, tenant_context
 from app.modules.admin.models import TenantSetting
+from app.modules.admin.service import provision_user
 
 # Mapper enumeration per D-007: every current AND future TenantMixin model is
 # auto-covered by the parametrized guard tests below.
@@ -59,32 +61,63 @@ async def test_bare_select_under_tenant_a_returns_zero_tenant_b_rows(
     assert all(row.tenant_id == tenant_a for row in rows)
 
 
+async def _seed_session(session: AsyncSession, tenant_id: uuid.UUID, email: str) -> uuid.UUID:
+    # The ORM-bulk-update/delete D-007 tests target RefreshSession on purpose: it is the
+    # one TenantMixin model that is NOT audited (high-churn token state, D-010), so the
+    # audit bulk-write guard does not fire and the tenancy NARROWING of bulk ORM writes
+    # stays provable. Audited models reject bulk writes outright (see test_audit.py).
+    now = datetime.now(UTC)
+    with system_context():
+        user = await provision_user(session, tenant_id, email=email, password="pw-correct")
+        refresh = RefreshSession(
+            tenant_id=tenant_id,
+            user_id=user.id,
+            current_jti_hash="0" * 64,
+            issued_at=now,
+            last_used_at=now,
+            expires_at=now,
+        )
+        session.add(refresh)
+        await session.commit()
+    return refresh.id
+
+
+@pytest.fixture
+async def seeded_sessions(
+    db_session: AsyncSession, tenant_a: uuid.UUID, tenant_b: uuid.UUID
+) -> dict[str, uuid.UUID]:
+    return {
+        "a": await _seed_session(db_session, tenant_a, "a@sess.test"),
+        "b": await _seed_session(db_session, tenant_b, "b@sess.test"),
+    }
+
+
 async def test_orm_update_without_where_touches_only_tenant_a_rows(
     db_session: AsyncSession,
     tenant_a: uuid.UUID,
     tenant_b: uuid.UUID,
-    seeded_settings: dict[str, list[uuid.UUID]],
+    seeded_sessions: dict[str, uuid.UUID],
 ) -> None:
     with tenant_context(tenant_a):
-        await db_session.execute(sa.update(TenantSetting).values(value={"touched": True}))
+        await db_session.execute(sa.update(RefreshSession).values(user_agent="touched"))
         await db_session.commit()
     with system_context():
-        rows = (await db_session.execute(select(TenantSetting))).scalars().all()
-    assert all(row.value == {"touched": True} for row in rows if row.tenant_id == tenant_a)
-    assert all(row.value != {"touched": True} for row in rows if row.tenant_id == tenant_b)
+        rows = (await db_session.execute(select(RefreshSession))).scalars().all()
+    assert all(row.user_agent == "touched" for row in rows if row.tenant_id == tenant_a)
+    assert all(row.user_agent != "touched" for row in rows if row.tenant_id == tenant_b)
 
 
 async def test_orm_delete_without_where_touches_only_tenant_a_rows(
     db_session: AsyncSession,
     tenant_a: uuid.UUID,
     tenant_b: uuid.UUID,
-    seeded_settings: dict[str, list[uuid.UUID]],
+    seeded_sessions: dict[str, uuid.UUID],
 ) -> None:
     with tenant_context(tenant_a):
-        await db_session.execute(sa.delete(TenantSetting))
+        await db_session.execute(sa.delete(RefreshSession))
         await db_session.commit()
     with system_context():
-        remaining = (await db_session.execute(select(TenantSetting))).scalars().all()
+        remaining = (await db_session.execute(select(RefreshSession))).scalars().all()
     assert [row.tenant_id for row in remaining] == [tenant_b]
 
 

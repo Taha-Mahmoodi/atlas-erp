@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     # validators run; the env var is a plain comma-separated string.
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
     log_level: str = "INFO"
+    # D-010 audit context: honor the left-most X-Forwarded-For hop ONLY when the app
+    # sits behind a trusted proxy. Default false — read request.client.host directly so
+    # a client can never spoof its audited IP by sending the header itself.
+    trust_proxy: bool = False
 
     @field_validator("cors_origins", mode="before")
     @classmethod

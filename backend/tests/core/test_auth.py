@@ -182,12 +182,14 @@ async def test_stale_token_version_is_rejected(
         )
     ).json()["access_token"]
     # Global revoke: bump token_version; the already-issued access token's ver is stale.
+    # Mutate the LOADED user (User is now AuditMixin-audited per D-010, so the audit
+    # bulk-write guard forbids ORM update()/delete() on it — the same loaded-object path
+    # the admin "revoke now" endpoint will use).
     with system_context():
-        await db_session.execute(
-            update(User)
-            .where(User.id == provisioned_user.user_id)
-            .values(token_version=User.token_version + 1)
-        )
+        user = (
+            await db_session.execute(select(User).where(User.id == provisioned_user.user_id))
+        ).scalar_one()
+        user.token_version += 1
         await db_session.commit()
     response = await client.get(
         "/api/v1/auth/me", headers={"Authorization": f"Bearer {access_token}"}
