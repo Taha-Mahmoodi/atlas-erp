@@ -32,7 +32,7 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 - [x] 3.5 Audit: append-only audit table (actor, tenant, entity, before/after diff, timestamp, IP), capture via session events + request middleware, tests
 - [x] 3.6 Event bus: `core/events.py` in-process dispatcher (publish/subscribe, transactional semantics per DECISIONS), handler registration per module, tests
 - [x] 3.7 Document flow: `core/docflow.py` document registry + predecessor/successor links, chain traversal both directions, tests
-- [ ] 3.8 Numbering + idempotency + pagination: per-tenant document sequences (INV-2026-00001) with portable locking [DONE — `core/numbering.py`, D-012], idempotency-key infrastructure for financial/stock-document endpoints [pending — D-013], cursor pagination helpers [pending — D-014], tests
+- [x] 3.8 Numbering + idempotency + pagination: per-tenant document sequences (INV-2026-00001) with portable locking [DONE — `core/numbering.py`, D-012], idempotency-key infrastructure for financial/stock-document endpoints [DONE — `core/idempotency.py` + migration 0007, D-013/D-028], cursor pagination helpers [DONE — `core/pagination.py`, D-014/D-028], tests
 
 **Promotion → `main` as v0.1.0 (core complete).**
 

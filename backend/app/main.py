@@ -17,6 +17,7 @@ from app.core.audit import actor_user_id_ctx, request_id_ctx, request_ip_ctx
 from app.core.config import Settings, get_settings
 from app.core.docflow_router import router as docflow_router
 from app.core.exceptions import AtlasError, translate_db_guard_error
+from app.core.idempotency import REPLAYED_HEADER, IdempotencyReplay
 from app.core.rbac import current_permissions
 from app.core.schemas import ErrorBody, ErrorEnvelope
 from app.core.security_router import router as security_router
@@ -115,6 +116,22 @@ async def _handle_atlas_error(request: Request, exc: AtlasError) -> JSONResponse
     return _error_response(request, exc.status_code, exc.code, exc.message, exc.details)
 
 
+async def _handle_idempotency_replay(
+    request: Request, exc: IdempotencyReplay
+) -> JSONResponse:
+    # D-013 replay short-circuit: a completed key with a matching body hash never runs the
+    # handler. reserve() raised this carrying the stored status + body; we re-emit them verbatim
+    # with the Idempotency-Replayed marker so the side effect cannot run twice. Registered BEFORE
+    # the generic AtlasError handler (more specific subclass) so it wins dispatch.
+    request_id = _request_id(request)
+    headers = {REPLAYED_HEADER: "true"}
+    if request_id:
+        headers["X-Request-ID"] = request_id
+    return JSONResponse(
+        status_code=exc.status_code, content=exc.response_body, headers=headers
+    )
+
+
 async def _handle_http_exception(request: Request, exc: StarletteHTTPException) -> JSONResponse:
     code = "common.not_found" if exc.status_code == 404 else "common.http_error"
     return _error_response(request, exc.status_code, code, str(exc.detail))
@@ -179,6 +196,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # below it, including CORS rejections.
     app.add_middleware(RequestIdMiddleware, trust_proxy=settings.trust_proxy)
 
+    # IdempotencyReplay is an AtlasError subclass; register it FIRST so Starlette dispatches a
+    # replay to its verbatim-response handler before the generic envelope handler (D-013).
+    app.add_exception_handler(IdempotencyReplay, _handle_idempotency_replay)
     app.add_exception_handler(AtlasError, _handle_atlas_error)
     app.add_exception_handler(StarletteHTTPException, _handle_http_exception)
     app.add_exception_handler(RequestValidationError, _handle_validation_error)

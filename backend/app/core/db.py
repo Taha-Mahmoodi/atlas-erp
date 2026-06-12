@@ -69,3 +69,21 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         except Exception:
             await session.rollback()
             raise
+
+
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
+    """FastAPI dependency returning the runtime sessionmaker. D-013's idempotency reserve()
+    needs a SEPARATE short-lived session that COMMITs immediately (so concurrent duplicates
+    collide on the reservation PK independently of the request's business transaction). It
+    opens that session from this factory. Exposed as a dependency — not imported directly —
+    so the test harness overrides it to the per-test engine's factory the same way it
+    overrides get_session, keeping the reservation in the same database as the business work."""
+    return session_factory
+
+
+# Register the D-013 idempotency model on Base.metadata HERE rather than via core/models'
+# trailing import: core/idempotency imports THIS module for its session dependencies, and this
+# module imports core/audit -> core/models, so the registration must happen AFTER db/audit/tenancy
+# finish loading (the bottom of this file) to avoid the import cycle. Side-effect import only —
+# the name binds the model class so alembic env.py and the engine bootstrap see the table.
+from app.core import idempotency as _idempotency  # noqa: E402,F401

@@ -281,3 +281,8 @@ class AuditLog(UuidPKMixin, TenantMixin, TimestampMixin, Base):
 # here), the same trailing-import pattern core/schemas.py uses for Masked.
 from app.core import docflow as _docflow  # noqa: E402,F401
 from app.core import numbering as _numbering  # noqa: E402,F401
+
+# NOTE: the D-013 core_idempotency_keys model (core/idempotency.py) is NOT registered here. It
+# imports core/db (for its FastAPI session dependencies), and core/db imports core/audit ->
+# core/models, so a trailing import here would dead-lock the import cycle. It is registered from
+# the bottom of core/db.py instead, after db/audit/tenancy have finished loading.
