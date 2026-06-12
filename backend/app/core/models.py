@@ -139,3 +139,77 @@ class RefreshSession(UuidPKMixin, TenantMixin, TimestampMixin, Base):
     )
     ip: Mapped[str | None] = mapped_column(sa.String(45), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(sa.String(400), nullable=True)
+
+
+class Permission(UuidPKMixin, Base):
+    """Code-defined permission catalog (D-009). Deliberately NOT TenantMixin: a
+    permission describes what the code enforces and is identical for every tenant, so
+    one global row per key avoids N per-tenant copies and orphan keys nothing checks.
+    Rows are upserted by core/rbac.sync_permission_catalog from the code registry —
+    tenants can only be granted keys that already exist here."""
+
+    __tablename__ = "core_permissions"
+
+    key: Mapped[str] = mapped_column(sa.String(150), nullable=False, unique=True)
+    description: Mapped[str | None] = mapped_column(sa.String(300), nullable=True)
+
+
+class Role(UuidPKMixin, TenantMixin, TimestampMixin, Base):
+    """Tenant-scoped role (D-009): each tenant defines its own roles. is_system marks
+    roles seeded from industry templates at provisioning (PLAN 14)."""
+
+    __tablename__ = "core_roles"
+    __table_args__ = (
+        sa.UniqueConstraint("tenant_id", "name", name="uq_core_roles_tenant_id_name"),
+        tenant_unique(),
+        tenant_fk("adm_tenants"),
+    )
+
+    name: Mapped[str] = mapped_column(sa.String(100), nullable=False)
+    description: Mapped[str | None] = mapped_column(sa.String(300), nullable=True)
+    is_system: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, default=False, server_default=sa.false()
+    )
+
+
+class RolePermission(UuidPKMixin, TenantMixin, TimestampMixin, Base):
+    """Role-to-permission grant (D-009). TenantMixin so the role side is tenant-filtered
+    and stamped; permission_id points at the GLOBAL catalog (no tenant composite). The
+    composite tenant_fk on role_id keeps a grant from referencing another tenant's role."""
+
+    __tablename__ = "core_role_permissions"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "tenant_id",
+            "role_id",
+            "permission_id",
+            name="uq_core_role_permissions_tenant_id_role_id_permission_id",
+        ),
+        tenant_unique(),
+        tenant_fk("adm_tenants"),
+        tenant_fk("core_roles", "role_id"),
+        sa.ForeignKeyConstraint(["permission_id"], ["core_permissions.id"]),
+    )
+
+    role_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, nullable=False)
+    permission_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, nullable=False)
+
+
+class UserRole(UuidPKMixin, TenantMixin, TimestampMixin, Base):
+    """User-to-role assignment (D-009). Both sides are tenant-scoped, so both carry the
+    composite tenant_fk backstop: a user can never be assigned a role from another
+    tenant."""
+
+    __tablename__ = "core_user_roles"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "tenant_id", "user_id", "role_id", name="uq_core_user_roles_tenant_id_user_id_role_id"
+        ),
+        tenant_unique(),
+        tenant_fk("adm_tenants"),
+        tenant_fk("core_users", "user_id"),
+        tenant_fk("core_roles", "role_id"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, nullable=False)
+    role_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, nullable=False)

@@ -16,10 +16,11 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.db import build_engine, build_session_factory, get_session
+from app.core.rbac import clear_cache, current_permissions, sync_permission_catalog
 from app.core.tenancy import system_context
 from app.main import create_app
 from app.modules.admin.models import Tenant
-from app.modules.admin.service import provision_tenant, provision_user
+from app.modules.admin.service import grant_admin_role, provision_tenant, provision_user
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
@@ -126,20 +127,37 @@ class ProvisionedUser:
     password: str
 
 
+@pytest.fixture(autouse=True)
+def _clear_rbac_cache() -> Callable[[], None]:
+    """The RBAC TTL cache is process-global (core/rbac); clear it around every test so a
+    prior test's resolution can never bleed into the next (D-009/D-025 isolation)."""
+    clear_cache()
+    return clear_cache
+
+
 @pytest.fixture
 def user_factory(
     db_session: AsyncSession,
 ) -> Callable[..., "AsyncIterator[ProvisionedUser]"]:
     """Provision a tenant + user through the REAL admin service under system_context
-    (D-025: factories go through real services). Returns a coroutine the test awaits."""
+    (D-025: factories go through real services). With ``admin=True`` the catalog is synced
+    and the user is granted the Administrator role (the four admin keys). Returns a
+    coroutine the test awaits."""
 
     async def _create(
         slug: str = "acme",
         email: str = "owner@acme.test",
         password: str = "correct-horse-battery",
+        admin: bool = False,
     ) -> ProvisionedUser:
         tenant = await provision_tenant(db_session, slug=slug, name=slug.title())
         user = await provision_user(db_session, tenant.id, email=email, password=password)
+        if admin:
+            with system_context():
+                await sync_permission_catalog(db_session)
+            await grant_admin_role(
+                db_session, tenant.id, user.id, token_version=user.token_version
+            )
         await db_session.commit()
         return ProvisionedUser(
             tenant_id=tenant.id,
@@ -157,6 +175,27 @@ async def provisioned_user(
     user_factory: Callable[..., AsyncIterator[ProvisionedUser]],
 ) -> ProvisionedUser:
     return await user_factory()
+
+
+@pytest.fixture
+async def admin_user(
+    user_factory: Callable[..., AsyncIterator[ProvisionedUser]],
+) -> ProvisionedUser:
+    """A provisioned user holding the Administrator role — later module tests use this to
+    call permission-guarded endpoints."""
+    return await user_factory(admin=True)
+
+
+@pytest.fixture
+def permissions_context() -> Callable[[frozenset[str]], None]:
+    """Set the D-009 current_permissions ContextVar directly for serializer-level masking
+    tests (outside a request). The autouse cache fixture does not touch this ContextVar,
+    so each test sets it explicitly; it is process-local and reset by the next setter."""
+
+    def _set(permissions: frozenset[str]) -> None:
+        current_permissions.set(permissions)
+
+    return _set
 
 
 async def _login(client: AsyncClient, principal: ProvisionedUser) -> str:
@@ -178,5 +217,16 @@ async def authed_client(
 ) -> AsyncIterator[AsyncClient]:
     """A client with a real bearer token attached — reused by later module tests."""
     access_token = await _login(client, provisioned_user)
+    client.headers["Authorization"] = f"Bearer {access_token}"
+    yield client
+
+
+@pytest.fixture
+async def admin_client(
+    client: AsyncClient, admin_user: ProvisionedUser
+) -> AsyncIterator[AsyncClient]:
+    """A real bearer-token client whose principal holds the Administrator role — later
+    module tests use this to exercise permission-guarded endpoints (D-009/D-025)."""
+    access_token = await _login(client, admin_user)
     client.headers["Authorization"] = f"Bearer {access_token}"
     yield client

@@ -19,6 +19,7 @@ from app.core.config import get_settings
 from app.core.db import get_session
 from app.core.exceptions import AuthError
 from app.core.models import User
+from app.core.rbac import current_permissions, resolve_permissions
 from app.core.tenancy import current_tenant_id
 
 # get_session / get_settings are re-exported so routers depend on a single core.deps
@@ -44,8 +45,8 @@ _CredentialsDep = Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer
 
 @dataclass(frozen=True)
 class CurrentUser:
-    """Resolved request principal (D-008). `permissions` is filled by RBAC in PLAN 3.4;
-    until then it is a real empty frozenset (no check passes), not a stub."""
+    """Resolved request principal (D-008/D-009). `permissions` is the effective key set
+    resolved by RBAC (one join query, cached 60s)."""
 
     user_id: uuid.UUID
     tenant_id: uuid.UUID
@@ -83,10 +84,15 @@ async def get_current_user(
         # Stale token after a "revoke everything" bump (D-008).
         raise AuthError(message="Invalid token", code="auth.invalid_token")
 
-    # RBAC seam (PLAN 3.4): require_permission in core/rbac.py will resolve the
-    # effective permission set and populate this frozenset. Empty here means every
-    # permission check fails closed until RBAC lands — correct, not a placeholder.
-    permissions: frozenset[str] = frozenset()
+    # RBAC resolution (D-009): one join query, memoized 60s on
+    # (tenant_id, user_id, token_version). Runs under the tenant context set above, so
+    # the user_roles/role_permissions rows are already tenant-filtered.
+    permissions = await resolve_permissions(
+        session, user.id, user.tenant_id, user.token_version
+    )
+    # Serialization-time masking (D-009) reads this ContextVar; the middleware resets it
+    # in a finally block alongside current_tenant_id so it never leaks across requests.
+    current_permissions.set(permissions)
 
     return CurrentUser(
         user_id=user.id,
