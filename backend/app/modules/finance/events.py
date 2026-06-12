@@ -41,3 +41,36 @@ class JournalEntryReversed(DomainEvent):
     reversal_entry_number: str
     document_type: str
     reversal_date: str
+
+
+class VendorBillPosted(DomainEvent):
+    """A vendor bill was posted to the journal (PLAN 4.5, AP). Fired inside the posting
+    transaction; the payload carries the opaque ``partner_id`` (D-029) + amounts so procurement
+    (later) can react without a finance read. ``open_amount`` equals ``gross_amount`` at posting."""
+
+    key: ClassVar[str] = "finance.vendor_bill.posted"
+
+    bill_id: uuid.UUID
+    bill_number: str
+    journal_entry_id: uuid.UUID
+    partner_id: uuid.UUID
+    currency_code: str
+    gross_amount: Decimal
+    tax_amount: Decimal
+    net_amount: Decimal
+
+
+class VendorPaymentPosted(DomainEvent):
+    """A vendor payment was posted, clearing one or more open bills (PLAN 4.5, AP). Carries the
+    opaque ``partner_id`` (D-029), the bank amount, and the ids of the bills it cleared so a
+    subscriber can mirror the clearing. Realized FX (D-019) is already inside the payment entry."""
+
+    key: ClassVar[str] = "finance.vendor_payment.posted"
+
+    payment_id: uuid.UUID
+    payment_number: str
+    journal_entry_id: uuid.UUID
+    partner_id: uuid.UUID
+    currency_code: str
+    amount: Decimal
+    cleared_bill_ids: tuple[uuid.UUID, ...]
