@@ -19,12 +19,14 @@ import uuid
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import docflow
 from app.core.events import publish
+from app.core.jobs import register_job
 from app.core.money import currency_decimals, quantize_money
 from app.core.numbering import claim_number, ensure_sequence
 from app.modules.finance.constants import (
@@ -32,6 +34,7 @@ from app.modules.finance.constants import (
     AP_PAYMENT_NUMBER_PADDING,
     AP_PAYMENT_NUMBER_PREFIX,
     AP_PAYMENT_PAYS_LINK,
+    AP_PAYMENT_RUN_JOB,
     AP_PAYMENT_SEQUENCE_NAME,
     BillStatus,
     DocumentType,
@@ -272,6 +275,31 @@ async def run_payment_batch(
         )
         payments.append(payment)
     return payments
+
+
+@register_job(AP_PAYMENT_RUN_JOB)
+async def payment_run_job(
+    session: AsyncSession, tenant_id: uuid.UUID, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Background-job handler (PLAN 4P.5, closes #26): a run posts one clearing payment per due
+    (partner, currency) group, so at scale it would blow a request's proxy-timeout budget
+    (PERFORMANCE §3). The endpoint submits this job; the runner executes it under the submitting
+    tenant + actor inside run_in_uow. Delegates to the unchanged :func:`run_payment_batch`."""
+    raw_partner = payload.get("partner_id")
+    raw_payment_date = payload.get("payment_date")
+    payments = await run_payment_batch(
+        session,
+        tenant_id,
+        up_to_due_date=date.fromisoformat(payload["up_to_due_date"]),
+        bank_account_id=uuid.UUID(payload["bank_account_id"]),
+        partner_id=uuid.UUID(raw_partner) if raw_partner else None,
+        payment_date=date.fromisoformat(raw_payment_date) if raw_payment_date else None,
+    )
+    return {
+        "payment_count": len(payments),
+        "payment_ids": [str(payment.id) for payment in payments],
+        "payment_numbers": [payment.payment_number for payment in payments],
+    }
 
 
 async def get_payment_allocations(

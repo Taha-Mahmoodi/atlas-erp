@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.docflow import get_document_chain
 from app.core.events import run_in_uow
 from app.core.exceptions import ValidationFailedError
+from app.core.jobs import JobStatus, wait_for_jobs
 from app.core.tenancy import tenant_context
 from app.modules.finance import service
 from app.modules.finance.constants import DocumentType, EntryStatus, FxRunStatus
@@ -271,10 +272,14 @@ async def test_fx_revalue_required_to_run(client, finance_user_factory) -> None:
     assert forbidden.json()["error"]["code"] == "rbac.permission_denied"
 
 
-async def test_run_revaluation_via_api_is_idempotent(finance_client) -> None:
-    """End-to-end through the HTTP endpoint in the finance_client's own tenant, including the
-    D-013 idempotent retry (a replayed key returns the same run, not a second one)."""
-    # Functional currency + a fiscal year (the endpoint needs an open next period).
+async def test_run_revaluation_via_api_returns_202_and_polls_to_completion(
+    finance_client,
+) -> None:
+    """The #26 contract end-to-end: POST /fx-revaluation-runs returns 202 {job_id, PENDING};
+    a D-013 replay of the same Idempotency-Key returns the SAME job id (no second run); the
+    job completes in the background and GET /api/v1/jobs/{id} returns COMPLETED with the run
+    id in its result — the business outcome (one COMPLETED run row) is unchanged."""
+    # Functional currency + a fiscal year (the run needs an open next period).
     assert (
         await finance_client.post(
             "/api/v1/finance/currencies",
@@ -295,18 +300,29 @@ async def test_run_revaluation_via_api_is_idempotent(finance_client) -> None:
         headers={"Idempotency-Key": "reval-api-1"},
         json=body,
     )
-    assert first.status_code == 201, first.text
-    assert first.json()["status"] == FxRunStatus.COMPLETED.value
-    # A retry with the SAME key replays the stored response (no second run posted).
+    assert first.status_code == 202, first.text
+    assert first.json()["status"] == JobStatus.PENDING.value
+    job_id = first.json()["job_id"]
+    # A retry with the SAME key replays the stored 202 — same job id, no second submission.
     replay = await finance_client.post(
         "/api/v1/finance/fx-revaluation-runs",
         headers={"Idempotency-Key": "reval-api-1"},
         json=body,
     )
-    assert replay.status_code == 201
-    assert replay.json()["id"] == first.json()["id"]
+    assert replay.status_code == 202
+    assert replay.headers.get("Idempotency-Replayed") == "true"
+    assert replay.json()["job_id"] == job_id
+
+    await wait_for_jobs()
+    job = await finance_client.get(f"/api/v1/jobs/{job_id}")
+    assert job.status_code == 200, job.text
+    assert job.json()["status"] == JobStatus.COMPLETED.value
+    assert job.json()["result"]["status"] == FxRunStatus.COMPLETED.value
+
     runs = (await finance_client.get("/api/v1/finance/fx-revaluation-runs")).json()
     assert len(runs["items"]) == 1
+    assert runs["items"][0]["id"] == job.json()["result"]["run_id"]
+    assert runs["items"][0]["status"] == FxRunStatus.COMPLETED.value
 
 
 async def test_revaluation_runs_list_query_count(finance_client, query_counter) -> None:
@@ -329,7 +345,8 @@ async def test_revaluation_runs_list_query_count(finance_client, query_counter) 
         headers={"Idempotency-Key": "reval-qc"},
         json={"fiscal_period_id": march["id"], "rate_date": "2026-03-31"},
     )
-    assert run.status_code == 201, run.text
+    assert run.status_code == 202, run.text
+    await wait_for_jobs()  # let the background run land so the list has a row (#26)
     await assert_query_budget(
         finance_client, query_counter, "/api/v1/finance/fx-revaluation-runs"
     )

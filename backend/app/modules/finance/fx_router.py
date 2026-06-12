@@ -10,20 +10,23 @@ revaluation is guarded by ``finance.fx.revalue`` and is IDEMPOTENT (D-013 — it
 documents). Writes commit through ``run_in_uow`` (D-011) so audit + events ride the transaction.
 """
 
+import uuid
 from collections.abc import Awaitable, Callable
 
 from fastapi import APIRouter, Depends
 
-from app.core.deps import CurrentUserDep, SessionDep
+from app.core.deps import CurrentUserDep, SessionDep, SessionFactoryDep
 from app.core.events import run_in_uow
 from app.core.idempotency import Idempotent, IdempotentDep
+from app.core.jobs import schedule_job, submit_job
 from app.core.pagination import CursorParams, cursor_params, map_page
 from app.core.rbac import require_permission
-from app.core.schemas import Page
+from app.core.schemas import JobSubmitted, Page
 from app.modules.finance import service
 from app.modules.finance.constants import (
     FINANCE_FX_MANAGE,
     FINANCE_FX_REVALUE,
+    FX_REVALUATION_JOB,
     RateKind,
 )
 from app.modules.finance.schemas import (
@@ -203,28 +206,40 @@ async def list_fx_revaluation_runs(
 
 @fx_router.post(
     "/fx-revaluation-runs",
-    response_model=FxRevaluationRunRead,
-    status_code=201,
+    response_model=JobSubmitted,
+    status_code=202,
     dependencies=[Depends(require_permission(FINANCE_FX_REVALUE))],
 )
 async def run_fx_revaluation(
     payload: FxRevaluationRunRequest,
     current: CurrentUserDep,
     session: SessionDep,
+    factory: SessionFactoryDep,
     idem: IdempotentDep = _RevalueIdempotentDep,
-) -> FxRevaluationRunRead:
-    """Run unrealized-FX revaluation (D-019). IDEMPOTENT (D-013): it posts FX_REVAL documents +
-    auto-reversals, so a retried request must not double-post — capture() lands in the same uow."""
-    holder: dict[str, FxRevaluationRunRead] = {}
+) -> JobSubmitted:
+    """Submit an unrealized-FX revaluation as a background job (PERFORMANCE §3, closes #26):
+    returns 202 {job_id}; poll /api/v1/jobs/{job_id} for the run outcome. IDEMPOTENT (D-013):
+    the capture lands in the same uow as the PENDING row, so a retried request replays the SAME
+    job id instead of submitting a second run. Scheduled strictly AFTER the uow commit."""
+    holder: dict[str, JobSubmitted] = {}
+    job_id_holder: dict[str, uuid.UUID] = {}
 
     async def work() -> None:
-        run = await service.run_fx_revaluation(
-            session, current.tenant_id, payload.fiscal_period_id, payload.rate_date
+        job = await submit_job(
+            session,
+            current.tenant_id,
+            FX_REVALUATION_JOB,
+            {
+                "fiscal_period_id": str(payload.fiscal_period_id),
+                "rate_date": payload.rate_date.isoformat(),
+            },
+            submitted_by=current.user_id,
         )
-        await session.refresh(run)
+        job_id_holder["job_id"] = job.id
         holder["read"] = await idem.capture(
-            FxRevaluationRunRead.model_validate(run), status_code=201
+            JobSubmitted(job_id=job.id, status=job.status), status_code=202
         )
 
     await run_in_uow(session, work)
+    schedule_job(job_id_holder["job_id"], factory)
     return holder["read"]

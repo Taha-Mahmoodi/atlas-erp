@@ -14,14 +14,16 @@ from datetime import date
 
 from fastapi import APIRouter, Depends
 
-from app.core.deps import CurrentUserDep, SessionDep
+from app.core.deps import CurrentUserDep, SessionDep, SessionFactoryDep
 from app.core.events import run_in_uow
 from app.core.idempotency import Idempotent, IdempotentDep
+from app.core.jobs import schedule_job, submit_job
 from app.core.pagination import CursorParams, cursor_params
 from app.core.rbac import require_permission
-from app.core.schemas import Page
+from app.core.schemas import JobSubmitted, Page
 from app.modules.finance import service
 from app.modules.finance.constants import (
+    AP_PAYMENT_RUN_JOB,
     FINANCE_AP_MANAGE,
     FINANCE_AP_PAY,
     FINANCE_AP_READ,
@@ -30,7 +32,6 @@ from app.modules.finance.payables_schemas import (
     AgingReportRead,
     PaymentAllocationRead,
     PaymentRunRequest,
-    PaymentRunResult,
     VendorBillCreate,
     VendorBillDetail,
     VendorBillLineRead,
@@ -193,38 +194,47 @@ async def create_vendor_payment(
 
 @ap_router.post(
     "/payment-runs",
-    response_model=PaymentRunResult,
-    status_code=201,
+    response_model=JobSubmitted,
+    status_code=202,
     dependencies=[Depends(require_permission(FINANCE_AP_PAY))],
 )
 async def run_payment_batch(
     payload: PaymentRunRequest,
     current: CurrentUserDep,
     session: SessionDep,
+    factory: SessionFactoryDep,
     idem: IdempotentDep = _RunIdempotentDep,
-) -> PaymentRunResult:
-    """Run a payment batch (PLAN 4.5): pay every partner's due open bills in full. IDEMPOTENT
-    (D-013): it posts one payment per partner, so a retry must not double-run. Returns the payments
-    created, wrapped so the replay body serializes like every other captured response."""
-    holder: dict[str, PaymentRunResult] = {}
+) -> JobSubmitted:
+    """Submit a payment batch as a background job (PERFORMANCE §3, closes #26): one clearing
+    payment per due partner can blow the request budget at scale, so this returns 202 {job_id};
+    poll /api/v1/jobs/{job_id} for the created payments. IDEMPOTENT (D-013): the capture lands
+    in the same uow as the PENDING row, so a retried request replays the SAME job id instead of
+    double-running. Scheduled strictly AFTER the uow commit."""
+    holder: dict[str, JobSubmitted] = {}
+    job_id_holder: dict[str, uuid.UUID] = {}
 
     async def work() -> None:
-        payments = await service.run_payment_batch(
+        job = await submit_job(
             session,
             current.tenant_id,
-            up_to_due_date=payload.up_to_due_date,
-            bank_account_id=payload.bank_account_id,
-            partner_id=payload.partner_id,
-            payment_date=payload.payment_date,
+            AP_PAYMENT_RUN_JOB,
+            {
+                "up_to_due_date": payload.up_to_due_date.isoformat(),
+                "bank_account_id": str(payload.bank_account_id),
+                "partner_id": str(payload.partner_id) if payload.partner_id else None,
+                "payment_date": (
+                    payload.payment_date.isoformat() if payload.payment_date else None
+                ),
+            },
+            submitted_by=current.user_id,
         )
-        for payment in payments:
-            await session.refresh(payment)
-        result = PaymentRunResult(
-            payments=[VendorPaymentRead.model_validate(p) for p in payments]
+        job_id_holder["job_id"] = job.id
+        holder["read"] = await idem.capture(
+            JobSubmitted(job_id=job.id, status=job.status), status_code=202
         )
-        holder["read"] = await idem.capture(result, status_code=201)
 
     await run_in_uow(session, work)
+    schedule_job(job_id_holder["job_id"], factory)
     return holder["read"]
 
 

@@ -355,8 +355,10 @@ items are keyed by the opaque `partner_id` (D-029) — finance never FK-referenc
   `finance.journal.reverse`.
 - `GET/POST /currencies`, `GET/POST /exchange-rates`, `GET/PUT /posting-defaults` — all lists
   cursor-paginated (`Page` envelope; #27) — guarded by `finance.fx.manage` (D-019).
-- `POST /fx-revaluation-runs` (run; **idempotent**, guarded by `finance.fx.revalue`),
-  `GET /fx-revaluation-runs` (paginated; #27, D-019). The FX endpoints live in `fx_router.py` and mount into the
+- `POST /fx-revaluation-runs` (**background job** since #26: returns `202 {job_id, status}` —
+  poll `GET /api/v1/jobs/{job_id}` for the run outcome; **idempotent**, a replayed key returns
+  the same job id; guarded by `finance.fx.revalue`), `GET /fx-revaluation-runs` (paginated; #27,
+  D-019). The FX endpoints live in `fx_router.py` and mount into the
   finance router, so the module is one surface at `/api/v1/finance`.
 - `GET/POST /tax-codes`, `GET/PATCH /tax-codes/{id}` (PLAN 4.4) — list cursor-paginated; reads
   guarded by `finance.tax.read`, writes by `finance.tax.manage`. The tax endpoints live in
@@ -365,8 +367,10 @@ items are keyed by the opaque `partner_id` (D-029) — finance never FK-referenc
   (**idempotent**, `finance.ap.manage`), `GET /vendor-bills` (paginated), `GET /vendor-bills/{id}`
   (with lines) — `finance.ap.read` (PLAN 4.5).
 - `POST /vendor-payments` (create + post a payment with allocations; **idempotent**,
-  `finance.ap.pay`), `POST /payment-runs` (run a batch; **idempotent**, `finance.ap.pay`),
-  `GET /vendor-payments` (paginated, `finance.ap.read`).
+  `finance.ap.pay`), `POST /payment-runs` (**background job** since #26: returns
+  `202 {job_id, status}` — poll `GET /api/v1/jobs/{job_id}`; **idempotent**, a replayed key
+  returns the same job id; `finance.ap.pay`), `GET /vendor-payments` (paginated,
+  `finance.ap.read`).
 - `GET /ap-aging?as_of=&partner_id=` — the AP aging report (`finance.ap.read`). The AP endpoints
   live in `ap_router.py` and mount into the finance router (same one-surface pattern as FX/tax).
 - `POST /customer-invoices` (create draft, `finance.ar.manage`), `POST /customer-invoices/{id}/post`
@@ -414,7 +418,9 @@ FX line.
 
 **Payment run.** `POST /payment-runs` selects POSTED/PARTIALLY_PAID bills with `open_amount > 0` due
 on or before the given date (optionally one partner), groups them by `(partner, currency)`, and pays
-each group's due bills in full — one payment per group.
+each group's due bills in full — one payment per group. Since #26 the run executes as a background
+job (PERFORMANCE §3): the endpoint returns `202 {job_id}` and the created payment ids/numbers arrive
+in the job's `result` via `GET /api/v1/jobs/{job_id}`.
 
 **Aging.** `GET /ap-aging` is a pure projection over open bills: each bill's `open_amount` lands in
 the bucket for `as_of − due_date` days (current / 1-30 / 31-60 / 61-90 / over-90), per partner and

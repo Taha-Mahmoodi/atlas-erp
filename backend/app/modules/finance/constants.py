@@ -258,6 +258,11 @@ POSTING_PURPOSES: frozenset[str] = FX_POSTING_PURPOSES | frozenset({CO_ALLOCATIO
 # docflow link type joining a revaluation run's adjustment entry to its auto-reversal (D-012).
 FX_REVALUES_LINK = "revalues"
 
+# Background-job registry keys (PLAN 4P.5/D-032, closes #26): the two long-running finance
+# operations execute as jobs — their POST endpoints return 202 {job_id} for /api/v1/jobs polling.
+FX_REVALUATION_JOB = "finance.fx_revaluation"
+AP_PAYMENT_RUN_JOB = "finance.payment_run"
+
 
 # account_type -> normal side (D-021): ASSET/EXPENSE debit; LIABILITY/EQUITY/REVENUE credit.
 # The service defaults normal_balance from this, so stored value never disagrees with type.

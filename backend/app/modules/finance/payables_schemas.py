@@ -159,11 +159,8 @@ class PaymentRunRequest(ApiModel):
     payment_date: date | None = None
 
 
-class PaymentRunResult(ApiModel):
-    """The payments a run created (PLAN 4.5). A wrapper (not a bare list) so the idempotency
-    replay body serializes through ``model_dump`` like every other captured response (D-013)."""
-
-    payments: list[VendorPaymentRead]
+# The former PaymentRunResult wrapper was retired with #26: POST /payment-runs now returns the
+# core 202 JobSubmitted envelope, and the created payment ids live in the job's result (4P.5).
 
 
 # --- AP aging -----------------------------------------------------------------
