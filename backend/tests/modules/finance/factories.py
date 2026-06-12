@@ -17,6 +17,7 @@ from app.core.tenancy import system_context, tenant_context
 from app.modules.admin.service import assign_role, create_role, provision_tenant, provision_user
 from app.modules.finance import service
 from app.modules.finance.constants import (
+    BANK_UNMATCHED_CLEARING,
     CO_ALLOCATION_CLEARING,
     FINANCE_ACCOUNT_MANAGE,
     FINANCE_ACCOUNT_READ,
@@ -28,6 +29,9 @@ from app.modules.finance.constants import (
     FINANCE_AR_COLLECT,
     FINANCE_AR_MANAGE,
     FINANCE_AR_READ,
+    FINANCE_BANK_IMPORT,
+    FINANCE_BANK_READ,
+    FINANCE_BANK_RECONCILE,
     FINANCE_COST_CENTER_MANAGE,
     FINANCE_COST_CENTER_READ,
     FINANCE_FX_MANAGE,
@@ -78,6 +82,9 @@ _FINANCE_KEYS = (
     FINANCE_ALLOCATION_MANAGE,
     FINANCE_ALLOCATION_RUN,
     FINANCE_STATEMENTS_READ,
+    FINANCE_BANK_READ,
+    FINANCE_BANK_IMPORT,
+    FINANCE_BANK_RECONCILE,
 )
 
 # A minimal but type-complete chart of accounts: one account per statement-deriving type.
@@ -357,6 +364,60 @@ async def build_co_setup(session: AsyncSession, tenant_id: uuid.UUID) -> CoSetup
         await session.commit()
     year = await seed_fiscal_year(session, tenant_id)
     return CoSetup(tenant_id=tenant_id, accounts=by_code, fiscal_year_id=year.id)
+
+
+@dataclass(frozen=True)
+class BankSetup:
+    """A tenant ready for bank reconciliation (PLAN 4.9): the small COA + a cash-equivalent
+    bank account (1010) + a suspense account (9100) wired as the ``bank_unmatched_clearing``
+    posting default, and the open 2026 fiscal year. Plain ids so a rollback (expiring loaded
+    objects) cannot break a follow-up payload."""
+
+    tenant_id: uuid.UUID
+    accounts: dict[str, uuid.UUID]
+    fiscal_year_id: uuid.UUID
+    bank_account_id: uuid.UUID
+    suspense_account_id: uuid.UUID
+
+
+async def build_bank_setup(session: AsyncSession, tenant_id: uuid.UUID) -> BankSetup:
+    """COA + a cash-equivalent bank account + the bank-clearing suspense default + open 2026
+    year (PLAN 4.9). The 1000 Cash account from the small COA is deliberately NOT
+    cash-equivalent, so the is_cash_equivalent import rule is actually exercised."""
+    accounts = await seed_small_coa(session, tenant_id)
+    by_code = {a.code: a.id for a in accounts}
+    with tenant_context(tenant_id):
+        bank = await service.create_account(
+            session,
+            tenant_id,
+            AccountCreate(
+                code="1010",
+                name="Main Bank",
+                account_type=AccountType.ASSET,
+                is_cash_equivalent=True,
+            ),
+        )
+        by_code["1010"] = bank.id
+        suspense = await service.create_account(
+            session,
+            tenant_id,
+            AccountCreate(
+                code="9100",
+                name="Bank Clearing Suspense",
+                account_type=AccountType.EXPENSE,
+            ),
+        )
+        by_code["9100"] = suspense.id
+        await service.set_posting_default(session, tenant_id, BANK_UNMATCHED_CLEARING, suspense.id)
+        await session.commit()
+    year = await seed_fiscal_year(session, tenant_id)
+    return BankSetup(
+        tenant_id=tenant_id,
+        accounts=by_code,
+        fiscal_year_id=year.id,
+        bank_account_id=bank.id,
+        suspense_account_id=suspense.id,
+    )
 
 
 @dataclass(frozen=True)

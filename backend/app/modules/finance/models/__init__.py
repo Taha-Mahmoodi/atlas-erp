@@ -9,6 +9,7 @@ tenancy mapper-enumeration suite) registers all tables on ``Base.metadata``.
 - ``tax``: configurable line-level tax codes (PLAN 4.4).
 - ``payables``: vendor bills, payments and payment allocations (PLAN 4.5, D-029).
 - ``receivables``: customer invoices, receipts, allocations + dunning (PLAN 4.6, D-029).
+- ``bank``: imported bank statements + lines for reconciliation (PLAN 4.9).
 """
 
 from app.modules.finance.models.accounts import (
@@ -17,6 +18,7 @@ from app.modules.finance.models.accounts import (
     FiscalPeriod,
     FiscalYear,
 )
+from app.modules.finance.models.bank import BankStatement, BankStatementLine
 from app.modules.finance.models.controlling import (
     AllocationRule,
     AllocationRuleTarget,
@@ -51,6 +53,8 @@ __all__ = [
     "AllocationRule",
     "AllocationRuleTarget",
     "AllocationRun",
+    "BankStatement",
+    "BankStatementLine",
     "CostCenter",
     "Currency",
     "CustomerInvoice",

@@ -136,6 +136,24 @@ class AllocationRunStatus(StrEnum):
     REVERSED = "REVERSED"
 
 
+class StatementStatus(StrEnum):
+    """Bank-statement state (PLAN 4.9), derived from line resolution counts."""
+
+    IMPORTED = "IMPORTED"
+    PARTIALLY_RECONCILED = "PARTIALLY_RECONCILED"
+    RECONCILED = "RECONCILED"
+
+
+class LineStatus(StrEnum):
+    """Statement-line machine (PLAN 4.9): UNMATCHED -> SUGGESTED -> MATCHED (confirm) or back
+    (reject); UNMATCHED -> CLEARED (posted clearing entry). Resolved = MATCHED | CLEARED."""
+
+    UNMATCHED = "UNMATCHED"
+    SUGGESTED = "SUGGESTED"
+    MATCHED = "MATCHED"
+    CLEARED = "CLEARED"
+
+
 class RateKind(StrEnum):
     """Exchange-rate type (D-019): SPOT = posting-time translation; CLOSING = period-end
     revaluation. get_rate filters on it so the two flows never share a rate."""
@@ -154,8 +172,8 @@ class FxRunStatus(StrEnum):
     REVERSED = "REVERSED"
 
 
-# core_documents doc_type for a journal entry + its number sequence (D-012). Registered at
-# creation; the sequence year-resets (JE-2026-00001), claimed at posting, never at draft.
+# Journal doc type + sequence (D-012): registered at creation; the sequence year-resets
+# (JE-2026-00001), claimed at posting, never at draft.
 JOURNAL_ENTRY_DOC_TYPE = "finance.journal_entry"
 JOURNAL_SEQUENCE_NAME = "finance.journal"
 JOURNAL_NUMBER_PREFIX = "JE"
@@ -163,11 +181,10 @@ JOURNAL_NUMBER_PADDING = 5
 
 
 # --- Accounts Payable (PLAN 4.5) ----------------------------------------------
-# Doc types (D-012): bill + payment register at creation; docflow payment->bill records clearing.
+# Doc types register at creation (D-012); sequences year-reset (BILL-2026-00001 /
+# PAY-2026-00001), claimed at posting only.
 AP_BILL_DOC_TYPE = "finance.vendor_bill"
 AP_PAYMENT_DOC_TYPE = "finance.vendor_payment"
-
-# Sequences (D-012): year-reset, BILL-2026-00001 / PAY-2026-00001; claimed at posting only.
 AP_BILL_SEQUENCE_NAME = "finance.vendor_bill"
 AP_BILL_NUMBER_PREFIX = "BILL"
 AP_BILL_NUMBER_PADDING = 5
@@ -175,21 +192,17 @@ AP_PAYMENT_SEQUENCE_NAME = "finance.vendor_payment"
 AP_PAYMENT_NUMBER_PREFIX = "PAY"
 AP_PAYMENT_NUMBER_PADDING = 5
 
-# docflow link types: bill->journal ('posts'); payment->each bill it clears ('pays').
+# docflow links bill->journal / payment->bills; partner_type tags the AP control line (D-029).
 AP_BILL_POSTS_LINK = "posts"
 AP_PAYMENT_PAYS_LINK = "pays"
-
-# partner_type on the AP control line — open-item filtering without a partner master (D-029).
 AP_PARTNER_TYPE = "VENDOR"
 
 
 # --- Accounts Receivable (PLAN 4.6) -------------------------------------------
-# Doc types (D-012), mirroring AP sign-flipped (Dr AR control / Cr revenue + output tax;
-# receipts Cr AR / Dr bank). Each registers at creation, numbers at posting.
+# The AP mirror sign-flipped (Dr AR control / Cr revenue + output tax; receipts Cr AR /
+# Dr bank). Doc types register at creation; sequences year-reset, claimed at posting only.
 AR_INVOICE_DOC_TYPE = "finance.customer_invoice"
 AR_RECEIPT_DOC_TYPE = "finance.customer_receipt"
-
-# Sequences (D-012): year-reset, INV-2026-00001 / RCT-2026-00001; claimed at posting only.
 AR_INVOICE_SEQUENCE_NAME = "finance.customer_invoice"
 AR_INVOICE_NUMBER_PREFIX = "INV"
 AR_INVOICE_NUMBER_PADDING = 5
@@ -197,15 +210,12 @@ AR_RECEIPT_SEQUENCE_NAME = "finance.customer_receipt"
 AR_RECEIPT_NUMBER_PREFIX = "RCT"
 AR_RECEIPT_NUMBER_PADDING = 5
 
-# docflow link types: invoice->journal ('posts'); receipt->each invoice it clears ('receipts').
+# docflow links invoice->journal / receipt->invoices; partner_type tags the AR control line.
 AR_INVOICE_POSTS_LINK = "posts"
 AR_RECEIPT_RECEIPTS_LINK = "receipts"
-
-# partner_type on the AR control line — open-item filtering without a partner master (D-029).
 AR_PARTNER_TYPE = "CUSTOMER"
 
-# Dunning day-thresholds (PLAN 4.6): an overdue invoice reaches level N at >= the (N-1)th bound
-# days past due; highest crossed bound wins; level 0 = no notice yet. Constant for now.
+# Dunning day-thresholds (PLAN 4.6): highest crossed bound wins; level 0 = no notice yet.
 DUNNING_THRESHOLDS: tuple[int, ...] = (7, 30, 60)
 
 
@@ -252,8 +262,20 @@ FX_POSTING_PURPOSES: frozenset[str] = frozenset(
     }
 )
 
-# Every known posting-default purpose: FX + the CO clearing account; later phases extend this.
-POSTING_PURPOSES: frozenset[str] = FX_POSTING_PURPOSES | frozenset({CO_ALLOCATION_CLEARING})
+# Bank reconciliation (PLAN 4.9): statements register in core_documents with doc_number NULL
+# (external documents, not Atlas-numbered); a clearing entry links statement->'posts'->entry.
+# Imports above the sync max run as a background job (202 {job_id}, PERFORMANCE §3);
+# BANK_UNMATCHED_CLEARING is the suspense posting purpose for clearing bank-only lines.
+BANK_STATEMENT_DOC_TYPE = "finance.bank_statement"
+BANK_CLEARING_POSTS_LINK = "posts"
+BANK_UNMATCHED_CLEARING = "bank_unmatched_clearing"
+BANK_IMPORT_SYNC_MAX_LINES = 1000
+BANK_STATEMENT_IMPORT_JOB = "finance.bank_statement_import"
+
+# Every known posting-default purpose: FX + the CO/bank clearing accounts; phases extend this.
+POSTING_PURPOSES: frozenset[str] = FX_POSTING_PURPOSES | frozenset(
+    {CO_ALLOCATION_CLEARING, BANK_UNMATCHED_CLEARING}
+)
 
 # docflow link type joining a revaluation run's adjustment entry to its auto-reversal (D-012).
 FX_REVALUES_LINK = "revalues"
@@ -312,6 +334,10 @@ FINANCE_ALLOCATION_MANAGE = "finance.allocation.manage"
 FINANCE_ALLOCATION_RUN = "finance.allocation.run"
 # Financial statements (PLAN 4.8, D-021): one read-only key gates all projection statements.
 FINANCE_STATEMENTS_READ = "finance.statements.read"
+# Bank reconciliation (PLAN 4.9): read, import CSVs, reconcile (suggest/confirm/reject/clear).
+FINANCE_BANK_READ = "finance.bank.read"
+FINANCE_BANK_IMPORT = "finance.bank.import"
+FINANCE_BANK_RECONCILE = "finance.bank.reconcile"
 
 register_permissions(
     FINANCE_ACCOUNT_READ,
@@ -338,6 +364,9 @@ register_permissions(
     FINANCE_ALLOCATION_MANAGE,
     FINANCE_ALLOCATION_RUN,
     FINANCE_STATEMENTS_READ,
+    FINANCE_BANK_READ,
+    FINANCE_BANK_IMPORT,
+    FINANCE_BANK_RECONCILE,
     descriptions={
         FINANCE_ACCOUNT_READ: "Read the chart of accounts and account groups",
         FINANCE_ACCOUNT_MANAGE: "Create and edit accounts and account groups",
@@ -364,5 +393,8 @@ register_permissions(
         FINANCE_ALLOCATION_RUN: "Run cost allocations",
         FINANCE_STATEMENTS_READ: "Read financial statements (trial balance, P&L, balance sheet, "
         "cash flow, cost-centre and margin reports)",
+        FINANCE_BANK_READ: "Read bank statements and their lines",
+        FINANCE_BANK_IMPORT: "Import bank statement CSVs",
+        FINANCE_BANK_RECONCILE: "Reconcile bank-statement lines (suggest, confirm, clear)",
     },
 )
