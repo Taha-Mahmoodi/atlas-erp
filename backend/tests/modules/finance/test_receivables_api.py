@@ -6,6 +6,7 @@ required Idempotency-Key header (D-013). The AP API suite (test_payables_api.py)
 """
 
 import uuid
+from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
 
@@ -19,6 +20,7 @@ from app.modules.finance.constants import (
     FINANCE_AR_READ,
 )
 from app.modules.finance.schemas import AccountCreate, FiscalYearCreate
+from tests.conftest import QueryCounter, assert_query_budget
 
 
 async def _bootstrap(db_session: AsyncSession, tenant_id: uuid.UUID) -> dict[str, str]:
@@ -183,6 +185,48 @@ async def test_ar_aging_endpoint(
     assert Decimal(body["days_1_30"]) == Decimal("100.00")
     assert Decimal(body["total"]) == Decimal("100.00")
     assert len(body["partners"]) == 1
+
+
+async def test_ar_list_and_detail_query_count(
+    finance_client: AsyncClient,
+    db_session: AsyncSession,
+    query_counter: Callable[[], QueryCounter],
+) -> None:
+    """PERFORMANCE §2: warm-path invoice/receipt lists ≤3 queries; invoice detail ≤4."""
+    tenant_id = await _tenant_of(finance_client)
+    ids = await _bootstrap(db_session, tenant_id)
+    partner = str(uuid.uuid4())
+    invoice_id = ""
+    for _ in range(3):
+        created = await finance_client.post(
+            "/api/v1/finance/customer-invoices", json=_invoice_body(ids, partner)
+        )
+        assert created.status_code == 201
+        invoice_id = created.json()["id"]
+    posted = await finance_client.post(
+        f"/api/v1/finance/customer-invoices/{invoice_id}/post",
+        headers={"Idempotency-Key": "qc-invoice"},
+    )
+    assert posted.status_code == 200, posted.text
+    received = await finance_client.post(
+        "/api/v1/finance/customer-receipts",
+        json={
+            "partner_id": partner,
+            "partner_name": "Globex Inc",
+            "receipt_date": "2026-03-15",
+            "currency_code": "USD",
+            "bank_account_id": ids["1000"],
+            "amount": "100.00",
+            "allocations": [{"invoice_id": invoice_id, "amount": "100.00"}],
+        },
+        headers={"Idempotency-Key": "qc-receipt"},
+    )
+    assert received.status_code == 201, received.text
+    await assert_query_budget(finance_client, query_counter, "/api/v1/finance/customer-invoices")
+    await assert_query_budget(finance_client, query_counter, "/api/v1/finance/customer-receipts")
+    await assert_query_budget(
+        finance_client, query_counter, f"/api/v1/finance/customer-invoices/{invoice_id}", budget=4
+    )
 
 
 # --- RBAC ---------------------------------------------------------------------

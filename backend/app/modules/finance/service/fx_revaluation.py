@@ -33,6 +33,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import docflow
 from app.core.exceptions import ValidationFailedError
+from app.core.pagination import DEFAULT_LIMIT, OrderKey, SortDirection, paginate
+from app.core.schemas import Page
 from app.modules.finance import queries
 from app.modules.finance.constants import (
     FX_REVALUATION_ADJUSTMENT,
@@ -333,11 +335,19 @@ async def run_fx_revaluation(
 
 
 async def list_revaluation_runs(
-    session: AsyncSession, tenant_id: uuid.UUID
-) -> list[FxRevaluationRun]:
-    stmt = (
-        select(FxRevaluationRun)
-        .where(FxRevaluationRun.tenant_id == tenant_id)
-        .order_by(FxRevaluationRun.created_at.desc())
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    cursor: str | None = None,
+    limit: int = DEFAULT_LIMIT,
+) -> Page[FxRevaluationRun]:
+    """Keyset-paginated revaluation runs, newest first (created_at DESC + id tiebreaker; #27)."""
+    stmt = select(FxRevaluationRun).where(FxRevaluationRun.tenant_id == tenant_id)
+    return await paginate(
+        session,
+        stmt,
+        order_by=[OrderKey(FxRevaluationRun.created_at, SortDirection.DESC)],
+        pk=FxRevaluationRun.id,
+        cursor=cursor,
+        limit=limit,
     )
-    return list((await session.execute(stmt)).scalars().all())

@@ -27,6 +27,7 @@ from app.modules.finance.controlling_schemas import (
     ProfitCenterCreate,
 )
 from app.modules.finance.schemas import JournalEntryCreate, JournalLineCreate
+from tests.conftest import QueryCounter, assert_query_budget
 from tests.modules.finance.conftest import CoSetup, FinancePrincipal, JournalSetup
 
 _PD = date(2026, 3, 15)
@@ -389,3 +390,39 @@ async def test_cost_center_crud_via_api(finance_client: AsyncClient) -> None:
     )
     assert patched.status_code == 200
     assert patched.json()["is_active"] is False
+
+
+async def test_co_list_endpoints_query_count(
+    finance_client: AsyncClient, query_counter: Callable[[], QueryCounter]
+) -> None:
+    """PERFORMANCE §2: warm-path cost-centre/profit-centre/allocation-rule lists ≤3 queries."""
+    cc_ids: list[str] = []
+    for i in range(3):
+        cc = await finance_client.post(
+            "/api/v1/finance/cost-centers", json={"code": f"CC{i}", "name": f"Centre {i}"}
+        )
+        assert cc.status_code == 201, cc.text
+        cc_ids.append(cc.json()["id"])
+        pc = await finance_client.post(
+            "/api/v1/finance/profit-centers", json={"code": f"PC{i}", "name": f"Profit {i}"}
+        )
+        assert pc.status_code == 201, pc.text
+    rule = await finance_client.post(
+        "/api/v1/finance/allocation-rules",
+        json={
+            "code": "SPREAD",
+            "name": "Spread overhead",
+            "source_cost_center_id": cc_ids[0],
+            "targets": [
+                {"target_cost_center_id": cc_ids[1], "weight": "60"},
+                {"target_cost_center_id": cc_ids[2], "weight": "40"},
+            ],
+        },
+    )
+    assert rule.status_code == 201, rule.text
+    for url in (
+        "/api/v1/finance/cost-centers",
+        "/api/v1/finance/profit-centers",
+        "/api/v1/finance/allocation-rules",
+    ):
+        await assert_query_budget(finance_client, query_counter, url)

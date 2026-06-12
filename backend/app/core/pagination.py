@@ -37,6 +37,7 @@ from enum import StrEnum
 from typing import Any
 
 import sqlalchemy as sa
+from pydantic import BaseModel
 from sqlalchemy import Select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
@@ -238,6 +239,17 @@ async def paginate[T](
     return Page(items=items, next_cursor=next_cursor, limit=limit)
 
 
+def map_page[S: BaseModel](page: Page[Any], schema: type[S]) -> Page[S]:
+    """Validate a service-layer ``Page`` of ORM rows into its wire schema — the one-line router
+    epilogue for every paginated list endpoint, so the items/next_cursor/limit plumbing is never
+    hand-rolled (and the envelope can't drift between endpoints)."""
+    return Page(
+        items=[schema.model_validate(item) for item in page.items],
+        next_cursor=page.next_cursor,
+        limit=page.limit,
+    )
+
+
 @dataclass(frozen=True)
 class CursorParams:
     """Parsed ``?cursor=&limit=`` query params (D-014). ``limit`` is clamped to ``[1, MAX_LIMIT]``
@@ -265,5 +277,6 @@ __all__ = [
     "decode_cursor",
     "encode_cursor",
     "filter_fingerprint",
+    "map_page",
     "paginate",
 ]

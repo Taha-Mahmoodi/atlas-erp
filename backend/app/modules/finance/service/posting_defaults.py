@@ -15,6 +15,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ValidationFailedError
+from app.core.pagination import DEFAULT_LIMIT, OrderKey, SortDirection, paginate
+from app.core.schemas import Page
 from app.modules.finance.constants import POSTING_PURPOSES
 from app.modules.finance.models import Account, PostingDefault
 
@@ -89,11 +91,19 @@ async def set_posting_default(
 
 
 async def list_posting_defaults(
-    session: AsyncSession, tenant_id: uuid.UUID
-) -> list[PostingDefault]:
-    stmt = (
-        select(PostingDefault)
-        .where(PostingDefault.tenant_id == tenant_id)
-        .order_by(PostingDefault.purpose)
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    cursor: str | None = None,
+    limit: int = DEFAULT_LIMIT,
+) -> Page[PostingDefault]:
+    """Keyset-paginated posting defaults, ordered by purpose (+ id tiebreaker; #27)."""
+    stmt = select(PostingDefault).where(PostingDefault.tenant_id == tenant_id)
+    return await paginate(
+        session,
+        stmt,
+        order_by=[OrderKey(PostingDefault.purpose, SortDirection.ASC)],
+        pk=PostingDefault.id,
+        cursor=cursor,
+        limit=limit,
     )
-    return list((await session.execute(stmt)).scalars().all())

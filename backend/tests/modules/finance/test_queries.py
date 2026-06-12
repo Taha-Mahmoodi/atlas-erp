@@ -26,7 +26,9 @@ async def test_get_period_status_reflects_open_and_closed(
         in_jan = date(2026, 1, 10)
         assert await get_period_status(db_session, tenant_a, in_jan) == PeriodStatus.OPEN
 
-        january = (await service.list_fiscal_periods(db_session, tenant_a, year.id))[0]
+        january = (
+            await service.list_fiscal_periods(db_session, tenant_a, year.id)
+        ).items[0]
         await service.close_period(db_session, tenant_a, january.id)
         await db_session.commit()
         assert await get_period_status(db_session, tenant_a, in_jan) == PeriodStatus.CLOSED

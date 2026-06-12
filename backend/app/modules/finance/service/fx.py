@@ -29,7 +29,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, NotFoundError, ValidationFailedError
 from app.core.money import quantize_money
-from app.core.pagination import OrderKey, SortDirection, filter_fingerprint, paginate
+from app.core.pagination import (
+    DEFAULT_LIMIT,
+    OrderKey,
+    SortDirection,
+    filter_fingerprint,
+    paginate,
+)
 from app.core.schemas import Page
 from app.modules.finance.constants import RateKind
 from app.modules.finance.models import Currency, ExchangeRate
@@ -239,11 +245,23 @@ async def get_currency(
     return currency
 
 
-async def list_currencies(session: AsyncSession, tenant_id: uuid.UUID) -> list[Currency]:
-    stmt = (
-        select(Currency).where(Currency.tenant_id == tenant_id).order_by(Currency.code)
+async def list_currencies(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    cursor: str | None = None,
+    limit: int = DEFAULT_LIMIT,
+) -> Page[Currency]:
+    """Keyset-paginated currency catalog, ordered by code (+ id tiebreaker; #27)."""
+    stmt = select(Currency).where(Currency.tenant_id == tenant_id)
+    return await paginate(
+        session,
+        stmt,
+        order_by=[OrderKey(Currency.code, SortDirection.ASC)],
+        pk=Currency.id,
+        cursor=cursor,
+        limit=limit,
     )
-    return list((await session.execute(stmt)).scalars().all())
 
 
 async def create_currency(

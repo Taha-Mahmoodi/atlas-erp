@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends
 from app.core.deps import CurrentUserDep, SessionDep
 from app.core.events import run_in_uow
 from app.core.idempotency import Idempotent, IdempotentDep
-from app.core.pagination import CursorParams, cursor_params
+from app.core.pagination import CursorParams, cursor_params, map_page
 from app.core.rbac import require_permission
 from app.core.schemas import Page
 from app.modules.finance import service
@@ -99,17 +99,9 @@ async def list_accounts(
         account_group_id=account_group_id,
     )
     page = await service.list_accounts(
-        session,
-        current.tenant_id,
-        filters=filters,
-        cursor=params.cursor,
-        limit=params.limit,
+        session, current.tenant_id, filters=filters, cursor=params.cursor, limit=params.limit
     )
-    return Page(
-        items=[AccountRead.model_validate(item) for item in page.items],
-        next_cursor=page.next_cursor,
-        limit=page.limit,
-    )
+    return map_page(page, AccountRead)
 
 
 @router.post(
@@ -165,15 +157,18 @@ async def update_account(
 
 @router.get(
     "/account-groups",
-    response_model=list[AccountGroupRead],
+    response_model=Page[AccountGroupRead],
     dependencies=[Depends(require_permission(FINANCE_ACCOUNT_READ))],
 )
 async def list_account_groups(
     current: CurrentUserDep,
     session: SessionDep,
-) -> list[AccountGroupRead]:
-    groups = await service.list_account_groups(session, current.tenant_id)
-    return [AccountGroupRead.model_validate(group) for group in groups]
+    params: CursorParams = CursorParamsDep,
+) -> Page[AccountGroupRead]:
+    page = await service.list_account_groups(
+        session, current.tenant_id, cursor=params.cursor, limit=params.limit
+    )
+    return map_page(page, AccountGroupRead)
 
 
 @router.post(
@@ -198,15 +193,18 @@ async def create_account_group(
 
 @router.get(
     "/fiscal-years",
-    response_model=list[FiscalYearRead],
+    response_model=Page[FiscalYearRead],
     dependencies=[Depends(require_permission(FINANCE_PERIOD_READ))],
 )
 async def list_fiscal_years(
     current: CurrentUserDep,
     session: SessionDep,
-) -> list[FiscalYearRead]:
-    years = await service.list_fiscal_years(session, current.tenant_id)
-    return [FiscalYearRead.model_validate(year) for year in years]
+    params: CursorParams = CursorParamsDep,
+) -> Page[FiscalYearRead]:
+    page = await service.list_fiscal_years(
+        session, current.tenant_id, cursor=params.cursor, limit=params.limit
+    )
+    return map_page(page, FiscalYearRead)
 
 
 @router.post(
@@ -228,16 +226,19 @@ async def create_fiscal_year(
 
 @router.get(
     "/fiscal-periods",
-    response_model=list[FiscalPeriodRead],
+    response_model=Page[FiscalPeriodRead],
     dependencies=[Depends(require_permission(FINANCE_PERIOD_READ))],
 )
 async def list_fiscal_periods(
     current: CurrentUserDep,
     session: SessionDep,
+    params: CursorParams = CursorParamsDep,
     fiscal_year_id: uuid.UUID | None = None,
-) -> list[FiscalPeriodRead]:
-    periods = await service.list_fiscal_periods(session, current.tenant_id, fiscal_year_id)
-    return [FiscalPeriodRead.model_validate(period) for period in periods]
+) -> Page[FiscalPeriodRead]:
+    page = await service.list_fiscal_periods(
+        session, current.tenant_id, fiscal_year_id, cursor=params.cursor, limit=params.limit
+    )
+    return map_page(page, FiscalPeriodRead)
 
 
 @router.post(
@@ -380,11 +381,7 @@ async def list_journal_entries(
         limit=params.limit,
         status=status,
     )
-    return Page(
-        items=[JournalEntryRead.model_validate(item) for item in page.items],
-        next_cursor=page.next_cursor,
-        limit=page.limit,
-    )
+    return map_page(page, JournalEntryRead)
 
 
 @router.get(

@@ -6,6 +6,7 @@ the required Idempotency-Key header (D-013).
 """
 
 import uuid
+from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
 
@@ -23,6 +24,7 @@ from app.modules.finance.constants import (
     FINANCE_PERIOD_READ,
 )
 from app.modules.finance.schemas import AccountCreate, FiscalYearCreate
+from tests.conftest import QueryCounter, assert_query_budget
 
 # The finance_client provisions tenant "fin-acme"; mint its COA + open FY against that tenant.
 _PD = "2026-03-15"
@@ -144,8 +146,10 @@ async def test_post_to_closed_period_returns_422(
     accounts = await _bootstrap(db_session, tenant_id)
     # Close the March period.
     with tenant_context(tenant_id):
-        years = await service.list_fiscal_years(db_session, tenant_id)
-        periods = await service.list_fiscal_periods(db_session, tenant_id, years[0].id)
+        years = (await service.list_fiscal_years(db_session, tenant_id)).items
+        periods = (
+            await service.list_fiscal_periods(db_session, tenant_id, years[0].id)
+        ).items
         march = next(p for p in periods if p.start_date == date(2026, 3, 1))
         await service.close_period(db_session, tenant_id, march.id)
         await db_session.commit()
@@ -205,6 +209,35 @@ async def test_list_journal_entries(
     resp = await finance_client.get("/api/v1/finance/journal-entries")
     assert resp.status_code == 200
     assert len(resp.json()["items"]) == 2
+
+
+async def test_journal_list_and_detail_query_count(
+    finance_client: AsyncClient,
+    db_session: AsyncSession,
+    query_counter: Callable[[], QueryCounter],
+) -> None:
+    """PERFORMANCE §2: warm-path list ≤3 queries; the detail (header + lines) stays ≤4."""
+    tenant_id = await _tenant_of(finance_client)
+    accounts = await _bootstrap(db_session, tenant_id)
+    entry_id = ""
+    for _ in range(3):
+        created = await finance_client.post(
+            "/api/v1/finance/journal-entries", json=_entry_body(accounts)
+        )
+        assert created.status_code == 201
+        entry_id = created.json()["id"]
+    posted = await finance_client.post(
+        f"/api/v1/finance/journal-entries/{entry_id}/post",
+        headers={"Idempotency-Key": "qc-post"},
+    )
+    assert posted.status_code == 200, posted.text
+    await assert_query_budget(finance_client, query_counter, "/api/v1/finance/journal-entries")
+    await assert_query_budget(
+        finance_client,
+        query_counter,
+        f"/api/v1/finance/journal-entries/{entry_id}",
+        budget=4,
+    )
 
 
 # --- RBAC ---------------------------------------------------------------------
