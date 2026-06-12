@@ -23,6 +23,9 @@ from app.modules.finance import service
 from app.modules.finance.constants import (
     FINANCE_ACCOUNT_MANAGE,
     FINANCE_ACCOUNT_READ,
+    FINANCE_JOURNAL_POST,
+    FINANCE_JOURNAL_READ,
+    FINANCE_JOURNAL_REVERSE,
     FINANCE_PERIOD_MANAGE,
     FINANCE_PERIOD_READ,
     AccountType,
@@ -35,6 +38,9 @@ _FINANCE_KEYS = (
     FINANCE_ACCOUNT_MANAGE,
     FINANCE_PERIOD_READ,
     FINANCE_PERIOD_MANAGE,
+    FINANCE_JOURNAL_READ,
+    FINANCE_JOURNAL_POST,
+    FINANCE_JOURNAL_REVERSE,
 )
 
 # A minimal but type-complete chart of accounts: one account per statement-deriving type.
@@ -91,6 +97,32 @@ async def coa(db_session: AsyncSession, tenant_a: uuid.UUID) -> list[Account]:
 async def fiscal_year(db_session: AsyncSession, tenant_a: uuid.UUID) -> FiscalYear:
     """A 12-period fiscal year (2026) in tenant A."""
     return await seed_fiscal_year(db_session, tenant_a)
+
+
+@dataclass(frozen=True)
+class JournalSetup:
+    """A tenant ready to post: account ids by code + the open 2026 fiscal year id.
+
+    Plain ids (not ORM objects) so a test that triggers a rollback — which expires every loaded
+    ORM object — can still build the next payload without an out-of-greenlet lazy refresh."""
+
+    tenant_id: uuid.UUID
+    accounts: dict[str, uuid.UUID]
+    fiscal_year_id: uuid.UUID
+
+
+@pytest.fixture
+async def journal_setup(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> JournalSetup:
+    """COA + open fiscal year in tenant A — the precondition for posting (D-017)."""
+    accounts = await seed_small_coa(db_session, tenant_a)
+    year = await seed_fiscal_year(db_session, tenant_a)
+    return JournalSetup(
+        tenant_id=tenant_a,
+        accounts={account.code: account.id for account in accounts},
+        fiscal_year_id=year.id,
+    )
 
 
 # --- Finance-permissioned HTTP clients ----------------------------------------

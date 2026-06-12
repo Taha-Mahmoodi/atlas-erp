@@ -52,6 +52,42 @@ class PeriodStatus(StrEnum):
     CLOSED = "CLOSED"
 
 
+class EntryStatus(StrEnum):
+    """Lifecycle of a journal entry (D-017). DRAFT is editable; POSTED is immutable (only the
+    transition to REVERSED is allowed, with reversed_by set); REVERSED marks an entry that a
+    reversing entry has cancelled. The DB immutability trigger enforces the same transitions."""
+
+    DRAFT = "DRAFT"
+    POSTED = "POSTED"
+    REVERSED = "REVERSED"
+
+
+class DocumentType(StrEnum):
+    """Journal-entry document type (D-017). JOURNAL is a manual/general entry; the others tag
+    entries produced by specific flows so projections and the document registry can group them.
+    Stored as the UPPER_SNAKE string on the entry; the reversal of any entry preserves the
+    original's type so a reversed FX_REVAL stays an FX_REVAL pair."""
+
+    JOURNAL = "JOURNAL"
+    AP_INVOICE = "AP_INVOICE"
+    AR_INVOICE = "AR_INVOICE"
+    PAYMENT = "PAYMENT"
+    COGS = "COGS"
+    FX_REVAL = "FX_REVAL"
+    DEPRECIATION = "DEPRECIATION"
+
+
+# core_documents doc_type for a journal entry (D-012 namespaced constant). Registered with the
+# entry at creation; the partial-unique (tenant, doc_number) index backstops gapless numbering.
+JOURNAL_ENTRY_DOC_TYPE = "finance.journal_entry"
+
+# core/numbering sequence key + format for journal entry numbers (D-012). The sequence
+# year-resets so numbers read JE-2026-00001; claimed at posting, never at draft creation.
+JOURNAL_SEQUENCE_NAME = "finance.journal"
+JOURNAL_NUMBER_PREFIX = "JE"
+JOURNAL_NUMBER_PADDING = 5
+
+
 # account_type -> the side it normally carries (D-021). ASSET/EXPENSE accumulate on the
 # debit side; LIABILITY/EQUITY/REVENUE on the credit side. The service uses this to default
 # normal_balance when a caller does not supply one, so the stored value can never disagree
@@ -78,16 +114,25 @@ FINANCE_ACCOUNT_READ = "finance.account.read"
 FINANCE_ACCOUNT_MANAGE = "finance.account.manage"
 FINANCE_PERIOD_READ = "finance.period.read"
 FINANCE_PERIOD_MANAGE = "finance.period.manage"
+FINANCE_JOURNAL_READ = "finance.journal.read"
+FINANCE_JOURNAL_POST = "finance.journal.post"
+FINANCE_JOURNAL_REVERSE = "finance.journal.reverse"
 
 register_permissions(
     FINANCE_ACCOUNT_READ,
     FINANCE_ACCOUNT_MANAGE,
     FINANCE_PERIOD_READ,
     FINANCE_PERIOD_MANAGE,
+    FINANCE_JOURNAL_READ,
+    FINANCE_JOURNAL_POST,
+    FINANCE_JOURNAL_REVERSE,
     descriptions={
         FINANCE_ACCOUNT_READ: "Read the chart of accounts and account groups",
         FINANCE_ACCOUNT_MANAGE: "Create and edit accounts and account groups",
         FINANCE_PERIOD_READ: "Read fiscal years and periods",
         FINANCE_PERIOD_MANAGE: "Create fiscal years and open/close periods",
+        FINANCE_JOURNAL_READ: "Read journal entries and their lines",
+        FINANCE_JOURNAL_POST: "Create draft journal entries and post them",
+        FINANCE_JOURNAL_REVERSE: "Reverse posted journal entries",
     },
 )

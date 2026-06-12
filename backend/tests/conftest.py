@@ -15,7 +15,12 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from app.core.db import build_engine, build_session_factory, get_session
+from app.core.db import (
+    build_engine,
+    build_session_factory,
+    get_session,
+    get_session_factory,
+)
 from app.core.events import clear_subscriptions
 from app.core.rbac import clear_cache, current_permissions, sync_permission_catalog
 from app.core.tenancy import system_context
@@ -85,6 +90,11 @@ def app(db_engine: AsyncEngine) -> FastAPI:
                 raise
 
     application.dependency_overrides[get_session] = _override_get_session
+    # The D-013 idempotency reservation opens its own short-lived session from this factory
+    # (a real COMMIT, so concurrent duplicates collide on the PK). Point it at the per-test
+    # engine too — otherwise idempotent endpoints reserve against the production atlas.db and
+    # fail. Finance is the first module with idempotent endpoints exercised in module tests.
+    application.dependency_overrides[get_session_factory] = lambda: factory
     return application
 
 

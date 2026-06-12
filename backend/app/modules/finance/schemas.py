@@ -9,11 +9,14 @@ fields — ``normal_balance`` is optional on AccountCreate because the service d
 
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 
 from app.core.schemas import ApiModel
 from app.modules.finance.constants import (
     AccountType,
     CashFlowCategory,
+    DocumentType,
+    EntryStatus,
     NormalBalance,
     PeriodStatus,
 )
@@ -136,3 +139,90 @@ class PeriodStatusUpdate(ApiModel):
     transition explicit and auditable."""
 
     status: PeriodStatus
+
+
+# --- Journal entries (D-017) --------------------------------------------------
+# Money fields are Decimal in Python, serialized as strings (D-015); the client types them as
+# string and formats in lib/format.ts. For v1 the caller supplies only transaction amounts;
+# functional amounts equal them (single functional currency, FX in 4.3).
+
+
+class JournalLineCreate(ApiModel):
+    """One line on a draft entry. Exactly one of debit/credit is positive (the other defaults to
+    0); the service mirrors the DB one-side CHECK and rejects a two-sided line. Dimensions are
+    optional ids stored on the line for later projection/linkage."""
+
+    account_id: uuid.UUID
+    description: str | None = None
+    transaction_debit_amount: Decimal = Decimal(0)
+    transaction_credit_amount: Decimal = Decimal(0)
+    cost_center_id: uuid.UUID | None = None
+    profit_center_id: uuid.UUID | None = None
+    project_id: uuid.UUID | None = None
+    item_id: uuid.UUID | None = None
+    partner_type: str | None = None
+    partner_id: uuid.UUID | None = None
+
+
+class JournalEntryCreate(ApiModel):
+    """Create a DRAFT entry with >= 2 balanced one-sided lines (D-017). ``document_type`` defaults
+    to JOURNAL. ``currency_code`` is the single transaction currency for the whole entry."""
+
+    posting_date: date
+    currency_code: str
+    description: str | None = None
+    document_type: DocumentType = DocumentType.JOURNAL
+    lines: list[JournalLineCreate]
+
+
+class JournalEntryReverseRequest(ApiModel):
+    """Reverse a posted entry into ``reversal_date`` (must fall in an open period). The reversing
+    entry copies each line with debit/credit swapped and claims its own number (D-017)."""
+
+    reversal_date: date
+    description: str | None = None
+
+
+class JournalLineRead(ApiModel):
+    id: uuid.UUID
+    line_number: int
+    account_id: uuid.UUID
+    description: str | None
+    transaction_debit_amount: Decimal
+    transaction_credit_amount: Decimal
+    functional_debit_amount: Decimal
+    functional_credit_amount: Decimal
+    currency_code: str
+    cost_center_id: uuid.UUID | None
+    profit_center_id: uuid.UUID | None
+    project_id: uuid.UUID | None
+    item_id: uuid.UUID | None
+    partner_type: str | None
+    partner_id: uuid.UUID | None
+    is_posted: bool
+    posting_date: date | None
+    fiscal_period_id: uuid.UUID | None
+
+
+class JournalEntryRead(ApiModel):
+    """Entry header without lines — the list-row shape."""
+
+    id: uuid.UUID
+    entry_number: str | None
+    posting_date: date
+    fiscal_period_id: uuid.UUID | None
+    document_type: DocumentType
+    currency_code: str
+    description: str | None
+    status: EntryStatus
+    reverses_entry_id: uuid.UUID | None
+    reversed_by_entry_id: uuid.UUID | None
+    posted_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class JournalEntryDetail(JournalEntryRead):
+    """Entry header WITH its lines — the GET /{id} shape."""
+
+    lines: list[JournalLineRead]

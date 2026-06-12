@@ -39,7 +39,7 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 ## Phase 4 — Finance & Controlling (deepest module)
 
 - [x] 4.1 Chart of accounts (hierarchical, account types driving statements) + fiscal years/periods with open/closed states enforced at service AND DB level (per-dialect triggers)
-- [ ] 4.2 Journal engine: entry header + line tables with dimension columns (cost center, profit center, project), exactly-one-of-debit/credit DB CHECK, debits==credits per currency enforced, posted-entry immutability (DB-level), reversal mechanics, posting service + router
+- [x] 4.2 Journal engine: entry header + line tables with dimension columns (cost center, profit center, project), exactly-one-of-debit/credit DB CHECK, debits==credits per currency enforced, posted-entry immutability (DB-level), reversal mechanics, posting service + router
 - [ ] 4.3 Multi-currency: currencies + rates table, transaction/functional translation at posting, realized FX on settlement, unrealized FX revaluation run
 - [ ] 4.4 Tax engine: configurable codes (rate, jurisdiction, inclusive/exclusive) applied at line level, tax account postings
 - [ ] 4.5 Accounts Payable: vendor bills, payment runs, AP aging — all posting through the journal
