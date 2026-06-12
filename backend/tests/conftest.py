@@ -16,6 +16,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.db import build_engine, build_session_factory, get_session
+from app.core.events import clear_subscriptions
 from app.core.rbac import clear_cache, current_permissions, sync_permission_catalog
 from app.core.tenancy import system_context
 from app.main import create_app
@@ -133,6 +134,17 @@ def _clear_rbac_cache() -> Callable[[], None]:
     prior test's resolution can never bleed into the next (D-009/D-025 isolation)."""
     clear_cache()
     return clear_cache
+
+
+@pytest.fixture(autouse=True)
+def clear_event_subscriptions() -> Callable[[], None]:
+    """The D-011 subscription registry is process-global (core/events); reset it before and
+    after every test so handlers a module's handlers.py registers at import in later phases
+    cannot leak between tests (D-025 isolation). Autouse: every test starts with an empty
+    registry; tests that need handlers register them explicitly via subscribe/@on."""
+    clear_subscriptions()
+    yield clear_subscriptions
+    clear_subscriptions()
 
 
 @pytest.fixture
