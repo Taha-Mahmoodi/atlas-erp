@@ -77,6 +77,17 @@ class DocumentType(StrEnum):
     DEPRECIATION = "DEPRECIATION"
 
 
+class TaxDirection(StrEnum):
+    """Which side of a transaction a tax applies to (PLAN 4.4). OUTPUT tax is charged on a sale
+    (AR/revenue) and is a LIABILITY the tenant owes the authority — it posts to the tax code's
+    ``tax_payable_account_id``. INPUT tax is paid on a purchase (AP/expense) and is RECOVERABLE
+    from the authority — it posts to ``tax_receivable_account_id``. The calc service picks the
+    account by direction so AP/AR/Sales need only say whether they are buying or selling."""
+
+    OUTPUT = "OUTPUT"
+    INPUT = "INPUT"
+
+
 class RateKind(StrEnum):
     """Exchange-rate type (D-019). SPOT is the day's rate used for posting-time translation;
     CLOSING is the period-end rate used for unrealized-FX revaluation. Stored as the UPPER_SNAKE
@@ -169,6 +180,9 @@ FINANCE_JOURNAL_REVERSE = "finance.journal.reverse"
 # FX (D-019): manage currencies/rates/posting-defaults vs run a revaluation.
 FINANCE_FX_MANAGE = "finance.fx.manage"
 FINANCE_FX_REVALUE = "finance.fx.revalue"
+# Tax (PLAN 4.4): read the tax-code catalog vs create/edit tax codes.
+FINANCE_TAX_READ = "finance.tax.read"
+FINANCE_TAX_MANAGE = "finance.tax.manage"
 
 register_permissions(
     FINANCE_ACCOUNT_READ,
@@ -180,6 +194,8 @@ register_permissions(
     FINANCE_JOURNAL_REVERSE,
     FINANCE_FX_MANAGE,
     FINANCE_FX_REVALUE,
+    FINANCE_TAX_READ,
+    FINANCE_TAX_MANAGE,
     descriptions={
         FINANCE_ACCOUNT_READ: "Read the chart of accounts and account groups",
         FINANCE_ACCOUNT_MANAGE: "Create and edit accounts and account groups",
@@ -190,5 +206,7 @@ register_permissions(
         FINANCE_JOURNAL_REVERSE: "Reverse posted journal entries",
         FINANCE_FX_MANAGE: "Manage currencies, exchange rates and posting defaults",
         FINANCE_FX_REVALUE: "Run foreign-currency revaluation",
+        FINANCE_TAX_READ: "Read the tax-code catalog",
+        FINANCE_TAX_MANAGE: "Create and edit tax codes",
     },
 )

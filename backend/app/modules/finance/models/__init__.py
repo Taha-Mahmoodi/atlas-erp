@@ -6,6 +6,7 @@ tenancy mapper-enumeration suite) registers all tables on ``Base.metadata``.
 - ``accounts``: chart of accounts + fiscal years/periods (D-021, D-018).
 - ``journal``: the universal journal header + lines (D-017).
 - ``fx``: currencies, exchange rates, posting defaults, revaluation runs (D-019).
+- ``tax``: configurable line-level tax codes (PLAN 4.4).
 """
 
 from app.modules.finance.models.accounts import (
@@ -21,6 +22,7 @@ from app.modules.finance.models.fx import (
     PostingDefault,
 )
 from app.modules.finance.models.journal import JournalEntry, JournalLine
+from app.modules.finance.models.tax import TaxCode
 
 __all__ = [
     "Account",
@@ -33,4 +35,5 @@ __all__ = [
     "JournalEntry",
     "JournalLine",
     "PostingDefault",
+    "TaxCode",
 ]

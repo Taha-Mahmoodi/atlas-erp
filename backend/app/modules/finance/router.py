@@ -1,11 +1,10 @@
-"""Finance HTTP layer (thin): parse -> call service -> return schema (PLAN 4.1 + 4.2; FX in 4.3).
+"""Finance HTTP layer (thin): parse -> call service -> return schema (PLAN 4.1-4.4; FX + tax split).
 
 Routes are guarded by the finance permission keys (D-009). Writes commit through ``run_in_uow``
 (D-011) so audit rows ride the same transaction; the journal post/reverse actions are IDEMPOTENT
 (D-013). Tenant scoping rides the D-007 filter plus the explicit ``current.tenant_id``. Write
-results are validated into their Read schema AFTER the uow commits; validating a just-flushed
-object whose ``updated_at`` is expired would trip an async lazy-load in a sync context. Actions
-are sub-resources (STRUCTURE §7). FX endpoints (D-019) live in fx_router.py and mount here.
+results are validated into their Read schema AFTER the uow commits. Actions are sub-resources
+(STRUCTURE §7); FX (D-019) and tax (4.4) endpoints live in their own sub-routers.
 """
 
 import uuid
@@ -46,21 +45,22 @@ from app.modules.finance.schemas import (
     JournalEntryReverseRequest,
     JournalLineRead,
 )
+from app.modules.finance.tax_router import tax_router
 
 router = APIRouter(prefix="/api/v1/finance", tags=["finance"])
-router.include_router(fx_router)  # FX endpoints (D-019), kept in fx_router.py under the cap.
+# FX (D-019) + tax (4.4) sub-routers mount here, so the module is one surface at /api/v1/finance.
+router.include_router(fx_router)
+router.include_router(tax_router)
 CursorParamsDep = Depends(cursor_params)
 
-# Module-level Depends singletons (ruff B008: never call Depends/Idempotent in arg defaults).
-# Each is the D-013 reservation guard scoped to its endpoint identifier.
+# Module-level Depends singletons (ruff B008): each is the D-013 reservation guard for its endpoint.
 _PostIdempotentDep = Depends(Idempotent("finance.journal.post"))
 _ReverseIdempotentDep = Depends(Idempotent("finance.journal.reverse"))
 
 
 async def _commit[T](session: SessionDep, work: Callable[[], Awaitable[T]]) -> T:
-    """Run a service call inside the D-011 uow and return its ORM result (a one-slot holder since
-    ``run_in_uow`` returns None). The result is refreshed inside the work so server defaults
-    materialize in the async context — else a sync ``model_validate`` trips MissingGreenlet."""
+    """Run a service call inside the D-011 uow, returning its ORM result refreshed in the async
+    context so a sync ``model_validate`` never trips MissingGreenlet (twin of fx_router._commit)."""
     holder: list[T] = []
 
     async def _work() -> None:

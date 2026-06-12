@@ -3,7 +3,7 @@ fiscal year, plus bearer-token clients holding finance permissions.
 
 Factories go through the REAL service layer under the tenant context (D-025), so tenancy
 stamping and audit fire exactly as in production. The finance-permissioned clients provision
-a user, sync the catalog, and grant a role carrying the four finance keys — mirroring the
+a user, sync the catalog, and grant a role carrying the finance keys — mirroring the
 core admin_client pattern but with finance.* instead of admin.* permissions.
 """
 
@@ -31,6 +31,8 @@ from app.modules.finance.constants import (
     FINANCE_JOURNAL_REVERSE,
     FINANCE_PERIOD_MANAGE,
     FINANCE_PERIOD_READ,
+    FINANCE_TAX_MANAGE,
+    FINANCE_TAX_READ,
     AccountType,
 )
 from app.modules.finance.models import Account, FiscalYear
@@ -46,6 +48,8 @@ _FINANCE_KEYS = (
     FINANCE_JOURNAL_REVERSE,
     FINANCE_FX_MANAGE,
     FINANCE_FX_REVALUE,
+    FINANCE_TAX_READ,
+    FINANCE_TAX_MANAGE,
 )
 
 # A minimal but type-complete chart of accounts: one account per statement-deriving type.
@@ -241,7 +245,7 @@ class FinancePrincipal:
 def finance_user_factory(
     db_session: AsyncSession,
 ) -> Callable[..., "AsyncIterator[FinancePrincipal]"]:
-    """Provision a tenant + user and grant a role with the four finance permission keys,
+    """Provision a tenant + user and grant a role with the finance permission keys,
     through the real services (D-025). ``keys`` lets a test request a narrower grant (for the
     403 RBAC tests)."""
 
@@ -287,7 +291,7 @@ async def finance_client(
     client: AsyncClient,
     finance_user_factory: Callable[..., AsyncIterator[FinancePrincipal]],
 ) -> AsyncIterator[AsyncClient]:
-    """A real bearer-token client whose principal holds all four finance permissions."""
+    """A real bearer-token client whose principal holds all finance permissions."""
     principal = await finance_user_factory()
     access_token = await _login(client, principal)
     client.headers["Authorization"] = f"Bearer {access_token}"

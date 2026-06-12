@@ -19,9 +19,11 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.finance.constants import PeriodStatus, RateKind
-from app.modules.finance.models import Account, FiscalPeriod
+from app.modules.finance.constants import PeriodStatus, RateKind, TaxDirection
+from app.modules.finance.models import Account, FiscalPeriod, TaxCode
 from app.modules.finance.service import fx as _fx
+from app.modules.finance.service import tax as _tax
+from app.modules.finance.service.tax import TaxCalculation
 
 
 async def find_period_for_date(
@@ -81,3 +83,29 @@ async def functional_currency(session: AsyncSession, tenant_id: uuid.UUID) -> st
     """The tenant's functional (reporting) currency code (D-019). Exposed so other modules know the
     currency every functional amount is denominated in. Raises if none is configured."""
     return await _fx.functional_currency(session, tenant_id)
+
+
+async def get_tax_code(
+    session: AsyncSession, tenant_id: uuid.UUID, code: str
+) -> TaxCode | None:
+    """The tax code with ``code`` in the tenant's catalog, or None (PLAN 4.4). Sales/Procurement
+    resolve a line's tax code by its short key (e.g. ``'VAT20'``) through this contract rather than
+    importing finance models — finance is the bottom of the dependency order (STRUCTURE §5)."""
+    stmt = select(TaxCode).where(TaxCode.tenant_id == tenant_id, TaxCode.code == code)
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+def calculate_line_tax(
+    base_amount: Decimal,
+    tax_code: TaxCode,
+    *,
+    direction: TaxDirection,
+    currency_code: str = "USD",
+) -> TaxCalculation:
+    """Tax one line consistently for any module (PLAN 4.4). A thin, pure re-export of
+    ``service.tax.calculate_line_tax`` so Sales/Procurement compute net/tax/gross + the tax account
+    exactly as finance does — one tax engine, no duplicated math. ``base_amount`` is the gross when
+    the code is inclusive else the net; all amounts quantize to ``currency_code``'s minor unit."""
+    return _tax.calculate_line_tax(
+        base_amount, tax_code, direction=direction, currency_code=currency_code
+    )

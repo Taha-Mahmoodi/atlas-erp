@@ -55,9 +55,25 @@ from app.modules.finance.service.posting_defaults import (
     list_posting_defaults,
     set_posting_default,
 )
+from app.modules.finance.service.tax import (
+    DocumentTaxSummary,
+    TaxCalculation,
+    TaxLine,
+    calculate_document_tax,
+    calculate_line_tax,
+    create_tax_code,
+    get_tax_code,
+    list_tax_codes,
+    update_tax_code,
+)
 
 __all__ = [
+    "DocumentTaxSummary",
+    "TaxCalculation",
+    "TaxLine",
     "assert_period_closable",
+    "calculate_document_tax",
+    "calculate_line_tax",
     "close_fiscal_year",
     "close_period",
     "create_account",
@@ -66,6 +82,7 @@ __all__ = [
     "create_draft_entry",
     "create_exchange_rate",
     "create_fiscal_year",
+    "create_tax_code",
     "entry_totals",
     "functional_currency",
     "generate_periods",
@@ -75,6 +92,7 @@ __all__ = [
     "get_entry_with_lines",
     "get_posting_default",
     "get_rate",
+    "get_tax_code",
     "list_account_groups",
     "list_accounts",
     "list_currencies",
@@ -84,6 +102,7 @@ __all__ = [
     "list_fiscal_years",
     "list_posting_defaults",
     "list_revaluation_runs",
+    "list_tax_codes",
     "open_period",
     "post_entry",
     "reparent_account_group",
@@ -92,4 +111,5 @@ __all__ = [
     "set_functional_currency",
     "set_posting_default",
     "update_account",
+    "update_tax_code",
 ]
