@@ -30,7 +30,7 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 - [x] 3.3 Auth: users table, argon2 hashing, JWT access+refresh with rotation/revocation, login/refresh/logout endpoints, `get_current_user` dependency, tests
 - [x] 3.4 RBAC: roles → permissions → resources as data, permission-check dependency (`finance.journal.post` style), field-level read-masking helper, permission catalog seeding, RBAC-denial tests
 - [x] 3.5 Audit: append-only audit table (actor, tenant, entity, before/after diff, timestamp, IP), capture via session events + request middleware, tests
-- [ ] 3.6 Event bus: `core/events.py` in-process dispatcher (publish/subscribe, transactional semantics per DECISIONS), handler registration per module, tests
+- [x] 3.6 Event bus: `core/events.py` in-process dispatcher (publish/subscribe, transactional semantics per DECISIONS), handler registration per module, tests
 - [ ] 3.7 Document flow: `core/docflow.py` document registry + predecessor/successor links, chain traversal both directions, tests
 - [ ] 3.8 Numbering + idempotency + pagination: per-tenant document sequences (INV-2026-00001) with portable locking, idempotency-key infrastructure for financial/stock-document endpoints, cursor pagination helpers, tests
 
