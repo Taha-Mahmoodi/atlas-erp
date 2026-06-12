@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import actor_user_id_ctx
 from app.core.auth import decode_token
 from app.core.config import get_settings
-from app.core.db import get_session
+from app.core.db import get_session, get_session_factory
 from app.core.exceptions import AuthError
 from app.core.models import User
 from app.core.rbac import current_permissions, resolve_permissions
@@ -31,6 +31,7 @@ __all__ = [
     "SessionDep",
     "get_current_user",
     "get_session",
+    "get_session_factory",
     "get_settings",
 ]
 

@@ -30,8 +30,8 @@ class ErrorEnvelope(ApiModel):
 
 
 class Page[T](ApiModel):
-    """List envelope per D-014 — no total counts. Keyset-cursor mechanics arrive
-    with the paginate helper in a later task; this is the wire shape only."""
+    """List envelope per D-014 — no total counts. The keyset-cursor mechanics that mint
+    ``next_cursor`` live in core/pagination.paginate; this is the wire shape it returns."""
 
     items: list[T]
     next_cursor: str | None = None
