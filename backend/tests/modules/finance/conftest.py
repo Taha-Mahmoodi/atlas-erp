@@ -21,12 +21,14 @@ from app.modules.finance.models import Account, FiscalYear
 from tests.modules.finance.factories import (
     ApSetup,
     ArSetup,
+    BankSetup,
     CoSetup,
     FinancePrincipal,
     FxSetup,
     JournalSetup,
     build_ap_setup,
     build_ar_setup,
+    build_bank_setup,
     build_co_setup,
     build_fx_setup,
     build_journal_setup,
@@ -38,6 +40,7 @@ from tests.modules.finance.factories import (
 __all__ = [
     "ApSetup",
     "ArSetup",
+    "BankSetup",
     "CoSetup",
     "FinancePrincipal",
     "FxSetup",
@@ -87,6 +90,13 @@ async def co_setup(db_session: AsyncSession, tenant_a: uuid.UUID) -> CoSetup:
     """COA + a cost-allocation clearing account wired as the ``cost_allocation`` posting default +
     open 2026 year (PLAN 4.7)."""
     return await build_co_setup(db_session, tenant_a)
+
+
+@pytest.fixture
+async def bank_setup(db_session: AsyncSession, tenant_a: uuid.UUID) -> BankSetup:
+    """COA + a cash-equivalent bank account + the ``bank_unmatched_clearing`` suspense default +
+    open 2026 year (PLAN 4.9)."""
+    return await build_bank_setup(db_session, tenant_a)
 
 
 # --- Finance-permissioned HTTP clients ----------------------------------------

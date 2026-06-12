@@ -46,7 +46,7 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 - [x] 4.6 Accounts Receivable: customer invoices, receipts, dunning levels, AR aging — all posting through the journal
 - [x] 4.7 Cost centers + profit centers masters, allocation rules, allocation run posting journals
 - [x] 4.8 Statements as pure projections: Trial Balance, P&L, Balance Sheet, Cash Flow (indirect), cost-center report, margin-by-product report
-- [ ] 4.9 Bank reconciliation: bank accounts, CSV statement import (background job per PERFORMANCE §3 when >1k lines), match suggestions, clearing postings
+- [x] 4.9 Bank reconciliation: bank accounts, CSV statement import (background job per PERFORMANCE §3 when >1k lines), match suggestions, clearing postings
 - [ ] 4.10 Asset accounting lite: asset register, straight-line + declining-balance depreciation runs posting journals (bulk/set-based writes per PERFORMANCE §2)
 
 ## Phase 4P — PERFORMANCE.md integration & retrofits (mid-build addendum)

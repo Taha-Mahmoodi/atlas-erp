@@ -15,9 +15,11 @@ configurable line-level tax codes + the calculation service AP/AR/Sales call. PL
 **Accounts Payable** and **Accounts Receivable** (D-029, opaque `partner_id`): bills, payments,
 invoices, receipts, open-item clearing with realized FX, dunning and aging. PLAN 4.7 added
 **Controlling**: cost/profit centres as journal dimensions + allocation rules and runs. PLAN 4.8
-(this task) adds the **financial statements** (D-021) — trial balance, P&L, balance sheet, indirect
+added the **financial statements** (D-021) — trial balance, P&L, balance sheet, indirect
 cash flow, cost-centre report and margin-by-product — all as pure projections of ONE base aggregate
-over `fin_journal_lines`, with no stored totals anywhere.
+over `fin_journal_lines`, with no stored totals anywhere. PLAN 4.9 (this task) adds **bank
+reconciliation**: CSV statement import (background job above 1k lines, PERFORMANCE §3), match
+suggestions against posted journal lines, and clearing postings for bank-only lines.
 
 | File | Concern | Key decision |
 |---|---|---|
@@ -27,6 +29,7 @@ over `fin_journal_lines`, with no stored totals anywhere.
 | `models/fx.py` | `Currency`, `ExchangeRate`, `PostingDefault`, `FxRevaluationRun` | D-019 |
 | `models/tax.py` | `TaxCode` (configurable line-level tax codes) | PLAN 4.4 |
 | `models/controlling.py` | `CostCenter`, `ProfitCenter`, `AllocationRule`, `AllocationRuleTarget`, `AllocationRun` | PLAN 4.7, D-021 |
+| `models/bank.py` | `BankStatement`, `BankStatementLine` (imported statements for reconciliation) | PLAN 4.9, D-012 |
 | `schemas.py` | Create/Update/Read/Filter for accounts, periods, journal, **FX**, **tax** | — |
 | `service/accounts.py` | chart-of-accounts business logic | D-021 |
 | `service/periods.py` | fiscal years/periods + open/close lifecycle | D-018 |
@@ -41,9 +44,13 @@ over `fin_journal_lines`, with no stored totals anywhere.
 | `service/allocation.py` | `run_allocation` redistribution engine | PLAN 4.7, D-021 |
 | `service/statements/` | the six statement projections + `base._account_balances` (the single aggregate) + shared `grouping` | PLAN 4.8, D-021 |
 | `statements_schemas.py` / `statements_router.py` | statement Read schemas + the six read-only GET endpoints | PLAN 4.8 |
+| `service/bank_csv.py` | the bank-statement CSV contract: header, row validation, parsing | PLAN 4.9 |
+| `service/bank_import.py` | statement import (bulk line insert), the import job handler, progress/status derivation, reads | PLAN 4.9, PERF §2/§3 |
+| `service/bank_reconcile.py` | match suggestions (two rules), confirm/reject, clearing postings | PLAN 4.9 |
+| `bank_schemas.py` / `bank_router.py` | bank-reconciliation schemas + endpoints (201/202 import split) | PLAN 4.9, D-013 |
 | `events.py` | `JournalEntryPosted`, `JournalEntryReversed`, `AllocationPosted` | D-011 |
 | `queries.py` | the cross-module read interface finance **exposes** (+ `get_rate`, `get_tax_code`, `cost_center_balance`, `cost_center_exists`, `profit_center_exists`) | STRUCTURE §5 |
-| `router.py` / `fx_router.py` / `tax_router.py` / `ap_router.py` / `ar_router.py` / `co_router.py` | thin HTTP layer at `/api/v1/finance` | D-013 (idempotent post/reverse/revalue/run) |
+| `router.py` / `fx_router.py` / `tax_router.py` / `ap_router.py` / `ar_router.py` / `co_router.py` / `bank_router.py` | thin HTTP layer at `/api/v1/finance` | D-013 (idempotent post/reverse/revalue/run/import/clear) |
 
 > Money/quantity/rate exactness comes from `core/money.py` (D-015): `MoneyType`/`QuantityType`
 > store NUMERIC on Postgres and INTEGER scaled minor units on SQLite, so the balance trigger's
@@ -587,3 +594,74 @@ trigger-bearing `fin_journal_lines` table — the line-immutability trigger **su
 `cash-flow?date_from=&date_to=`, `cost-center-report?date_from=&date_to=&cost_center_id=`,
 `margin-by-product?date_from=&date_to=`. Every response carries its self-check flag (`is_balanced` /
 `is_reconciled`) so the guarantee is visible on the wire.
+
+## Bank reconciliation (PLAN 4.9)
+
+Match what the BANK says happened (`fin_bank_statements` + `fin_bank_statement_lines`) against
+what the JOURNAL says happened — without ever mutating the journal. A statement is an EXTERNAL
+document: it registers in `core_documents` (DocumentMixin) with `doc_number` NULL (D-012
+numbering covers documents Atlas issues; a statement is identified by bank account + date +
+`source_filename`).
+
+**CSV import contract** (`service/bank_csv.py` — the only v1 format; MT940/CAMT.053 parsers are
+a parity-doc later that will feed this same pipeline):
+
+```
+value_date,amount,description,counterparty_ref
+2026-03-02,100.00,Customer payment ACME,INV-1
+2026-03-05,-12.50,Bank fee,
+```
+
+- Header must match exactly; ISO-8601 dates; decimal-point amounts SIGNED from the bank
+  account's perspective (positive = money in, negative = money out); description required;
+  `counterparty_ref` optional. Amounts quantize HALF_UP to the statement currency (D-015).
+- Malformed rows are collected into a per-row error report (`details.row_errors`, 1-based data-
+  row numbers, capped at 50) and the WHOLE file is rejected `422 finance.statement_csv_invalid`
+  — no partial statements.
+- The statement must be internally consistent: `closing_balance == opening_balance + Σ(line
+  amounts)` or `422 finance.statement_unbalanced`.
+- The target account must exist AND be `is_cash_equivalent`
+  (`422 finance.bank_account_not_cash_equivalent`).
+
+**Import size threshold** (PERFORMANCE §3): `POST /bank-statements` counts the CSV's data rows —
+up to **1000** (`BANK_IMPORT_SYNC_MAX_LINES`) the import runs inline and returns `201` with the
+statement; above that it submits a `finance.bank_statement_import` job and returns
+`202 {job_id}` for `/api/v1/jobs/{id}` polling (the handler calls the SAME `import_statement`;
+the statement records its `import_job_id`). Either way the lines are written with ONE
+ORM-enabled executemany insert (PERFORMANCE §2) — a 1200-line import executes ~6 SQL statements
+total, asserted by a query-counter test. The endpoint is IDEMPOTENT (D-013): a replayed key
+returns the same statement (or the SAME job id).
+
+**Match rules** (`suggest-matches`, priority order, set-based passes over candidate maps built
+from two queries — no per-line N+1):
+
+1. exact signed amount + same date (`value_date == posting_date`);
+2. exact signed amount within ±3 days (nearest date wins; ties take the earlier posting).
+
+Candidates are POSTED journal lines on the statement's bank account in the statement currency;
+the comparison key is `transaction_debit_amount − transaction_credit_amount` (a debit to the
+bank account is money in). A journal line is consumed by at most ONE statement line tenant-wide
+(rejecting a suggestion releases it). **v1 boundary** (documented cut): no document-number-in-
+description heuristic (rule 3), no partial/many-to-one matching, no configurable tolerance, no
+auto-clearing rules engine — rules 1+2 cover the dominant exact-amount case.
+
+**Statuses.** Line: `UNMATCHED -> SUGGESTED -> MATCHED` (confirm) or back to `UNMATCHED`
+(reject); `UNMATCHED -> CLEARED` (clearing posting). A line is RESOLVED when MATCHED or
+CLEARED. Statement (derived, recomputed on every transition): `IMPORTED` (nothing resolved) ->
+`PARTIALLY_RECONCILED` (some) -> `RECONCILED` (all).
+
+**Clearing** (`/bank-statement-lines/{id}/clear`, IDEMPOTENT): for a bank-only line with no
+system-side counterpart (fees, interest) it posts a REAL journal entry through the unchanged
+D-017 protocol — money in = Dr bank / Cr contra, money out = Dr contra / Cr bank — where the
+contra defaults to the `bank_unmatched_clearing` posting default (D-019 purpose wiring) unless
+an explicit `contra_account_id` is given. The entry is `JOURNAL`-typed, gapless-numbered, and
+docflow-linked statement → `posts` → entry (D-012).
+
+**API** (`/api/v1/finance`, PERFORMANCE §6: paginated, indexed, ≤3-query lists):
+`POST /bank-statements` (`finance.bank.import`, Idempotency-Key required, 201/202 split),
+`GET /bank-statements` + `/{id}` (with progress counts) + `/{id}/lines?status=`
+(`finance.bank.read`), `POST /bank-statements/{id}/suggest-matches` (rerun-safe),
+`POST /bank-statement-lines/{id}/confirm-match` | `/reject-suggestion` | `/clear`
+(`finance.bank.reconcile`; clear requires an Idempotency-Key). Statement lists sort by
+`(statement_date DESC, id)` — deliberately no created_at seek key on SQLite (see the tracked
+core-pagination datetime issue).
