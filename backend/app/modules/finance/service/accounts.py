@@ -91,6 +91,8 @@ async def create_account(
         is_cash_equivalent=payload.is_cash_equivalent,
         account_group_id=payload.account_group_id,
         is_active=payload.is_active,
+        is_monetary=payload.is_monetary,
+        currency_code=payload.currency_code,
     )
     session.add(account)
     await session.flush()

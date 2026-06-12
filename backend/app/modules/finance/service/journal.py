@@ -39,6 +39,7 @@ from app.modules.finance.constants import (
 from app.modules.finance.events import JournalEntryPosted, JournalEntryReversed
 from app.modules.finance.models import Account, JournalEntry, JournalLine
 from app.modules.finance.schemas import JournalEntryCreate, JournalLineCreate
+from app.modules.finance.service.fx_translation import translate_entry_lines
 from app.modules.finance.service.journal_read import (
     entry_totals,
     get_entry,
@@ -169,12 +170,18 @@ async def create_draft_entry(
 
 
 async def post_entry(
-    session: AsyncSession, tenant_id: uuid.UUID, entry_id: uuid.UUID
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    entry_id: uuid.UUID,
+    *,
+    rate_override: Decimal | None = None,
 ) -> JournalEntry:
     """THE posting protocol (D-017 two-flush). Validates DRAFT + balanced, resolves + checks the
-    open period from posting_date (422 before touching the DB), claims the gapless number in this
-    transaction, then flushes the loaded lines (still DRAFT) and finally the POSTED header (balance
-    + period triggers fire there). Publishes JournalEntryPosted; the caller commits via uow."""
+    open period from posting_date (422 before touching the DB), translates foreign-currency
+    functional amounts (D-019; an explicit ``rate_override`` wins over the looked-up SPOT rate),
+    claims the gapless number in this transaction, then flushes the loaded lines (still DRAFT) and
+    finally the POSTED header (balance + period triggers fire there). Publishes JournalEntryPosted;
+    the caller commits via uow."""
     entry = await get_entry(session, tenant_id, entry_id)
     if entry.status != EntryStatus.DRAFT.value:
         raise ConflictError(
@@ -189,6 +196,12 @@ async def post_entry(
             message="A journal entry needs at least two lines",
             code="finance.journal_too_few_lines",
         )
+
+    # FX translation (D-019): recompute functional amounts at the posting rate when the entry is in
+    # a foreign currency, balancing the functional residual into the largest line. After this the
+    # functional sums (which the balance trigger checks) are exact and equal.
+    await translate_entry_lines(session, tenant_id, entry, lines, rate_override)
+
     debit, credit = entry_totals(lines)
     if debit != credit or debit <= 0:
         raise ValidationFailedError(

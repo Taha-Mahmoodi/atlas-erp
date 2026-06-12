@@ -1,11 +1,11 @@
-"""Finance HTTP layer (thin): parse -> call service -> return schema (PLAN 4.1 + 4.2).
+"""Finance HTTP layer (thin): parse -> call service -> return schema (PLAN 4.1 + 4.2; FX in 4.3).
 
 Routes are guarded by the finance permission keys (D-009). Writes commit through ``run_in_uow``
 (D-011) so audit rows ride the same transaction; the journal post/reverse actions are IDEMPOTENT
 (D-013). Tenant scoping rides the D-007 filter plus the explicit ``current.tenant_id``. Write
-results are validated into their Read schema AFTER the uow commits (``expire_on_commit=False``);
-validating a just-flushed object whose ``updated_at`` is expired would trip an async lazy-load in
-a sync serialization context. Actions are sub-resources (``/close``, ``/post``, STRUCTURE §7).
+results are validated into their Read schema AFTER the uow commits; validating a just-flushed
+object whose ``updated_at`` is expired would trip an async lazy-load in a sync context. Actions
+are sub-resources (STRUCTURE §7). FX endpoints (D-019) live in fx_router.py and mount here.
 """
 
 import uuid
@@ -29,6 +29,7 @@ from app.modules.finance.constants import (
     FINANCE_PERIOD_MANAGE,
     FINANCE_PERIOD_READ,
 )
+from app.modules.finance.fx_router import fx_router
 from app.modules.finance.schemas import (
     AccountCreate,
     AccountFilter,
@@ -47,7 +48,7 @@ from app.modules.finance.schemas import (
 )
 
 router = APIRouter(prefix="/api/v1/finance", tags=["finance"])
-
+router.include_router(fx_router)  # FX endpoints (D-019), kept in fx_router.py under the cap.
 CursorParamsDep = Depends(cursor_params)
 
 # Module-level Depends singletons (ruff B008: never call Depends/Idempotent in arg defaults).
@@ -57,10 +58,9 @@ _ReverseIdempotentDep = Depends(Idempotent("finance.journal.reverse"))
 
 
 async def _commit[T](session: SessionDep, work: Callable[[], Awaitable[T]]) -> T:
-    """Run a service call inside the D-011 uow and return its ORM result (captured in a one-slot
-    holder since ``run_in_uow`` returns None). The result is refreshed inside the work so server
-    defaults/``onupdate`` columns materialize in the async context — else the caller's sync
-    ``model_validate`` would trip an async lazy-load on an expired attribute (MissingGreenlet)."""
+    """Run a service call inside the D-011 uow and return its ORM result (a one-slot holder since
+    ``run_in_uow`` returns None). The result is refreshed inside the work so server defaults
+    materialize in the async context — else a sync ``model_validate`` trips MissingGreenlet."""
     holder: list[T] = []
 
     async def _work() -> None:

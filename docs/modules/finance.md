@@ -8,21 +8,28 @@ guide is the operator/contributor map, and it grows with each finance task (PLAN
 ## Status
 
 PLAN 4.1 laid the **schema foundation**: the chart of accounts and fiscal years/periods.
-PLAN 4.2 (this task) adds the **universal journal** (D-017) — the heart of the system — and the
-**four DB-level guard triggers** (D-018/D-017). AP/AR, payments and FX land in PLAN 4.3…4.10.
+PLAN 4.2 added the **universal journal** (D-017) — the heart of the system — and the **four
+DB-level guard triggers** (D-018/D-017). PLAN 4.3 (this task) adds **multi-currency** (D-019):
+currencies + rates, posting-time translation, unrealized-FX revaluation. AP/AR and payments land
+in PLAN 4.4…4.10.
 
 | File | Concern | Key decision |
 |---|---|---|
-| `constants.py` | account/period enums + the normal-balance mapping; `EntryStatus`, `DocumentType`; permission keys (incl. `finance.journal.read/post/reverse`) | D-021, D-018, D-017, D-009 |
-| `models/accounts.py` | `Account`, `AccountGroup`, `FiscalYear`, `FiscalPeriod` | D-021, D-018 |
+| `constants.py` | account/period/FX enums + normal-balance mapping; `EntryStatus`, `DocumentType`, `RateKind`, `FxRunStatus`; permission + posting-purpose keys | D-021, D-018, D-017, D-019, D-009 |
+| `models/accounts.py` | `Account` (+ `is_monetary`/`currency_code`), `AccountGroup`, `FiscalYear`, `FiscalPeriod` | D-021, D-018, D-019 |
 | `models/journal.py` | `JournalEntry`, `JournalLine` (the universal journal) | D-017, D-021 |
-| `schemas.py` | Create/Update/Read/Filter + journal entry/line schemas | — |
+| `models/fx.py` | `Currency`, `ExchangeRate`, `PostingDefault`, `FxRevaluationRun` | D-019 |
+| `schemas.py` | Create/Update/Read/Filter for accounts, periods, journal, **FX** | — |
 | `service/accounts.py` | chart-of-accounts business logic | D-021 |
 | `service/periods.py` | fiscal years/periods + open/close lifecycle | D-018 |
-| `service/journal.py` | draft creation, two-flush posting, reversal | D-017 |
+| `service/journal.py` | draft creation, two-flush posting (+ FX translation), reversal | D-017, D-019 |
+| `service/fx.py` | rate lookup, currency mgmt, translation | D-019 |
+| `service/fx_translation.py` | posting-time line translation + largest-remainder balancing | D-019 |
+| `service/fx_revaluation.py` | unrealized-FX revaluation run + auto-reversal | D-019 |
+| `service/posting_defaults.py` | purpose-keyed account wiring (reused by AP/AR/COGS) | D-019 |
 | `events.py` | `JournalEntryPosted`, `JournalEntryReversed` | D-011 |
-| `queries.py` | the cross-module read interface finance **exposes** | STRUCTURE §5 |
-| `router.py` | thin HTTP layer at `/api/v1/finance` | D-013 (idempotent post/reverse) |
+| `queries.py` | the cross-module read interface finance **exposes** (+ `get_rate`, `functional_currency`) | STRUCTURE §5 |
+| `router.py` / `fx_router.py` | thin HTTP layer at `/api/v1/finance` | D-013 (idempotent post/reverse/revalue) |
 
 > Money/quantity/rate exactness comes from `core/money.py` (D-015): `MoneyType`/`QuantityType`
 > store NUMERIC on Postgres and INTEGER scaled minor units on SQLite, so the balance trigger's
@@ -145,17 +152,85 @@ SQLite run + the `-m pg` Postgres run). Tokens are translated to the error envel
 `core/exceptions.py` (`finance.period_closed`/`finance.journal_unbalanced`/`finance.entry_immutable`,
 all 422).
 
+## Multi-currency (D-019)
+
+PLAN 4.3 adds transaction + functional currency with a rates table, posting-time translation, and
+an unrealized-FX revaluation run. One **functional currency** per tenant (the books' reporting
+currency); every other currency is foreign. Multi-currency is **opt-in**: a tenant with no
+functional currency configured behaves exactly as before (functional == transaction).
+
+### Currencies and rates
+
+- `fin_currencies` — the tenant currency catalog. Exactly **one** row has `is_functional` (enforced
+  by the service and by a partial unique index on `(tenant_id) WHERE is_functional` on both
+  engines). `decimal_places` drives posting rounding (USD=2, JPY=0, BHD=3).
+- `fin_exchange_rates` — a `rate` for a `(rate_date, from, to, rate_type)` tuple; `rate_type` is
+  `SPOT` (posting) or `CLOSING` (revaluation); `rate` is `RateType` (full 10-dp precision, never
+  quantized).
+- **`get_rate(session, tenant, from, to, on_date, rate_type=SPOT)`** returns the most recent rate
+  with `rate_date <= on_date` for the **direct** pair; `from == to` → 1; if only the **inverse**
+  pair is stored, `1 / inverse_rate` rounded to 10 dp (direct-or-inverse, never triangulated); a
+  missing rate raises `finance.exchange_rate_missing` (422) — **postings never guess**.
+
+### Posting-time translation with frozen functional amounts
+
+Translation happens **exactly once, at posting** (`service/fx_translation.translate_entry_lines`,
+called by `post_entry`). When the entry currency differs from the functional currency, each line's
+functional debit/credit becomes `quantize(transaction_amount × rate, functional_decimals)` HALF_UP
+at the SPOT rate for `posting_date`. Quantizing each line independently can leave the functional
+debit total a cent off the credit total — the balance trigger SUM-checks the **functional** amounts
+— so the residual is absorbed into the largest line via `core/money.allocate` (largest-remainder),
+**not** a separate rounding line (a functional-only line would violate the one-side CHECK, D-017).
+A caller may pass an explicit `rate_override` to `post_entry`, which wins over the looked-up rate
+(no header column is added, so `fin_journal_entries` and its four triggers are never altered).
+Posted lines are **never re-translated** (immutability triggers guarantee it); a reversal copies the
+original's frozen functional amounts swapped, also without re-translation.
+
+### Posting defaults (data-driven account wiring)
+
+`fin_posting_defaults` maps a **purpose** string to a GL account, so FX (and later AP/AR/COGS) post
+to configured accounts rather than hard-coded codes. `get_posting_default` raises
+`finance.posting_default_unmapped` (422) when a needed purpose is unset. FX purposes:
+`fx_realized_gain`, `fx_realized_loss`, `fx_unrealized_gain`, `fx_unrealized_loss`,
+`fx_revaluation_adjustment`.
+
+### Unrealized FX revaluation + auto-reversal
+
+`run_fx_revaluation(session, tenant, period_id, rate_date)`:
+
+1. Resolves the functional currency and **validates the next period exists and is OPEN up front**
+   (the auto-reversal posts there) — a clear `finance.fx_reval_next_period_not_open` (422) **before
+   any entry posts**.
+2. If a prior **COMPLETED** run exists for the period, reverses its entries first (append-only,
+   never delete) and marks the run `REVERSED`.
+3. For each account flagged **`is_monetary`** with a foreign `currency_code` and a non-zero foreign
+   balance as of `rate_date`: `delta = quantize(foreign_balance × CLOSING_rate, dp) − functional
+   carrying`. Posts one balanced **`FX_REVAL`** entry (adjustment account vs
+   `fx_unrealized_gain`/`fx_unrealized_loss`) plus its **auto-reversal dated day 1 of the next
+   period**, linked by a `revalues` docflow edge.
+4. Records the run `COMPLETED` in `fin_fx_revaluation_runs`.
+
+**Scope (v1):** the per-account monetary foreign balance — accounts marked `is_monetary` with a
+non-functional `currency_code`. Per-open-item AP/AR revaluation granularity is **bounded out of
+v1** (it needs the AP/AR open-item model, PLAN 4.4+) and is recorded as 'partial' in the parity
+doc; it reuses exactly this rates-table + FX-account machinery when it lands. **Realized FX** (at
+open-item clearing) is likewise deferred to AP/AR — the `fx_realized_gain`/`fx_realized_loss`
+purposes are wired now for that consumer.
+
 ## The `queries.py` contract (what other modules read)
 
-Finance exposes exactly three stable read functions (STRUCTURE §5 — everyone may import these):
+Finance exposes a thin, stable read surface (STRUCTURE §5 — everyone may import these):
 
 - `find_period_for_date(session, tenant_id, on_date) -> FiscalPeriod | None`
 - `get_period_status(session, tenant_id, on_date) -> PeriodStatus | None`
 - `account_exists(session, tenant_id, code) -> bool`
+- `get_rate(session, tenant_id, from, to, on_date, rate_type=SPOT) -> Decimal` (D-019)
+- `functional_currency(session, tenant_id) -> str` (D-019)
 
 Inventory and sales call `get_period_status` to refuse stock/sales documents dated into a closed
 period before they reach the GL; the journal calls `find_period_for_date` to resolve an entry's
-period from its posting date.
+period from its posting date; other modules price in functional terms via `get_rate` /
+`functional_currency`.
 
 ## Permissions (D-009)
 
@@ -168,8 +243,10 @@ period from its posting date.
 | `finance.journal.read` | read journal entries and their lines |
 | `finance.journal.post` | create draft entries **and** post them |
 | `finance.journal.reverse` | reverse posted entries |
+| `finance.fx.manage` | manage currencies, exchange rates, posting defaults |
+| `finance.fx.revalue` | run foreign-currency revaluation |
 
-AP, AR and payment keys are registered by their own tasks (4.3+).
+AP, AR and payment keys are registered by their own tasks (4.4+).
 
 ## API (`/api/v1/finance`)
 
@@ -185,6 +262,11 @@ AP, AR and payment keys are registered by their own tasks (4.3+).
 - `POST /journal-entries/{id}/post` and `/{id}/reverse` — action sub-resources, **idempotent**
   (D-013, require the `Idempotency-Key` header), guarded by `finance.journal.post` /
   `finance.journal.reverse`.
+- `GET/POST /currencies`, `GET/POST /exchange-rates` (list paginated), `GET/PUT /posting-defaults`
+  — guarded by `finance.fx.manage` (D-019).
+- `POST /fx-revaluation-runs` (run; **idempotent**, guarded by `finance.fx.revalue`),
+  `GET /fx-revaluation-runs` (D-019). The FX endpoints live in `fx_router.py` and mount into the
+  finance router, so the module is one surface at `/api/v1/finance`.
 
 Writes commit through `run_in_uow` (D-011), so audit rows ride the same transaction and the
 event semantics will be identical to seed/CLI once finance publishes events.
