@@ -271,3 +271,13 @@ class AuditLog(UuidPKMixin, TenantMixin, TimestampMixin, Base):
     diff: Mapped[Any] = mapped_column(JSON_VARIANT, nullable=False)
     request_id: Mapped[str | None] = mapped_column(sa.String(64), nullable=True)
     request_ip: Mapped[str | None] = mapped_column(sa.String(45), nullable=True)
+
+
+# The D-012 numbering/docflow ORM models live in their concern files (core/numbering.py,
+# core/docflow.py) to keep this file under the ~350-line soft cap, but they must register on
+# Base.metadata so every import path that loads core models (alembic env.py, the engine
+# bootstrap via core/db.py, the tenancy mapper-enumeration suite) sees them. Importing at the
+# END — after Base and the mixins are defined — breaks the cycle (those modules import from
+# here), the same trailing-import pattern core/schemas.py uses for Masked.
+from app.core import docflow as _docflow  # noqa: E402,F401
+from app.core import numbering as _numbering  # noqa: E402,F401

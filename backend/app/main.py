@@ -15,6 +15,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.audit import actor_user_id_ctx, request_id_ctx, request_ip_ctx
 from app.core.config import Settings, get_settings
+from app.core.docflow_router import router as docflow_router
 from app.core.exceptions import AtlasError, translate_db_guard_error
 from app.core.rbac import current_permissions
 from app.core.schemas import ErrorBody, ErrorEnvelope
@@ -192,6 +193,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Core platform auth endpoints (D-008): login/refresh/logout/me at /api/v1/auth.
     app.include_router(security_router)
+    # Core platform document-flow read endpoint (D-012): GET /api/v1/documents/{id}/chain.
+    app.include_router(docflow_router)
 
     return app
 
