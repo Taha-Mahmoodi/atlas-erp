@@ -1,12 +1,9 @@
 """Finance enums, the normal-balance mapping, and this module's permission keys.
 
-Enums are StrEnum so their UPPER_SNAKE values store directly as strings (STRUCTURE §7:
-"values UPPER_SNAKE stored as strings"); core columns are plain ``sa.String`` and the
-service maps to/from these classes, matching how core stores its status values (no
-``sa.Enum``). Permission keys are ``finance.entity.action`` and are registered into the
-core RBAC catalog at import (D-009) so tenants can only ever be granted keys some endpoint
-actually checks; only the keys THIS task's endpoints check are added here — journal, AP and
-AR keys arrive with their tasks (4.2+).
+Enums are StrEnum so their UPPER_SNAKE values store directly as strings (STRUCTURE §7);
+core columns are plain ``sa.String`` and the service maps to/from these classes (no
+``sa.Enum``). Permission keys are ``finance.entity.action`` and register into the core
+RBAC catalog at import (D-009) so tenants can only be granted keys an endpoint checks.
 """
 
 from enum import StrEnum
@@ -15,9 +12,8 @@ from app.core.rbac import register_permissions
 
 
 class AccountType(StrEnum):
-    """The five statement-deriving account types (D-021). All financial statements project
-    from journal lines grouped by the account's type, so this set is the minimal metadata
-    from which the trial balance, P&L, balance sheet and cash-flow statement derive."""
+    """The five statement-deriving account types (D-021) — all statements project from
+    journal lines grouped by the account's type."""
 
     ASSET = "ASSET"
     LIABILITY = "LIABILITY"
@@ -27,16 +23,15 @@ class AccountType(StrEnum):
 
 
 class NormalBalance(StrEnum):
-    """The side on which an account normally carries a positive balance. Derivable from
-    account_type but stored on the account for query simplicity (D-021)."""
+    """The side an account normally carries a positive balance on; derivable from
+    account_type but stored for query simplicity (D-021)."""
 
     DEBIT = "DEBIT"
     CREDIT = "CREDIT"
 
 
 class CashFlowCategory(StrEnum):
-    """Cash-flow-statement bucket for an account (D-021). Nullable on the account: only
-    accounts that participate in the indirect cash-flow statement carry one."""
+    """Cash-flow-statement bucket (D-021); nullable — only cash-flow accounts carry one."""
 
     OPERATING = "OPERATING"
     INVESTING = "INVESTING"
@@ -44,18 +39,16 @@ class CashFlowCategory(StrEnum):
 
 
 class PeriodStatus(StrEnum):
-    """Open/closed state of a fiscal year or period (D-018). A period (or year) that is
-    CLOSED rejects postings dated within it — enforced at the service layer now and, once
-    the journal exists (4.2), at the DB level by the period-posting trigger."""
+    """Open/closed state of a fiscal year or period (D-018); CLOSED rejects postings dated
+    within it — at the service layer and the DB period-posting trigger."""
 
     OPEN = "OPEN"
     CLOSED = "CLOSED"
 
 
 class EntryStatus(StrEnum):
-    """Lifecycle of a journal entry (D-017). DRAFT is editable; POSTED is immutable (only the
-    transition to REVERSED is allowed, with reversed_by set); REVERSED marks an entry that a
-    reversing entry has cancelled. The DB immutability trigger enforces the same transitions."""
+    """Journal-entry lifecycle (D-017): DRAFT editable; POSTED immutable (only -> REVERSED,
+    with reversed_by set); REVERSED = cancelled by a reversing entry. DB trigger matches."""
 
     DRAFT = "DRAFT"
     POSTED = "POSTED"
@@ -63,10 +56,8 @@ class EntryStatus(StrEnum):
 
 
 class DocumentType(StrEnum):
-    """Journal-entry document type (D-017). JOURNAL is a manual/general entry; the others tag
-    entries produced by specific flows so projections and the document registry can group them.
-    Stored as the UPPER_SNAKE string on the entry; the reversal of any entry preserves the
-    original's type so a reversed FX_REVAL stays an FX_REVAL pair."""
+    """Journal-entry document type (D-017): JOURNAL = manual entry; the others tag entries
+    from specific flows. A reversal preserves the original's type (FX_REVAL stays FX_REVAL)."""
 
     JOURNAL = "JOURNAL"
     AP_INVOICE = "AP_INVOICE"
@@ -78,22 +69,18 @@ class DocumentType(StrEnum):
 
 
 class TaxDirection(StrEnum):
-    """Which side of a transaction a tax applies to (PLAN 4.4). OUTPUT tax is charged on a sale
-    (AR/revenue) and is a LIABILITY the tenant owes the authority — it posts to the tax code's
-    ``tax_payable_account_id``. INPUT tax is paid on a purchase (AP/expense) and is RECOVERABLE
-    from the authority — it posts to ``tax_receivable_account_id``. The calc service picks the
-    account by direction so AP/AR/Sales need only say whether they are buying or selling."""
+    """Which side a tax applies to (PLAN 4.4): OUTPUT = charged on a sale, a liability
+    posting to ``tax_payable_account_id``; INPUT = paid on a purchase, recoverable, posting
+    to ``tax_receivable_account_id``. The calc service picks the account by direction."""
 
     OUTPUT = "OUTPUT"
     INPUT = "INPUT"
 
 
 class BillStatus(StrEnum):
-    """Lifecycle of a vendor bill (PLAN 4.5, AP). DRAFT is editable and carries no number/journal;
-    POSTED has a system number + a journal entry and an ``open_amount`` equal to the gross owed;
-    PARTIALLY_PAID/PAID track open-item clearing as payments allocate against the bill;
-    REVERSED marks a bill whose journal was reversed. Open items are keyed by an opaque
-    ``partner_id`` (D-029) — finance never references a vendor master."""
+    """Vendor-bill lifecycle (PLAN 4.5, AP): DRAFT editable, no number/journal; POSTED has
+    number + journal + ``open_amount``; PARTIALLY_PAID/PAID track clearing; REVERSED = journal
+    reversed. Open items key on an opaque ``partner_id`` (D-029)."""
 
     DRAFT = "DRAFT"
     POSTED = "POSTED"
@@ -103,9 +90,8 @@ class BillStatus(StrEnum):
 
 
 class PaymentStatus(StrEnum):
-    """Lifecycle of a vendor payment (PLAN 4.5, AP). A payment is created and posted in one step
-    (DRAFT is the transient pre-post state); POSTED has a number + a journal entry clearing the
-    allocated bills; REVERSED marks a payment whose journal was reversed."""
+    """Vendor-payment lifecycle (PLAN 4.5, AP): created+posted in one step (DRAFT transient);
+    POSTED has number + clearing journal; REVERSED = journal reversed."""
 
     DRAFT = "DRAFT"
     POSTED = "POSTED"
@@ -113,12 +99,9 @@ class PaymentStatus(StrEnum):
 
 
 class InvoiceStatus(StrEnum):
-    """Lifecycle of a customer invoice (PLAN 4.6, AR — the AP BillStatus mirror, sign flipped).
-    DRAFT is editable and carries no number/journal; POSTED has a system number + a journal entry
-    and an ``open_amount`` equal to the gross receivable; PARTIALLY_PAID/PAID track open-item
-    clearing as receipts allocate against the invoice; REVERSED marks an invoice whose journal was
-    reversed. Open items are keyed by an opaque ``partner_id`` (D-029) — finance never references a
-    customer master."""
+    """Customer-invoice lifecycle (PLAN 4.6, AR — BillStatus mirror, sign flipped): DRAFT
+    editable; POSTED has number + journal + ``open_amount``; PARTIALLY_PAID/PAID track receipt
+    clearing; REVERSED = journal reversed. Open items key on opaque ``partner_id`` (D-029)."""
 
     DRAFT = "DRAFT"
     POSTED = "POSTED"
@@ -128,10 +111,8 @@ class InvoiceStatus(StrEnum):
 
 
 class ReceiptStatus(StrEnum):
-    """Lifecycle of a customer receipt (PLAN 4.6, AR — the AP PaymentStatus mirror). A receipt is
-    created and posted in one step (DRAFT is the transient pre-post state); POSTED has a number + a
-    journal entry clearing the allocated invoices; REVERSED marks a receipt whose journal was
-    reversed."""
+    """Customer-receipt lifecycle (PLAN 4.6, AR — PaymentStatus mirror): created+posted in
+    one step (DRAFT transient); POSTED has number + clearing journal; REVERSED = reversed."""
 
     DRAFT = "DRAFT"
     POSTED = "POSTED"
@@ -139,16 +120,16 @@ class ReceiptStatus(StrEnum):
 
 
 class AllocationBasis(StrEnum):
-    """Read of allocation-rule target weights (PLAN 4.7). PERCENT must sum to 100; FIXED_WEIGHT are
-    positive numbers distributed PROPORTIONALLY. Parts sum EXACTLY via ``core.money.allocate``."""
+    """Allocation-rule target weights (PLAN 4.7): PERCENT must sum to 100; FIXED_WEIGHT are
+    positive proportional weights. Parts sum EXACTLY via ``core.money.allocate``."""
 
     PERCENT = "PERCENT"
     FIXED_WEIGHT = "FIXED_WEIGHT"
 
 
 class AllocationRunStatus(StrEnum):
-    """Lifecycle of an allocation run (PLAN 4.7): POSTED (numbered + a redistribution entry whose
-    lines carry cost_center_id so CO reporting reflects it), REVERSED, or DRAFT (transient)."""
+    """Allocation-run lifecycle (PLAN 4.7): POSTED (numbered redistribution entry with
+    cost_center_id per line), REVERSED, or DRAFT (transient)."""
 
     DRAFT = "DRAFT"
     POSTED = "POSTED"
@@ -156,28 +137,25 @@ class AllocationRunStatus(StrEnum):
 
 
 class RateKind(StrEnum):
-    """Exchange-rate type (D-019). SPOT is the day's rate used for posting-time translation;
-    CLOSING is the period-end rate used for unrealized-FX revaluation. Stored as the UPPER_SNAKE
-    string on fin_exchange_rates; get_rate filters on it so a posting and a revaluation never
-    accidentally share a rate."""
+    """Exchange-rate type (D-019): SPOT = posting-time translation; CLOSING = period-end
+    revaluation. get_rate filters on it so the two flows never share a rate."""
 
     SPOT = "SPOT"
     CLOSING = "CLOSING"
 
 
 class FxRunStatus(StrEnum):
-    """Status of an FX revaluation run (D-019). A run is COMPLETED once it has posted its
-    FX_REVAL entries and their next-period auto-reversals; re-running a period first REVERSES the
-    previous run (append-only, never delete) — marking it REVERSED — then posts a fresh
-    COMPLETED run. DRAFT is the transient pre-post state."""
+    """FX revaluation-run status (D-019): COMPLETED once FX_REVAL entries + auto-reversals
+    posted; re-running a period REVERSES the prior run (append-only) then posts a fresh
+    COMPLETED one; DRAFT is the transient pre-post state."""
 
     DRAFT = "DRAFT"
     COMPLETED = "COMPLETED"
     REVERSED = "REVERSED"
 
 
-# core_documents doc_type for a journal entry + its number sequence (D-012). Registered at creation;
-# the sequence year-resets (JE-2026-00001), claimed at posting, never at draft creation.
+# core_documents doc_type for a journal entry + its number sequence (D-012). Registered at
+# creation; the sequence year-resets (JE-2026-00001), claimed at posting, never at draft.
 JOURNAL_ENTRY_DOC_TYPE = "finance.journal_entry"
 JOURNAL_SEQUENCE_NAME = "finance.journal"
 JOURNAL_NUMBER_PREFIX = "JE"
@@ -185,13 +163,11 @@ JOURNAL_NUMBER_PADDING = 5
 
 
 # --- Accounts Payable (PLAN 4.5) ----------------------------------------------
-# core_documents doc_types for AP documents (D-012): a vendor bill + a vendor payment, each
-# registering at creation and numbering at posting; the docflow edge payment->bill records clearing.
+# Doc types (D-012): bill + payment register at creation; docflow payment->bill records clearing.
 AP_BILL_DOC_TYPE = "finance.vendor_bill"
 AP_PAYMENT_DOC_TYPE = "finance.vendor_payment"
 
-# core/numbering sequence keys + formats for AP documents (D-012). Both year-reset so numbers read
-# BILL-2026-00001 / PAY-2026-00001; claimed at posting, never at draft creation.
+# Sequences (D-012): year-reset, BILL-2026-00001 / PAY-2026-00001; claimed at posting only.
 AP_BILL_SEQUENCE_NAME = "finance.vendor_bill"
 AP_BILL_NUMBER_PREFIX = "BILL"
 AP_BILL_NUMBER_PADDING = 5
@@ -199,24 +175,21 @@ AP_PAYMENT_SEQUENCE_NAME = "finance.vendor_payment"
 AP_PAYMENT_NUMBER_PREFIX = "PAY"
 AP_PAYMENT_NUMBER_PADDING = 5
 
-# docflow link types: a posted bill links to its journal entry ('posts'); a payment links to each
-# bill it clears ('pays').
+# docflow link types: bill->journal ('posts'); payment->each bill it clears ('pays').
 AP_BILL_POSTS_LINK = "posts"
 AP_PAYMENT_PAYS_LINK = "pays"
 
-# partner_type stamped on the AP control journal line so a later AP report can filter open items by
-# partner without a finance partner master (D-029 — partner_id is opaque).
+# partner_type on the AP control line — open-item filtering without a partner master (D-029).
 AP_PARTNER_TYPE = "VENDOR"
 
 
 # --- Accounts Receivable (PLAN 4.6) -------------------------------------------
-# core_documents doc_types for AR documents (D-012), mirroring AP sign-flipped (Dr AR control / Cr
-# revenue + output tax; receipts Cr AR / Dr bank). Each registers at creation, numbers at posting.
+# Doc types (D-012), mirroring AP sign-flipped (Dr AR control / Cr revenue + output tax;
+# receipts Cr AR / Dr bank). Each registers at creation, numbers at posting.
 AR_INVOICE_DOC_TYPE = "finance.customer_invoice"
 AR_RECEIPT_DOC_TYPE = "finance.customer_receipt"
 
-# core/numbering sequence keys + formats for AR documents (D-012). Both year-reset so numbers read
-# INV-2026-00001 / RCT-2026-00001; claimed at posting, never at draft creation.
+# Sequences (D-012): year-reset, INV-2026-00001 / RCT-2026-00001; claimed at posting only.
 AR_INVOICE_SEQUENCE_NAME = "finance.customer_invoice"
 AR_INVOICE_NUMBER_PREFIX = "INV"
 AR_INVOICE_NUMBER_PADDING = 5
@@ -224,25 +197,21 @@ AR_RECEIPT_SEQUENCE_NAME = "finance.customer_receipt"
 AR_RECEIPT_NUMBER_PREFIX = "RCT"
 AR_RECEIPT_NUMBER_PADDING = 5
 
-# docflow link types: a posted invoice links to its journal entry ('posts'); a receipt links to each
-# invoice it clears ('receipts').
+# docflow link types: invoice->journal ('posts'); receipt->each invoice it clears ('receipts').
 AR_INVOICE_POSTS_LINK = "posts"
 AR_RECEIPT_RECEIPTS_LINK = "receipts"
 
-# partner_type stamped on the AR control journal line so an AR report can filter open items by
-# partner without a finance partner master (D-029 — partner_id is opaque).
+# partner_type on the AR control line — open-item filtering without a partner master (D-029).
 AR_PARTNER_TYPE = "CUSTOMER"
 
-# Dunning level day-thresholds (PLAN 4.6): an open overdue invoice reaches level N once it is at
-# least ``_DUNNING_THRESHOLDS[N-1]`` days past its due date. Ascending by construction; the highest
-# crossed bound wins. Level 0 = no dunning notice sent yet. Tune per tenant later; constant for now.
+# Dunning day-thresholds (PLAN 4.6): an overdue invoice reaches level N at >= the (N-1)th bound
+# days past due; highest crossed bound wins; level 0 = no notice yet. Constant for now.
 DUNNING_THRESHOLDS: tuple[int, ...] = (7, 30, 60)
 
 
 def dunning_level_for(days_overdue: int) -> int:
-    """The dunning level implied by ``days_overdue`` (as_of - due_date) given DUNNING_THRESHOLDS
-    (PLAN 4.6). Returns 0 when not yet at the first threshold, else the count of thresholds crossed
-    (1, 2, 3, ...). Total over any int; never raises."""
+    """The dunning level implied by ``days_overdue`` given DUNNING_THRESHOLDS (PLAN 4.6):
+    0 below the first threshold, else the count of thresholds crossed. Total; never raises."""
     level = 0
     for bound in DUNNING_THRESHOLDS:
         if days_overdue >= bound:
@@ -253,9 +222,8 @@ def dunning_level_for(days_overdue: int) -> int:
 
 
 # --- Controlling: cost/profit centers + allocations (PLAN 4.7) ----------------
-# A run posts ONE balanced entry redistributing the source cost centre's cost to its targets on the
-# CO_ALLOCATION_CLEARING posting-default account, cost_center_id per line, so CO reporting (a
-# journal projection, D-021) reflects it; the account nets to zero (credit source, debit targets).
+# A run posts ONE balanced entry redistributing the source cost centre's cost to its targets on
+# the CO_ALLOCATION_CLEARING account, cost_center_id per line; the account nets to zero.
 CO_ALLOCATION_DOC_TYPE = "finance.allocation_run"
 ALLOCATION_SEQUENCE_NAME = "finance.allocation"
 ALLOCATION_NUMBER_PREFIX = "ALLOC"
@@ -265,9 +233,8 @@ CO_ALLOCATION_CLEARING = "cost_allocation"
 
 
 # --- FX posting-default purposes (D-019) --------------------------------------
-# Data-driven account wiring keys for fin_posting_defaults, resolved to GL accounts via
-# service/fx.get_posting_default (account selection is config, not code). Realized FX is wired for
-# AP/AR (4.4+); unrealized FX + the adjustment account feed the revaluation run.
+# Data-driven account wiring keys for fin_posting_defaults, resolved via
+# service/fx.get_posting_default (account selection is config, not code).
 FX_REALIZED_GAIN = "fx_realized_gain"
 FX_REALIZED_LOSS = "fx_realized_loss"
 FX_UNREALIZED_GAIN = "fx_unrealized_gain"
@@ -285,19 +252,15 @@ FX_POSTING_PURPOSES: frozenset[str] = frozenset(
     }
 )
 
-# Every known posting-default purpose (set_posting_default accepts only these): FX + the CO
-# cost-allocation clearing account (PLAN 4.7); later phases (COGS) extend this set.
+# Every known posting-default purpose: FX + the CO clearing account; later phases extend this.
 POSTING_PURPOSES: frozenset[str] = FX_POSTING_PURPOSES | frozenset({CO_ALLOCATION_CLEARING})
 
-# docflow link type joining a revaluation run's adjustment entry to its auto-reversal. Runs are
-# tracked in fin_fx_revaluation_runs; the FX_REVAL entries register as journal documents (D-012).
+# docflow link type joining a revaluation run's adjustment entry to its auto-reversal (D-012).
 FX_REVALUES_LINK = "revalues"
 
 
-# account_type -> the side it normally carries (D-021). ASSET/EXPENSE accumulate on the
-# debit side; LIABILITY/EQUITY/REVENUE on the credit side. The service uses this to default
-# normal_balance when a caller does not supply one, so the stored value can never disagree
-# with the type.
+# account_type -> normal side (D-021): ASSET/EXPENSE debit; LIABILITY/EQUITY/REVENUE credit.
+# The service defaults normal_balance from this, so stored value never disagrees with type.
 _NORMAL_BALANCE_BY_TYPE: dict[AccountType, NormalBalance] = {
     AccountType.ASSET: NormalBalance.DEBIT,
     AccountType.EXPENSE: NormalBalance.DEBIT,
@@ -308,14 +271,11 @@ _NORMAL_BALANCE_BY_TYPE: dict[AccountType, NormalBalance] = {
 
 
 def normal_balance_for(account_type: AccountType) -> NormalBalance:
-    """The normal balance implied by an account type (D-021). Total mapping over the five
-    types, so this never raises for a valid AccountType."""
+    """The normal balance implied by an account type (D-021); total over the five types."""
     return _NORMAL_BALANCE_BY_TYPE[account_type]
 
 
-# --- Permission keys (D-009) --------------------------------------------------
-# Only the keys this task's endpoints guard. Journal/AP/AR/payment keys are registered by
-# their own tasks (4.2+) when those endpoints exist.
+# --- Permission keys (D-009) — one key per guarded endpoint action -------------
 FINANCE_ACCOUNT_READ = "finance.account.read"
 FINANCE_ACCOUNT_MANAGE = "finance.account.manage"
 FINANCE_PERIOD_READ = "finance.period.read"
@@ -333,21 +293,19 @@ FINANCE_TAX_MANAGE = "finance.tax.manage"
 FINANCE_AP_READ = "finance.ap.read"
 FINANCE_AP_MANAGE = "finance.ap.manage"
 FINANCE_AP_PAY = "finance.ap.pay"
-# Accounts Receivable (PLAN 4.6): read invoices/receipts/aging, create+post invoices, collect
-# (receipts + dunning).
+# Accounts Receivable (PLAN 4.6): read, create+post invoices, collect (receipts + dunning).
 FINANCE_AR_READ = "finance.ar.read"
 FINANCE_AR_MANAGE = "finance.ar.manage"
 FINANCE_AR_COLLECT = "finance.ar.collect"
 # Controlling (PLAN 4.7): read vs manage on cost/profit centres + allocation rules; running an
-# allocation posts a journal, so it is its own action (D-009 module.entity.action convention).
+# allocation posts a journal, so it is its own action (D-009).
 FINANCE_COST_CENTER_READ = "finance.costcenter.read"
 FINANCE_COST_CENTER_MANAGE = "finance.costcenter.manage"
 FINANCE_PROFIT_CENTER_READ = "finance.profitcenter.read"
 FINANCE_PROFIT_CENTER_MANAGE = "finance.profitcenter.manage"
 FINANCE_ALLOCATION_MANAGE = "finance.allocation.manage"
 FINANCE_ALLOCATION_RUN = "finance.allocation.run"
-# Financial statements (PLAN 4.8, D-021): read the projection statements (trial balance, P&L,
-# balance sheet, cash flow, cost-centre report, margin) — all read-only, one key gates them all.
+# Financial statements (PLAN 4.8, D-021): one read-only key gates all projection statements.
 FINANCE_STATEMENTS_READ = "finance.statements.read"
 
 register_permissions(
