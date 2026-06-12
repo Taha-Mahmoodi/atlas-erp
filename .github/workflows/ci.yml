@@ -1,0 +1,78 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [dev, main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    # PostgreSQL is the production runtime; the financial DB guards (triggers,
+    # UPDATE...RETURNING, partial indexes) must be validated on it, not only on
+    # the SQLite test engine — issue #12 shipped a Postgres-only migration bug
+    # invisible to SQLite. This service backs the migration round-trip and the
+    # pg-marked guard subset (D-022 step B).
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: atlas
+          POSTGRES_PASSWORD: atlas
+          POSTGRES_DB: atlas
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U atlas"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ATLAS_PG_URL: postgresql+asyncpg://atlas:atlas@localhost:5432/atlas
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      # The guard keeps this job (a required status check) green until the
+      # backend exists; once backend/pyproject.toml lands, lint+tests are real.
+      - name: Lint (ruff)
+        run: |
+          if [ ! -f backend/pyproject.toml ]; then echo "backend not present yet — skipping"; exit 0; fi
+          cd backend
+          uv sync --frozen
+          uv run ruff check .
+      - name: Tests (pytest, SQLite)
+        run: |
+          if [ ! -f backend/pyproject.toml ]; then echo "backend not present yet — skipping"; exit 0; fi
+          cd backend
+          uv run pytest -q -m "not pg"
+      - name: Migrations + DB guards (PostgreSQL)
+        run: |
+          if [ ! -f backend/pyproject.toml ]; then echo "backend not present yet — skipping"; exit 0; fi
+          cd backend
+          # Reversibility proof on the real engine, then the pg-marked guard subset.
+          ATLAS_DATABASE_URL="$ATLAS_PG_URL" uv run alembic upgrade head
+          ATLAS_DATABASE_URL="$ATLAS_PG_URL" uv run alembic downgrade base
+          ATLAS_DATABASE_URL="$ATLAS_PG_URL" uv run alembic upgrade head
+          ATLAS_DATABASE_URL="$ATLAS_PG_URL" uv run pytest -q -m pg
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Typecheck
+        run: |
+          if [ ! -f frontend/package.json ]; then echo "frontend not present yet — skipping"; exit 0; fi
+          cd frontend
+          npm ci
+          npm run typecheck
+      - name: Build
+        run: |
+          if [ ! -f frontend/package.json ]; then echo "frontend not present yet — skipping"; exit 0; fi
+          cd frontend
+          npm run build
