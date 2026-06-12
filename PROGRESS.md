@@ -15,3 +15,4 @@ One line per completed task, newest at the bottom. This file is the single sourc
 - [done] 2.2 Architect panel (2 domain architects + adversarial consolidator) → 20 decisions D-007..D-026 in DECISIONS.md, full spec in docs/architecture.md (643 lines)
 - [done] 2.3 STRUCTURE.md amended per D-011/D-015/D-016 (core/money.py, core/custom_fields.py, events.py import allowance); no other tree changes
 - [done] 3.1 Backend scaffold: uv project, app factory + error envelope + request-id middleware, build_engine with SQLite FK pragma, Base + naming convention, async Alembic (0001 baseline), template-copy test harness, Makefile + docker-compose — 7 tests green
+- [done] 3.2 Tenancy (D-007): core/tenancy.py do_orm_execute fail-closed filter + before_flush stamping + system_context; TenantMixin/UuidPKMixin/tenant_fk in models; adm_tenants + adm_tenant_settings (migration 0002); 18 tenancy tests incl. mapper-enumeration auto-cover + FK backstop + grep gate — 25 tests green total

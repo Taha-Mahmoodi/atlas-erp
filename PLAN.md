@@ -26,7 +26,7 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 ## Phase 3 — Core platform (`backend/app/core/`)
 
 - [x] 3.1 Backend scaffold: uv project (pyproject + uv.lock), ruff + pytest config, `app/main.py` factory, `core/config.py`, `core/db.py` (async engine/session), `core/models.py` (Base + TimestampMixin), `core/schemas.py` (error envelope, pagination bases), `core/exceptions.py`, health endpoint, Alembic init + baseline migration, test harness (`tests/conftest.py`), Makefile + docker-compose.yml (D-006)
-- [ ] 3.2 Tenancy: `core/tenancy.py` (tenant ContextVar, non-bypassable session filter, insert/update guards), `tenants` table + TenantMixin, tenant-isolation tests (tenant A reading tenant B fails)
+- [x] 3.2 Tenancy: `core/tenancy.py` (tenant ContextVar, non-bypassable session filter, insert/update guards), `tenants` table + TenantMixin, tenant-isolation tests (tenant A reading tenant B fails)
 - [ ] 3.3 Auth: users table, argon2 hashing, JWT access+refresh with rotation/revocation, login/refresh/logout endpoints, `get_current_user` dependency, tests
 - [ ] 3.4 RBAC: roles → permissions → resources as data, permission-check dependency (`finance.journal.post` style), field-level read-masking helper, permission catalog seeding, RBAC-denial tests
 - [ ] 3.5 Audit: append-only audit table (actor, tenant, entity, before/after diff, timestamp, IP), capture via session events + request middleware, tests

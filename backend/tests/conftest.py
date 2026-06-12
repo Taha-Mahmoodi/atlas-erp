@@ -2,6 +2,7 @@
 session, copied per test, so real commits are allowed and nothing leaks across tests."""
 
 import shutil
+import uuid
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 
@@ -14,7 +15,9 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.db import build_engine, build_session_factory, get_session
+from app.core.tenancy import system_context
 from app.main import create_app
+from app.modules.admin.models import Tenant
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
@@ -86,3 +89,22 @@ async def client(app: FastAPI) -> AsyncIterator[AsyncClient]:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as test_client:
         yield test_client
+
+
+async def _create_tenant(session: AsyncSession, slug: str) -> uuid.UUID:
+    # system_context mirrors the real provisioning path (D-007 sanctioned site 2).
+    with system_context():
+        tenant = Tenant(slug=slug, name=slug.replace("-", " ").title())
+        session.add(tenant)
+        await session.commit()
+    return tenant.id
+
+
+@pytest.fixture
+async def tenant_a(db_session: AsyncSession) -> uuid.UUID:
+    return await _create_tenant(db_session, "tenant-a")
+
+
+@pytest.fixture
+async def tenant_b(db_session: AsyncSession) -> uuid.UUID:
+    return await _create_tenant(db_session, "tenant-b")
