@@ -16,6 +16,8 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from app.core.config import Settings, get_settings
 from app.core.exceptions import AtlasError
 from app.core.schemas import ErrorBody, ErrorEnvelope
+from app.core.security_router import router as security_router
+from app.core.tenancy import current_tenant_id
 
 logger = logging.getLogger("atlas")
 
@@ -26,7 +28,14 @@ request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 
 class RequestIdMiddleware:
     """Pure-ASGI: one uuid4-hex request id per request, exposed via ContextVar,
-    request.state and the X-Request-ID response header."""
+    request.state and the X-Request-ID response header.
+
+    It ALSO owns the D-007 tenancy-ContextVar reset: get_current_user and the refresh
+    endpoint set current_tenant_id directly (no context manager), so this middleware
+    captures a reset token in a finally block — otherwise request A's tenant would leak
+    into request B reusing the same worker/task. The token is captured here, the var is
+    set deeper in the stack, and reset on the way out, so the worker always restarts at
+    the default (None)."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -38,6 +47,7 @@ class RequestIdMiddleware:
         request_id = uuid.uuid4().hex
         scope.setdefault("state", {})["request_id"] = request_id
         token = request_id_var.set(request_id)
+        tenant_token = current_tenant_id.set(None)
 
         async def send_with_request_id(message: Message) -> None:
             if message["type"] == "http.response.start":
@@ -47,6 +57,7 @@ class RequestIdMiddleware:
         try:
             await self.app(scope, receive, send_with_request_id)
         finally:
+            current_tenant_id.reset(tenant_token)
             request_id_var.reset(token)
 
 
@@ -134,6 +145,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get(f"{API_PREFIX}/health")
     async def health() -> dict[str, str]:
         return {"status": "ok", "env": settings.env}
+
+    # Core platform auth endpoints (D-008): login/refresh/logout/me at /api/v1/auth.
+    app.include_router(security_router)
 
     return app
 
