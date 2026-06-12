@@ -246,3 +246,65 @@ def test_cursor_codec_round_trips_and_rejects_version_mismatch() -> None:
         raise AssertionError("expected invalid_cursor")
     except ValidationFailedError as exc:
         assert exc.code == "pagination.invalid_cursor"
+
+
+async def test_datetime_desc_ties_wider_than_page_terminate_without_dupes(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    """Regression #34: server-default-era timestamps broke cursor equality on SQLite —
+    a DESC DateTime sort with ties wider than the page size returned the first page
+    forever. With Python-written canonical timestamps (TimestampMixin default=utcnow),
+    the equality arm matches and the PK tiebreaker advances the cursor. Walk every
+    page; assert termination, full coverage, and zero duplicates."""
+    shared = datetime(2026, 6, 12, 12, 0, 0, tzinfo=UTC)
+    with tenant_context(tenant_a):
+        for i in range(7):
+            setting = TenantSetting(key=f"tie-{i}", value={"i": i})
+            setting.created_at = shared
+            setting.updated_at = shared
+            db_session.add(setting)
+        await db_session.commit()
+
+        order = [OrderKey(TenantSetting.created_at, SortDirection.DESC)]
+        seen: list[uuid.UUID] = []
+        cursor = None
+        for _ in range(10):  # 7 rows / page 3 => must finish in 3 pages
+            page = await paginate(
+                db_session,
+                select(TenantSetting),
+                order_by=order,
+                pk=TenantSetting.id,
+                cursor=cursor,
+                limit=3,
+            )
+            seen.extend(row.id for row in page.items)
+            cursor = page.next_cursor
+            if cursor is None:
+                break
+        assert cursor is None, "pagination did not terminate (#34 loop)"
+        assert len(seen) == 7
+        assert len(set(seen)) == 7, "duplicate rows across pages (#34)"
+
+
+async def test_timestamps_are_python_written_with_microsecond_format(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    """Regression #34: no SQLAlchemy write may fall through to the DDL CURRENT_TIMESTAMP
+    default (second-precision on SQLite). A fresh ORM row's created_at must carry the
+    Python-written value (microsecond resolution survives the round-trip)."""
+    with tenant_context(tenant_a):
+        setting = TenantSetting(key="fmt-probe", value={})
+        db_session.add(setting)
+        await db_session.commit()
+        await db_session.refresh(setting)
+    # The DDL default would store second precision; utcnow() practically never lands on
+    # a whole second. Probabilistic but deterministic-enough: retry once if unlucky.
+    if setting.created_at.microsecond == 0:
+        with tenant_context(tenant_a):
+            probe = TenantSetting(key="fmt-probe-2", value={})
+            db_session.add(probe)
+            await db_session.commit()
+            await db_session.refresh(probe)
+        assert probe.created_at.microsecond != 0
+    else:
+        assert setting.created_at.microsecond != 0

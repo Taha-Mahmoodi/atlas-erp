@@ -1,7 +1,7 @@
 """Declarative Base with the D-022 naming convention and shared model mixins."""
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import sqlalchemy as sa
@@ -54,19 +54,33 @@ class AuditMixin:
     __audit_exclude__: frozenset[str] = frozenset()
 
 
+def utcnow() -> datetime:
+    """Canonical timestamp source for every SQLAlchemy write (#34)."""
+    return datetime.now(UTC)
+
+
 class TimestampMixin:
-    """Timezone-aware UTC stamps with server-side defaults on both engines."""
+    """Timezone-aware UTC stamps, ALWAYS Python-written (#34).
+
+    The Python ``default``/``onupdate`` fire for ORM and Core inserts alike, so every
+    stored value uses SQLAlchemy's canonical SQLite string format (six-digit
+    microseconds). The DDL ``server_default`` remains only as a fallback for raw SQL
+    outside SQLAlchemy and must never be relied on: SQLite's CURRENT_TIMESTAMP writes
+    second-precision strings whose lexicographic comparison against bound datetimes
+    breaks keyset-pagination equality — the #34 infinite-page-loop bug."""
 
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=False,
+        default=utcnow,
         server_default=sa.func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=False,
+        default=utcnow,
         server_default=sa.func.now(),
-        onupdate=sa.func.now(),
+        onupdate=utcnow,
     )
 
 
