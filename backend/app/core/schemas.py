@@ -65,6 +65,47 @@ class MeResponse(ApiModel):
     permissions: list[str]
 
 
+# --- Document-flow schemas (D-012) --------------------------------------------
+# The flow-chain read API serializes core/docflow's ChainNode/ChainEdge dataclasses.
+# Kept here (not beside the router) to match the auth-schema precedent: core platform
+# response models live in core/schemas.py, not a module.
+
+
+class DocumentRead(ApiModel):
+    """A registry entry as the API exposes it (D-012)."""
+
+    id: uuid.UUID
+    doc_type: str
+    doc_id: uuid.UUID
+    doc_number: str | None
+    status: str | None
+
+
+class DocChainNode(ApiModel):
+    """One document node in a flow chain (mirrors core/docflow.ChainNode)."""
+
+    document_id: uuid.UUID
+    doc_type: str
+    doc_id: uuid.UUID
+    doc_number: str | None
+    status: str | None
+
+
+class DocChainEdge(ApiModel):
+    """One predecessor -> successor edge in a flow chain (mirrors core/docflow.ChainEdge)."""
+
+    predecessor_document_id: uuid.UUID
+    successor_document_id: uuid.UUID
+    link_type: str | None
+
+
+class DocChainResponse(ApiModel):
+    """The full bidirectional chain the DocFlowViewer renders: nodes + edges (D-012)."""
+
+    nodes: list[DocChainNode]
+    edges: list[DocChainEdge]
+
+
 # Field-level read masking (D-009) lives in core/rbac.py with the rest of the RBAC
 # engine; re-exported here so D-009's stated home (Masked in core/schemas.py) holds and
 # module schemas import it alongside ApiModel from one surface.
@@ -72,6 +113,10 @@ from app.core.rbac import Masked  # noqa: E402 - re-export at end avoids an impo
 
 __all__ = [
     "ApiModel",
+    "DocChainEdge",
+    "DocChainNode",
+    "DocChainResponse",
+    "DocumentRead",
     "ErrorBody",
     "ErrorEnvelope",
     "LoginRequest",
