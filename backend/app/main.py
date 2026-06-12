@@ -19,6 +19,7 @@ from app.core.config import Settings, get_settings
 from app.core.docflow_router import router as docflow_router
 from app.core.exceptions import AtlasError, translate_db_guard_error
 from app.core.idempotency import REPLAYED_HEADER, IdempotencyReplay
+from app.core.jobs_router import router as jobs_router
 from app.core.rbac import current_permissions
 from app.core.schemas import ErrorBody, ErrorEnvelope
 from app.core.security_router import router as security_router
@@ -221,6 +222,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(security_router)
     # Core platform document-flow read endpoint (D-012): GET /api/v1/documents/{id}/chain.
     app.include_router(docflow_router)
+    # Core platform background-job polling (PLAN 4P.5/D-032): GET /api/v1/jobs[/{id}].
+    app.include_router(jobs_router)
     # Finance module (PLAN 4): chart of accounts + fiscal years/periods at /api/v1/finance.
     # First business module mounted; the fixed import order here is also the D-011 handler
     # registration order (finance, then inventory, ...) once modules publish/subscribe events.

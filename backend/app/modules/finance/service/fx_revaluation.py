@@ -27,17 +27,20 @@ from __future__ import annotations
 import uuid
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import docflow
 from app.core.exceptions import ValidationFailedError
+from app.core.jobs import register_job
 from app.core.pagination import DEFAULT_LIMIT, OrderKey, SortDirection, paginate
 from app.core.schemas import Page
 from app.modules.finance import queries
 from app.modules.finance.constants import (
     FX_REVALUATION_ADJUSTMENT,
+    FX_REVALUATION_JOB,
     FX_REVALUES_LINK,
     FX_UNREALIZED_GAIN,
     FX_UNREALIZED_LOSS,
@@ -332,6 +335,24 @@ async def run_fx_revaluation(
             _adjustment_lines(delta, adjustment_account_id, gain_loss),
         )
     return run
+
+
+@register_job(FX_REVALUATION_JOB)
+async def fx_revaluation_job(
+    session: AsyncSession, tenant_id: uuid.UUID, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Background-job handler (PLAN 4P.5, closes #26): a revaluation posts an adjustment +
+    reversal pair PER monetary account, so at scale it would blow a request's proxy-timeout
+    budget (PERFORMANCE §3). The endpoint submits this job; the runner executes it under the
+    submitting tenant + actor inside run_in_uow, so postings/audit/events behave exactly as
+    the old in-request call. Delegates to the unchanged :func:`run_fx_revaluation`."""
+    run = await run_fx_revaluation(
+        session,
+        tenant_id,
+        uuid.UUID(payload["fiscal_period_id"]),
+        date.fromisoformat(payload["rate_date"]),
+    )
+    return {"run_id": str(run.id), "status": run.status}
 
 
 async def list_revaluation_runs(

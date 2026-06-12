@@ -13,6 +13,7 @@ from decimal import Decimal
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.jobs import JobStatus, wait_for_jobs
 from app.core.tenancy import tenant_context
 from app.modules.finance import service
 from app.modules.finance.constants import (
@@ -130,9 +131,12 @@ async def test_post_bill_is_idempotent_over_http(
     assert first.json()["bill_number"] == second.json()["bill_number"]
 
 
-async def test_payment_run_pays_due_bills(
+async def test_payment_run_returns_202_and_pays_due_bills_in_background(
     finance_client: AsyncClient, db_session: AsyncSession
 ) -> None:
+    """The #26 contract: POST /payment-runs returns 202 {job_id, PENDING}; the background job
+    completes, its result carries the created payment, and the business outcome is unchanged
+    (the due bill ends PAID with one posted payment)."""
     tenant_id = await _tenant_of(finance_client)
     ids = await _bootstrap(db_session, tenant_id)
     partner = str(uuid.uuid4())
@@ -148,8 +152,31 @@ async def test_payment_run_pays_due_bills(
         json={"up_to_due_date": "2026-03-31", "bank_account_id": ids["1000"]},
         headers={"Idempotency-Key": "run-1"},
     )
-    assert run.status_code == 201, run.text
-    assert len(run.json()["payments"]) == 1
+    assert run.status_code == 202, run.text
+    assert run.json()["status"] == JobStatus.PENDING.value
+    job_id = run.json()["job_id"]
+    # A replayed key returns the SAME job id — the run cannot be submitted twice (D-013).
+    replay = await finance_client.post(
+        "/api/v1/finance/payment-runs",
+        json={"up_to_due_date": "2026-03-31", "bank_account_id": ids["1000"]},
+        headers={"Idempotency-Key": "run-1"},
+    )
+    assert replay.status_code == 202
+    assert replay.json()["job_id"] == job_id
+
+    await wait_for_jobs()
+    job = await finance_client.get(f"/api/v1/jobs/{job_id}")
+    assert job.status_code == 200, job.text
+    assert job.json()["status"] == JobStatus.COMPLETED.value
+    assert job.json()["result"]["payment_count"] == 1
+    assert len(job.json()["result"]["payment_ids"]) == 1
+
+    # Business outcomes unchanged from the old synchronous run: the bill is fully paid.
+    detail = await finance_client.get(f"/api/v1/finance/vendor-bills/{bill_id}")
+    assert detail.json()["status"] == "PAID"
+    assert Decimal(detail.json()["open_amount"]) == Decimal("0")
+    payments = await finance_client.get("/api/v1/finance/vendor-payments")
+    assert [p["id"] for p in payments.json()["items"]] == job.json()["result"]["payment_ids"]
 
 
 async def test_ap_aging_endpoint(
