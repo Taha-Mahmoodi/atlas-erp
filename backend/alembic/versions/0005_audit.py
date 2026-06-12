@@ -22,6 +22,7 @@ re-executing this trigger DDL afterwards because SQLite copy-rebuild silently dr
 import sqlalchemy as sa
 from alembic import op
 
+from app.core.db_guards import create_abort_trigger, drop_function, drop_trigger
 from app.core.models import JSON_VARIANT
 
 # revision identifiers, used by Alembic.
@@ -34,35 +35,7 @@ _TABLE = "core_audit_log"
 _TRG_NO_UPDATE = "trg_core_audit_log_no_update"
 _TRG_NO_DELETE = "trg_core_audit_log_no_delete"
 _GUARD_FN = "core_audit_log_append_only"
-
-# Postgres: one plpgsql function reused by both triggers; RAISE surfaces through asyncpg
-# carrying the token. The function is created idempotently and dropped on downgrade.
-_PG_FUNCTION = f"""
-CREATE OR REPLACE FUNCTION {_GUARD_FN}() RETURNS trigger AS $$
-BEGIN
-    RAISE EXCEPTION 'ATLAS_AUDIT_APPEND_ONLY';
-END;
-$$ LANGUAGE plpgsql;
-"""
-_PG_TRG_UPDATE = (
-    f"CREATE TRIGGER {_TRG_NO_UPDATE} BEFORE UPDATE ON {_TABLE} "
-    f"FOR EACH ROW EXECUTE FUNCTION {_GUARD_FN}();"
-)
-_PG_TRG_DELETE = (
-    f"CREATE TRIGGER {_TRG_NO_DELETE} BEFORE DELETE ON {_TABLE} "
-    f"FOR EACH ROW EXECUTE FUNCTION {_GUARD_FN}();"
-)
-
-# SQLite: BEFORE UPDATE/DELETE triggers that RAISE(ABORT); the token surfaces as an
-# IntegrityError carrying the message.
-_SQLITE_TRG_UPDATE = (
-    f"CREATE TRIGGER {_TRG_NO_UPDATE} BEFORE UPDATE ON {_TABLE} "
-    f"BEGIN SELECT RAISE(ABORT, 'ATLAS_AUDIT_APPEND_ONLY'); END;"
-)
-_SQLITE_TRG_DELETE = (
-    f"CREATE TRIGGER {_TRG_NO_DELETE} BEFORE DELETE ON {_TABLE} "
-    f"BEGIN SELECT RAISE(ABORT, 'ATLAS_AUDIT_APPEND_ONLY'); END;"
-)
+_TOKEN = "ATLAS_AUDIT_APPEND_ONLY"
 
 
 def upgrade() -> None:
@@ -93,25 +66,24 @@ def upgrade() -> None:
     )
     op.create_index("ix_core_audit_log_tenant_id_created_at", _TABLE, ["tenant_id", "created_at"])
 
-    op.execute(f"DROP TRIGGER IF EXISTS {_TRG_NO_UPDATE}")
-    op.execute(f"DROP TRIGGER IF EXISTS {_TRG_NO_DELETE}")
+    drop_trigger(op, _TRG_NO_UPDATE, _TABLE)
+    drop_trigger(op, _TRG_NO_DELETE, _TABLE)
+    create_abort_trigger(
+        op, name=_TRG_NO_UPDATE, table=_TABLE, event="UPDATE", token=_TOKEN, function_name=_GUARD_FN
+    )
+    create_abort_trigger(
+        op, name=_TRG_NO_DELETE, table=_TABLE, event="DELETE", token=_TOKEN, function_name=_GUARD_FN
+    )
     if op.get_bind().dialect.name == "postgresql":
-        op.execute(_PG_FUNCTION)
-        op.execute(_PG_TRG_UPDATE)
-        op.execute(_PG_TRG_DELETE)
         # Defense in depth (D-010): the app role cannot mutate audit rows even if a
         # trigger were dropped. Scoped to the current role so it stays portable.
         op.execute(f"REVOKE UPDATE, DELETE ON {_TABLE} FROM CURRENT_USER")
-    else:
-        op.execute(_SQLITE_TRG_UPDATE)
-        op.execute(_SQLITE_TRG_DELETE)
 
 
 def downgrade() -> None:
-    op.execute(f"DROP TRIGGER IF EXISTS {_TRG_NO_UPDATE}")
-    op.execute(f"DROP TRIGGER IF EXISTS {_TRG_NO_DELETE}")
-    if op.get_bind().dialect.name == "postgresql":
-        op.execute(f"DROP FUNCTION IF EXISTS {_GUARD_FN}()")
+    drop_trigger(op, _TRG_NO_UPDATE, _TABLE)
+    drop_trigger(op, _TRG_NO_DELETE, _TABLE)
+    drop_function(op, _GUARD_FN)
     op.drop_index("ix_core_audit_log_tenant_id_created_at", table_name=_TABLE)
     op.drop_index("ix_core_audit_log_tenant_id_entity_table_entity_id", table_name=_TABLE)
     op.drop_index(op.f("ix_core_audit_log_tenant_id"), table_name=_TABLE)
