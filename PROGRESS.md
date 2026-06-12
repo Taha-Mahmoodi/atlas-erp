@@ -11,3 +11,6 @@ One line per completed task, newest at the bottom. This file is the single sourc
 - [done] 0.7 PR #1 squash-merged to `dev`; branch protection live on `main`+`dev` (required checks backend+frontend, enforce_admins, no force-push)
 - [done] 1.1 12 parallel research agents covered all S/4HANA areas from live web sources (June 2026)
 - [done] 1.2 docs/research/s4hana-parity.md: 139 capabilities mapped — 45 full / 48 partial / 46 out-of-scope, every cut with reason + later path
+- [done] 2.1 PLAN.md expanded: 50 tasks across Phases 3–17, one task = one PR, promotion milestones fixed
+- [done] 2.2 Architect panel (2 domain architects + adversarial consolidator) → 20 decisions D-007..D-026 in DECISIONS.md, full spec in docs/architecture.md (643 lines)
+- [done] 2.3 STRUCTURE.md amended per D-011/D-015/D-016 (core/money.py, core/custom_fields.py, events.py import allowance); no other tree changes
