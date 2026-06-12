@@ -91,12 +91,12 @@ async def login(
         raise AuthError()
 
     # Upgrade the stored hash if the argon2 parameters strengthened since it was made.
+    # Mutate the LOADED object, not an ORM bulk update(): the D-010 audit bulk-write guard
+    # forbids ORM update()/delete() on AuditMixin models (User is audited). password_hash is
+    # in User.__audit_exclude__, so this flush writes no audit row — credentials never leak
+    # into the trail (D-010 v1 policy: mutate auditable entities via loaded objects).
     if auth.needs_rehash(user.password_hash):
-        new_hash = await auth.hash_password_async(payload.password)
-        with system_context():
-            await session.execute(
-                update(User).where(User.id == user.id).values(password_hash=new_hash)
-            )
+        user.password_hash = await auth.hash_password_async(payload.password)
 
     now = auth.now_utc()
     sid = uuid.uuid4()

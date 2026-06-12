@@ -14,6 +14,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import actor_user_id_ctx
 from app.core.auth import decode_token
 from app.core.config import get_settings
 from app.core.db import get_session
@@ -93,6 +94,9 @@ async def get_current_user(
     # Serialization-time masking (D-009) reads this ContextVar; the middleware resets it
     # in a finally block alongside current_tenant_id so it never leaks across requests.
     current_permissions.set(permissions)
+    # D-010 audit context: now that the principal is known, stamp the actor onto every
+    # audit row this request writes. The middleware seeded it None (system) and resets it.
+    actor_user_id_ctx.set(user.id)
 
     return CurrentUser(
         user_id=user.id,

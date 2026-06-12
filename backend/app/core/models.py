@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
@@ -39,6 +40,18 @@ class TenantMixin:
     @declared_attr
     def tenant_id(cls) -> Mapped[uuid.UUID]:
         return mapped_column(sa.Uuid, nullable=False, index=True)
+
+
+class AuditMixin:
+    """Marker mixin (D-010): tags a model for split-phase audit capture. It adds NO
+    columns — the audit listeners in core/audit.py test ``isinstance(obj, AuditMixin)``
+    to decide which INSERT/UPDATE/DELETE flushes land in core_audit_log. Per-column
+    opt-outs are declared on the model via ``__audit_exclude__`` (a frozenset of
+    attribute names); ``password_hash`` is excluded there on User."""
+
+    # Attribute names never written to the diff (D-010: password_hash always). Models
+    # override by setting their own frozenset; the listeners read it via getattr.
+    __audit_exclude__: frozenset[str] = frozenset()
 
 
 class TimestampMixin:
@@ -82,13 +95,16 @@ def tenant_unique() -> sa.UniqueConstraint:
     return sa.UniqueConstraint("tenant_id", "id")
 
 
-class User(UuidPKMixin, TenantMixin, TimestampMixin, Base):
+class User(UuidPKMixin, TenantMixin, AuditMixin, TimestampMixin, Base):
     """Auth principal (D-008). Cross-cutting platform entity, so it lives in core
     (STRUCTURE §2 litmus: users are not a business concept). Provisioning is owned
     by modules/admin (PLAN 14); login lookup runs under system_context (D-007 site 1).
-    HR compensation/PII masking is HR's concern later — these rows are credentials only."""
+    HR compensation/PII masking is HR's concern later — these rows are credentials only.
+    Audited (D-010): security-relevant; password_hash is excluded from every diff."""
 
     __tablename__ = "core_users"
+    # D-010: never write the credential into the audit diff (insert, update, or delete).
+    __audit_exclude__ = frozenset({"password_hash"})
     __table_args__ = (
         # Explicit uq name: the D-022 convention keys on column 0 (tenant_id) only and
         # would collide with tenant_unique() below.
@@ -154,9 +170,10 @@ class Permission(UuidPKMixin, Base):
     description: Mapped[str | None] = mapped_column(sa.String(300), nullable=True)
 
 
-class Role(UuidPKMixin, TenantMixin, TimestampMixin, Base):
+class Role(UuidPKMixin, TenantMixin, AuditMixin, TimestampMixin, Base):
     """Tenant-scoped role (D-009): each tenant defines its own roles. is_system marks
-    roles seeded from industry templates at provisioning (PLAN 14)."""
+    roles seeded from industry templates at provisioning (PLAN 14). Audited (D-010):
+    role definitions are security-relevant."""
 
     __tablename__ = "core_roles"
     __table_args__ = (
@@ -172,10 +189,11 @@ class Role(UuidPKMixin, TenantMixin, TimestampMixin, Base):
     )
 
 
-class RolePermission(UuidPKMixin, TenantMixin, TimestampMixin, Base):
+class RolePermission(UuidPKMixin, TenantMixin, AuditMixin, TimestampMixin, Base):
     """Role-to-permission grant (D-009). TenantMixin so the role side is tenant-filtered
     and stamped; permission_id points at the GLOBAL catalog (no tenant composite). The
-    composite tenant_fk on role_id keeps a grant from referencing another tenant's role."""
+    composite tenant_fk on role_id keeps a grant from referencing another tenant's role.
+    Audited (D-010): grants change effective authority."""
 
     __tablename__ = "core_role_permissions"
     __table_args__ = (
@@ -195,10 +213,10 @@ class RolePermission(UuidPKMixin, TenantMixin, TimestampMixin, Base):
     permission_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, nullable=False)
 
 
-class UserRole(UuidPKMixin, TenantMixin, TimestampMixin, Base):
+class UserRole(UuidPKMixin, TenantMixin, AuditMixin, TimestampMixin, Base):
     """User-to-role assignment (D-009). Both sides are tenant-scoped, so both carry the
     composite tenant_fk backstop: a user can never be assigned a role from another
-    tenant."""
+    tenant. Audited (D-010): assignments change effective authority."""
 
     __tablename__ = "core_user_roles"
     __table_args__ = (
@@ -213,3 +231,43 @@ class UserRole(UuidPKMixin, TenantMixin, TimestampMixin, Base):
 
     user_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, nullable=False)
     role_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, nullable=False)
+
+
+class AuditLog(UuidPKMixin, TenantMixin, TimestampMixin, Base):
+    """Append-only audit trail (D-010). Deliberately NOT AuditMixin — auditing the audit
+    log would recurse on every flush. tenant_id is the CHANGED row's tenant (every audited
+    model is TenantMixin, so it always exists); created_at is when the row was written.
+
+    Deviation from D-010's literal schema (bigint id, NULLABLE tenant_id, `source`
+    column): this build follows the binding PLAN 3.5 spec — UuidPKMixin + TenantMixin so
+    reads are tenant-isolated through the ordinary D-007 filter, action stored UPPER_SNAKE.
+    Reads run through the ORM, so the D-007 filter gives tenant isolation for free; the
+    Core writer in core/audit.py sets tenant_id explicitly (it bypasses ORM stamping).
+
+    Append-only is enforced at the DB by per-dialect triggers (migration 0005): any UPDATE
+    or DELETE raises 'ATLAS_AUDIT_APPEND_ONLY', translated to an envelope by core/exceptions.
+    Excluded from capture: AuditLog itself (recursion) and RefreshSession (high-churn,
+    low-value token state — documented exclusion, never tagged AuditMixin)."""
+
+    __tablename__ = "core_audit_log"
+    __table_args__ = (
+        # Both composite indexes lead with tenant_id, so the D-022 convention (keyed on
+        # column 0) would collide — name them explicitly. Read paths: "history for one
+        # entity" and "tenant activity over time".
+        sa.Index(
+            "ix_core_audit_log_tenant_id_entity_table_entity_id",
+            "tenant_id",
+            "entity_table",
+            "entity_id",
+        ),
+        sa.Index("ix_core_audit_log_tenant_id_created_at", "tenant_id", "created_at"),
+    )
+
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(sa.Uuid, nullable=True)
+    entity_table: Mapped[str] = mapped_column(sa.String(100), nullable=False)
+    # Stringified PK (UUIDs today, composite/int keys later) — kept text for portability.
+    entity_id: Mapped[str] = mapped_column(sa.String(100), nullable=False)
+    action: Mapped[str] = mapped_column(sa.String(10), nullable=False)
+    diff: Mapped[Any] = mapped_column(JSON_VARIANT, nullable=False)
+    request_id: Mapped[str | None] = mapped_column(sa.String(64), nullable=True)
+    request_ip: Mapped[str | None] = mapped_column(sa.String(45), nullable=True)
