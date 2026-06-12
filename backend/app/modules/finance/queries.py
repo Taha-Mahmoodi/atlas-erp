@@ -16,7 +16,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.finance.constants import (
@@ -28,8 +28,11 @@ from app.modules.finance.constants import (
 )
 from app.modules.finance.models import (
     Account,
+    CostCenter,
     CustomerInvoice,
     FiscalPeriod,
+    JournalLine,
+    ProfitCenter,
     TaxCode,
     VendorBill,
 )
@@ -185,3 +188,57 @@ async def customer_open_balance(
     partner with no open invoices."""
     invoices = await get_open_customer_invoices(session, tenant_id, partner_id)
     return sum((Decimal(str(inv.open_amount)) for inv in invoices), Decimal(0))
+
+
+# --- Controlling: dimension validation + cost-centre balance (PLAN 4.7) -------
+
+
+async def cost_center_exists(
+    session: AsyncSession, tenant_id: uuid.UUID, cost_center_id: uuid.UUID
+) -> bool:
+    """Whether a cost centre with ``cost_center_id`` exists in the tenant. The journal posting flow
+    calls this to validate a line's ``cost_center_id`` dimension before the line is written —
+    service-level dimension integrity replacing the absent FK on the trigger-bearing journal-lines
+    table (D-022)."""
+    stmt = select(CostCenter.id).where(
+        CostCenter.tenant_id == tenant_id, CostCenter.id == cost_center_id
+    )
+    return (await session.execute(stmt)).first() is not None
+
+
+async def profit_center_exists(
+    session: AsyncSession, tenant_id: uuid.UUID, profit_center_id: uuid.UUID
+) -> bool:
+    """Whether a profit centre with ``profit_center_id`` exists in the tenant. The companion to
+    ``cost_center_exists`` for the journal line's ``profit_center_id`` dimension (D-022)."""
+    stmt = select(ProfitCenter.id).where(
+        ProfitCenter.tenant_id == tenant_id, ProfitCenter.id == profit_center_id
+    )
+    return (await session.execute(stmt)).first() is not None
+
+
+async def cost_center_balance(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    cost_center_id: uuid.UUID,
+    period_id: uuid.UUID,
+) -> Decimal:
+    """The cost centre's NET functional balance for a fiscal period (PLAN 4.7): SUM over POSTED
+    journal lines carrying this ``cost_center_id`` in ``period_id`` of (functional debit minus
+    functional credit). This is the amount ``run_allocation`` redistributes — CO is a projection of
+    the journal (D-021), so the balance is derived from journal lines, never a stored total.
+    MoneyType type propagation keeps the SUM exact on both engines (D-015); returns 0 when none."""
+    debit = func.coalesce(
+        func.sum(JournalLine.functional_debit_amount), 0
+    )
+    credit = func.coalesce(
+        func.sum(JournalLine.functional_credit_amount), 0
+    )
+    stmt = select(debit - credit).where(
+        JournalLine.tenant_id == tenant_id,
+        JournalLine.cost_center_id == cost_center_id,
+        JournalLine.fiscal_period_id == period_id,
+        JournalLine.is_posted.is_(True),
+    )
+    result = (await session.execute(stmt)).scalar_one()
+    return Decimal(str(result)) if result is not None else Decimal(0)

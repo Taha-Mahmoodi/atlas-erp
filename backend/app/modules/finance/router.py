@@ -21,6 +21,7 @@ from app.core.schemas import Page
 from app.modules.finance import service
 from app.modules.finance.ap_router import ap_router
 from app.modules.finance.ar_router import ar_router
+from app.modules.finance.co_router import co_router
 from app.modules.finance.constants import (
     FINANCE_ACCOUNT_MANAGE,
     FINANCE_ACCOUNT_READ,
@@ -50,8 +51,8 @@ from app.modules.finance.schemas import (
 from app.modules.finance.tax_router import tax_router
 
 router = APIRouter(prefix="/api/v1/finance", tags=["finance"])
-# FX (D-019), tax (4.4), AP (4.5) + AR (4.6) sub-routers mount here, so the module is one surface.
-for _sub in (fx_router, tax_router, ap_router, ar_router):
+# FX (4.3), tax (4.4), AP (4.5), AR (4.6) + controlling (4.7) sub-routers mount here (one surface).
+for _sub in (fx_router, tax_router, ap_router, ar_router, co_router):
     router.include_router(_sub)
 CursorParamsDep = Depends(cursor_params)
 # Module-level Depends singletons (ruff B008): each is the D-013 reservation guard for its endpoint.
@@ -153,8 +154,7 @@ async def update_account(
     session: SessionDep,
 ) -> AccountRead:
     account = await _commit(
-        session,
-        lambda: service.update_account(session, current.tenant_id, account_id, payload),
+        session, lambda: service.update_account(session, current.tenant_id, account_id, payload)
     )
     return AccountRead.model_validate(account)
 
@@ -235,9 +235,7 @@ async def list_fiscal_periods(
     session: SessionDep,
     fiscal_year_id: uuid.UUID | None = None,
 ) -> list[FiscalPeriodRead]:
-    periods = await service.list_fiscal_periods(
-        session, current.tenant_id, fiscal_year_id
-    )
+    periods = await service.list_fiscal_periods(session, current.tenant_id, fiscal_year_id)
     return [FiscalPeriodRead.model_validate(period) for period in periods]
 
 

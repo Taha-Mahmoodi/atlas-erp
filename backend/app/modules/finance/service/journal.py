@@ -19,7 +19,6 @@ import uuid
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import docflow
@@ -37,60 +36,22 @@ from app.modules.finance.constants import (
     PeriodStatus,
 )
 from app.modules.finance.events import JournalEntryPosted, JournalEntryReversed
-from app.modules.finance.models import Account, JournalEntry, JournalLine
-from app.modules.finance.schemas import JournalEntryCreate, JournalLineCreate
+from app.modules.finance.models import JournalEntry, JournalLine
+from app.modules.finance.schemas import JournalEntryCreate
 from app.modules.finance.service.fx_translation import translate_entry_lines
 from app.modules.finance.service.journal_read import (
     entry_totals,
     get_entry,
     load_lines,
 )
+from app.modules.finance.service.journal_validate import (
+    assert_line_one_sided,
+    require_dimensions,
+    require_postable_accounts,
+)
 
 # core/docflow link type for the reverses-edge (D-012 vocabulary).
 _REVERSES_LINK = "reverses"
-
-
-def _assert_line_one_sided(payload: JournalLineCreate, line_number: int) -> None:
-    debit = payload.transaction_debit_amount
-    credit = payload.transaction_credit_amount
-    one_sided = (debit > 0 and credit == 0) or (credit > 0 and debit == 0)
-    if not one_sided:
-        raise ValidationFailedError(
-            message=(
-                f"Line {line_number} must have exactly one of debit/credit positive "
-                "(the other zero)"
-            ),
-            code="finance.journal_line_not_one_sided",
-            details={"line_number": line_number},
-        )
-
-
-async def _require_postable_accounts(
-    session: AsyncSession, tenant_id: uuid.UUID, account_ids: set[uuid.UUID]
-) -> None:
-    """Every referenced account must exist in this tenant AND be postable (leaf). One query."""
-    rows = (
-        await session.execute(
-            select(Account.id, Account.is_postable).where(
-                Account.tenant_id == tenant_id, Account.id.in_(account_ids)
-            )
-        )
-    ).all()
-    found = {row[0]: row[1] for row in rows}
-    missing = [str(aid) for aid in account_ids if aid not in found]
-    if missing:
-        raise ValidationFailedError(
-            message="One or more lines reference an unknown account",
-            code="finance.journal_account_not_found",
-            details={"account_ids": missing},
-        )
-    not_postable = [str(aid) for aid, postable in found.items() if not postable]
-    if not_postable:
-        raise ValidationFailedError(
-            message="One or more lines reference a non-postable account",
-            code="finance.journal_account_not_postable",
-            details={"account_ids": not_postable},
-        )
 
 
 async def create_draft_entry(
@@ -101,7 +62,9 @@ async def create_draft_entry(
     functional_amounts: list[tuple[Decimal, Decimal]] | None = None,
 ) -> JournalEntry:
     """Create a DRAFT entry + lines (D-017). Validates: >= 2 lines, each one-sided, all accounts
-    exist + postable + same tenant. Registers the document (no number; claimed at posting, D-012).
+    exist + postable + same tenant, and any cost-/profit-centre dimension exists in the tenant
+    (PLAN 4.7, the service-level integrity replacing the absent FK on the trigger-bearing
+    journal-lines table per D-022). Registers the document (no number; claimed at posting, D-012).
     Does NOT claim a number / resolve the period — both at posting.
 
     Default: functional == transaction, balanced in TRANSACTION terms (the posting protocol then
@@ -115,7 +78,7 @@ async def create_draft_entry(
         )
 
     for index, line in enumerate(payload.lines, start=1):
-        _assert_line_one_sided(line, index)
+        assert_line_one_sided(line, index)
     # Balance on transaction sides by default, on explicit functional sides for a (mixed-currency)
     # clearing entry where only functional must balance.
     sides = functional_amounts or [
@@ -131,7 +94,8 @@ async def create_draft_entry(
         )
 
     account_ids = {line.account_id for line in payload.lines}
-    await _require_postable_accounts(session, tenant_id, account_ids)
+    await require_postable_accounts(session, tenant_id, account_ids)
+    await require_dimensions(session, tenant_id, payload)
     entry_id = uuid.uuid4()
     document = await docflow.register_document(
         session,

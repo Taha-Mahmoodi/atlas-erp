@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ValidationFailedError
-from app.modules.finance.constants import FX_POSTING_PURPOSES
+from app.modules.finance.constants import POSTING_PURPOSES
 from app.modules.finance.models import Account, PostingDefault
 
 
@@ -48,7 +48,7 @@ async def set_posting_default(
     """Map (or remap) a purpose to an account (D-019). Validates the purpose is a known FX purpose
     and the account exists in the tenant + is postable; upserts the (tenant, purpose) row.
     Loaded-object mutation on remap so audit captures the change."""
-    if purpose not in FX_POSTING_PURPOSES:
+    if purpose not in POSTING_PURPOSES:
         raise ValidationFailedError(
             message=f"Unknown posting purpose '{purpose}'",
             code="finance.posting_default_unknown_purpose",

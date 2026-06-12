@@ -93,6 +93,24 @@ class CustomerInvoicePosted(DomainEvent):
     net_amount: Decimal
 
 
+class AllocationPosted(DomainEvent):
+    """A cost allocation run posted its redistribution journal entry (PLAN 4.7). Fired inside the
+    posting transaction; carries the run id, its journal entry, the rule, the period, and the net
+    amount moved from the source cost centre to its targets so a subscriber (CO reporting cache,
+    later) can react without a finance read. The journal entry carries cost_center_id per line, so
+    CO reporting (a projection of the universal journal, D-021) reflects the reallocation."""
+
+    key: ClassVar[str] = "finance.allocation.posted"
+
+    allocation_run_id: uuid.UUID
+    allocation_rule_id: uuid.UUID
+    journal_entry_id: uuid.UUID
+    fiscal_period_id: uuid.UUID
+    source_cost_center_id: uuid.UUID
+    allocated_amount: Decimal
+    target_cost_center_ids: tuple[uuid.UUID, ...]
+
+
 class CustomerReceiptPosted(DomainEvent):
     """A customer receipt was posted, clearing one or more open invoices (PLAN 4.6, AR). Carries the
     opaque ``partner_id`` (D-029), the bank amount, and the ids of the invoices it cleared so a

@@ -24,12 +24,16 @@ from app.modules.finance import service
 from app.modules.finance.constants import (
     FINANCE_ACCOUNT_MANAGE,
     FINANCE_ACCOUNT_READ,
+    FINANCE_ALLOCATION_MANAGE,
+    FINANCE_ALLOCATION_RUN,
     FINANCE_AP_MANAGE,
     FINANCE_AP_PAY,
     FINANCE_AP_READ,
     FINANCE_AR_COLLECT,
     FINANCE_AR_MANAGE,
     FINANCE_AR_READ,
+    FINANCE_COST_CENTER_MANAGE,
+    FINANCE_COST_CENTER_READ,
     FINANCE_FX_MANAGE,
     FINANCE_FX_REVALUE,
     FINANCE_JOURNAL_POST,
@@ -37,6 +41,8 @@ from app.modules.finance.constants import (
     FINANCE_JOURNAL_REVERSE,
     FINANCE_PERIOD_MANAGE,
     FINANCE_PERIOD_READ,
+    FINANCE_PROFIT_CENTER_MANAGE,
+    FINANCE_PROFIT_CENTER_READ,
     FINANCE_TAX_MANAGE,
     FINANCE_TAX_READ,
     AccountType,
@@ -62,6 +68,12 @@ _FINANCE_KEYS = (
     FINANCE_AR_READ,
     FINANCE_AR_MANAGE,
     FINANCE_AR_COLLECT,
+    FINANCE_COST_CENTER_READ,
+    FINANCE_COST_CENTER_MANAGE,
+    FINANCE_PROFIT_CENTER_READ,
+    FINANCE_PROFIT_CENTER_MANAGE,
+    FINANCE_ALLOCATION_MANAGE,
+    FINANCE_ALLOCATION_RUN,
 )
 
 # A minimal but type-complete chart of accounts: one account per statement-deriving type.
@@ -341,6 +353,46 @@ async def fx_setup(db_session: AsyncSession, tenant_a: uuid.UUID) -> FxSetup:
         fiscal_year_id=year.id,
         eur_bank_id=eur_bank_id,
     )
+
+
+@dataclass(frozen=True)
+class CoSetup:
+    """A tenant ready for controlling (PLAN 4.7): the small COA + an expense account (5000) used to
+    seed a source cost centre's balance + a dedicated cost-allocation clearing account (9000) wired
+    as the ``cost_allocation`` posting default, three cost centres (SRC + three targets are created
+    per-test), and the open 2026 fiscal year. Plain ids so a rollback (expiring loaded objects)
+    cannot break a follow-up payload."""
+
+    tenant_id: uuid.UUID
+    accounts: dict[str, uuid.UUID]
+    fiscal_year_id: uuid.UUID
+
+
+@pytest.fixture
+async def co_setup(db_session: AsyncSession, tenant_a: uuid.UUID) -> CoSetup:
+    """COA + a cost-allocation clearing account wired as the ``cost_allocation`` posting default +
+    open 2026 year (PLAN 4.7)."""
+    from app.modules.finance.constants import CO_ALLOCATION_CLEARING
+
+    accounts = await seed_small_coa(db_session, tenant_a)
+    by_code = {a.code: a.id for a in accounts}
+    with tenant_context(tenant_a):
+        clearing = await service.create_account(
+            db_session,
+            tenant_a,
+            AccountCreate(
+                code="9000",
+                name="Cost Allocation Clearing",
+                account_type=AccountType.EXPENSE,
+            ),
+        )
+        by_code["9000"] = clearing.id
+        await service.set_posting_default(
+            db_session, tenant_a, CO_ALLOCATION_CLEARING, clearing.id
+        )
+        await db_session.commit()
+    year = await seed_fiscal_year(db_session, tenant_a)
+    return CoSetup(tenant_id=tenant_a, accounts=by_code, fiscal_year_id=year.id)
 
 
 # --- Finance-permissioned HTTP clients ----------------------------------------

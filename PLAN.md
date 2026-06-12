@@ -44,7 +44,7 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 - [x] 4.4 Tax engine: configurable codes (rate, jurisdiction, inclusive/exclusive) applied at line level, tax account postings
 - [x] 4.5 Accounts Payable: vendor bills, payment runs, AP aging — all posting through the journal
 - [x] 4.6 Accounts Receivable: customer invoices, receipts, dunning levels, AR aging — all posting through the journal
-- [ ] 4.7 Cost centers + profit centers masters, allocation rules, allocation run posting journals
+- [x] 4.7 Cost centers + profit centers masters, allocation rules, allocation run posting journals
 - [ ] 4.8 Statements as pure projections: Trial Balance, P&L, Balance Sheet, Cash Flow (indirect), cost-center report, margin-by-product report
 - [ ] 4.9 Bank reconciliation: bank accounts, CSV statement import, match suggestions, clearing postings
 - [ ] 4.10 Asset accounting lite: asset register, straight-line + declining-balance depreciation runs posting journals
