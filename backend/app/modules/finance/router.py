@@ -20,6 +20,7 @@ from app.core.rbac import require_permission
 from app.core.schemas import Page
 from app.modules.finance import service
 from app.modules.finance.ap_router import ap_router
+from app.modules.finance.ar_router import ar_router
 from app.modules.finance.constants import (
     FINANCE_ACCOUNT_MANAGE,
     FINANCE_ACCOUNT_READ,
@@ -49,8 +50,8 @@ from app.modules.finance.schemas import (
 from app.modules.finance.tax_router import tax_router
 
 router = APIRouter(prefix="/api/v1/finance", tags=["finance"])
-# FX (D-019), tax (4.4) + AP (4.5) sub-routers mount here, so the module is one surface.
-for _sub in (fx_router, tax_router, ap_router):
+# FX (D-019), tax (4.4), AP (4.5) + AR (4.6) sub-routers mount here, so the module is one surface.
+for _sub in (fx_router, tax_router, ap_router, ar_router):
     router.include_router(_sub)
 CursorParamsDep = Depends(cursor_params)
 # Module-level Depends singletons (ruff B008): each is the D-013 reservation guard for its endpoint.

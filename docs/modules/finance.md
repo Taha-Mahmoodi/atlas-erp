@@ -285,11 +285,18 @@ Finance exposes a thin, stable read surface (STRUCTURE §5 — everyone may impo
 - `get_tax_code(session, tenant_id, code) -> TaxCode | None` (PLAN 4.4)
 - `calculate_line_tax(base_amount, tax_code, *, direction, currency_code='USD') -> TaxCalculation`
   (PLAN 4.4)
+- `get_open_vendor_bills(session, tenant_id, partner_id) -> list[VendorBill]` (PLAN 4.5, D-029)
+- `get_open_customer_invoices(session, tenant_id, partner_id) -> list[CustomerInvoice]`
+  (PLAN 4.6, D-029)
+- `customer_open_balance(session, tenant_id, partner_id) -> Decimal` (PLAN 4.6) — the total still-owed
+  AR for a partner across all open invoices; Sales' credit-limit block calls this to ask "how much
+  does this customer currently owe?" without importing finance models.
 
 Inventory and sales call `get_period_status` to refuse stock/sales documents dated into a closed
 period before they reach the GL; the journal calls `find_period_for_date` to resolve an entry's
 period from its posting date; other modules price in functional terms via `get_rate` /
-`functional_currency`, and resolve + apply tax via `get_tax_code` / `calculate_line_tax`.
+`functional_currency`, and resolve + apply tax via `get_tax_code` / `calculate_line_tax`. AP/AR open
+items are keyed by the opaque `partner_id` (D-029) — finance never FK-references a partner master.
 
 ## Permissions (D-009)
 
@@ -309,8 +316,9 @@ period from its posting date; other modules price in functional terms via `get_r
 | `finance.ap.read` | read vendor bills, payments and AP aging |
 | `finance.ap.manage` | create and post vendor bills |
 | `finance.ap.pay` | create vendor payments and run payment batches |
-
-AR and its payment keys are registered by their own tasks (4.6+).
+| `finance.ar.read` | read customer invoices, receipts and AR aging |
+| `finance.ar.manage` | create and post customer invoices |
+| `finance.ar.collect` | create customer receipts and run dunning |
 
 ## API (`/api/v1/finance`)
 
@@ -342,6 +350,14 @@ AR and its payment keys are registered by their own tasks (4.6+).
   `GET /vendor-payments` (paginated, `finance.ap.read`).
 - `GET /ap-aging?as_of=&partner_id=` — the AP aging report (`finance.ap.read`). The AP endpoints
   live in `ap_router.py` and mount into the finance router (same one-surface pattern as FX/tax).
+- `POST /customer-invoices` (create draft, `finance.ar.manage`), `POST /customer-invoices/{id}/post`
+  (**idempotent**, `finance.ar.manage`), `GET /customer-invoices` (paginated),
+  `GET /customer-invoices/{id}` (with lines) — `finance.ar.read` (PLAN 4.6).
+- `POST /customer-receipts` (create + post a receipt with allocations; **idempotent**,
+  `finance.ar.collect`), `GET /customer-receipts` (paginated, `finance.ar.read`).
+- `POST /dunning-runs` (advance dunning levels on overdue invoices; **idempotent**,
+  `finance.ar.collect`) and `GET /ar-aging?as_of=&partner_id=` (`finance.ar.read`). The AR endpoints
+  live in `ar_router.py` and mount into the finance router (same one-surface pattern as FX/tax/AP).
 
 Writes commit through `run_in_uow` (D-011), so audit rows ride the same transaction and the
 event semantics will be identical to seed/CLI once finance publishes events.
@@ -384,3 +400,47 @@ each group's due bills in full — one payment per group.
 **Aging.** `GET /ap-aging` is a pure projection over open bills: each bill's `open_amount` lands in
 the bucket for `as_of − due_date` days (current / 1-30 / 31-60 / 61-90 / over-90), per partner and
 rolled up. An earlier `as_of` shifts balances toward the lower buckets.
+
+## Accounts Receivable (PLAN 4.6, D-029)
+
+AR is the AP mirror with the **sign flipped** — same opaque-`partner_id` keying (the customer master
+lives in sales, above finance, so finance never FK-references it; D-029) — plus **dunning**. Each AR
+document carries the opaque `partner_id` + a denormalized `partner_name`.
+
+**Invoice → post → receipt.** A `CustomerInvoice` is created DRAFT (no number, no journal); the
+service computes output tax per line via the shared tax engine and rolls up net/tax/gross. Posting
+builds the journal entry (document_type `AR_INVOICE`): **Dr** the AR control account for the gross
+(with the opaque `partner_id` stamped on the AR line) + **Cr** each revenue line (net) + **Cr** output
+tax (to the tax code's payable account). The invoice then claims its gapless system number (`INV-…`),
+links invoice→journal (docflow `posts`), sets `open_amount = gross` and status POSTED, and publishes
+`CustomerInvoicePosted`. FX translation at posting is the journal engine's standard machinery (D-019).
+
+**Open-item clearing.** A `CustomerReceipt` is created and posted in one step. It validates the
+cleared invoices are open, same partner, same currency, none over-allocated; posts a journal entry
+(document_type `PAYMENT`): **Cr** AR control (Σ allocated) + **Dr** bank (the cash received), reduces
+each invoice's `open_amount` (status → PARTIALLY_PAID/PAID), writes `CustomerReceiptAllocation` rows,
+links receipt→invoices (docflow `receipts`), claims its number (`RCT-…`), and publishes
+`CustomerReceiptPosted`. `open_amount` is the only stored balance — aging projects over it.
+
+**Realized FX at receipt (D-019).** When the invoice currency ≠ functional, the AR control was
+debited at the invoice's posting rate (R1) but the bank receives at the receipt-date rate (R2). The
+functional difference per cleared invoice — `functional-at-receipt-rate − functional-at-invoice-rate`
+over the cleared transaction amount — is the realized gain/loss, posted to the
+`fx_realized_gain`/`fx_realized_loss` posting-default account **inside the same receipt entry** so it
+balances in functional. The entry's functional amounts are set explicitly and posted with the journal
+engine's `skip_translation`; the realized-FX line is denominated in the functional currency. The
+realized-FX math is shared with AP in `service/clearing_fx.py` (AP debits the control to clear, AR
+credits it — `control_is_debit` flips the sign; the gain/loss direction inverts accordingly). When
+the receipt currency *is* the functional currency, R1 = R2 and there is no FX line.
+
+**Dunning.** `POST /dunning-runs` advances reminder levels. For each OPEN overdue invoice it computes
+the level its days-overdue earns from `DUNNING_THRESHOLDS` (level 1 at 7 days past due, 2 at 30, 3 at
+60); if that exceeds the invoice's current `dunning_level`, it raises the invoice to it and stamps
+`last_dunned_date = as_of`, recording a notice (partner, invoice, new level — a collections proposal
+list). It posts **no journal** — dunning is state only. It is idempotent-ish per day: re-running the
+same `as_of` advances nothing already at its earned level, so a second same-day run returns an empty
+list; a not-yet-overdue invoice stays at level 0.
+
+**Aging.** `GET /ar-aging` is a pure projection over open invoices: each invoice's `open_amount`
+lands in the bucket for `as_of − due_date` days (current / 1-30 / 31-60 / 61-90 / over-90), per
+partner and rolled up — identical to AP aging on the receivable side.

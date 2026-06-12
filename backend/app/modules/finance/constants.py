@@ -112,6 +112,32 @@ class PaymentStatus(StrEnum):
     REVERSED = "REVERSED"
 
 
+class InvoiceStatus(StrEnum):
+    """Lifecycle of a customer invoice (PLAN 4.6, AR — the AP BillStatus mirror, sign flipped).
+    DRAFT is editable and carries no number/journal; POSTED has a system number + a journal entry
+    and an ``open_amount`` equal to the gross receivable; PARTIALLY_PAID/PAID track open-item
+    clearing as receipts allocate against the invoice; REVERSED marks an invoice whose journal was
+    reversed. Open items are keyed by an opaque ``partner_id`` (D-029) — finance never references a
+    customer master."""
+
+    DRAFT = "DRAFT"
+    POSTED = "POSTED"
+    PARTIALLY_PAID = "PARTIALLY_PAID"
+    PAID = "PAID"
+    REVERSED = "REVERSED"
+
+
+class ReceiptStatus(StrEnum):
+    """Lifecycle of a customer receipt (PLAN 4.6, AR — the AP PaymentStatus mirror). A receipt is
+    created and posted in one step (DRAFT is the transient pre-post state); POSTED has a number + a
+    journal entry clearing the allocated invoices; REVERSED marks a receipt whose journal was
+    reversed."""
+
+    DRAFT = "DRAFT"
+    POSTED = "POSTED"
+    REVERSED = "REVERSED"
+
+
 class RateKind(StrEnum):
     """Exchange-rate type (D-019). SPOT is the day's rate used for posting-time translation;
     CLOSING is the period-end rate used for unrealized-FX revaluation. Stored as the UPPER_SNAKE
@@ -168,6 +194,51 @@ AP_PAYMENT_PAYS_LINK = "pays"
 # partner_type stamped on the AP control journal line so a later AP report can filter open items by
 # partner without a finance partner master (D-029 — partner_id is opaque).
 AP_PARTNER_TYPE = "VENDOR"
+
+
+# --- Accounts Receivable (PLAN 4.6) -------------------------------------------
+# core_documents doc_types for AR documents (D-012). A customer invoice and a customer receipt each
+# register a registry entry at creation (DocumentMixin) and claim their system number at posting;
+# the docflow edge receipt->invoice records the clearing flow. Mirrors the AP doc types, sign
+# flipped (Dr AR control / Cr revenue + output tax; receipts Cr AR / Dr bank).
+AR_INVOICE_DOC_TYPE = "finance.customer_invoice"
+AR_RECEIPT_DOC_TYPE = "finance.customer_receipt"
+
+# core/numbering sequence keys + formats for AR documents (D-012). Both year-reset so numbers read
+# INV-2026-00001 / RCT-2026-00001; claimed at posting, never at draft creation.
+AR_INVOICE_SEQUENCE_NAME = "finance.customer_invoice"
+AR_INVOICE_NUMBER_PREFIX = "INV"
+AR_INVOICE_NUMBER_PADDING = 5
+AR_RECEIPT_SEQUENCE_NAME = "finance.customer_receipt"
+AR_RECEIPT_NUMBER_PREFIX = "RCT"
+AR_RECEIPT_NUMBER_PADDING = 5
+
+# docflow link types: a posted invoice links to its journal entry ('posts'); a receipt links to each
+# invoice it clears ('receipts').
+AR_INVOICE_POSTS_LINK = "posts"
+AR_RECEIPT_RECEIPTS_LINK = "receipts"
+
+# partner_type stamped on the AR control journal line so an AR report can filter open items by
+# partner without a finance partner master (D-029 — partner_id is opaque).
+AR_PARTNER_TYPE = "CUSTOMER"
+
+# Dunning level day-thresholds (PLAN 4.6): an open overdue invoice reaches level N once it is at
+# least ``_DUNNING_THRESHOLDS[N-1]`` days past its due date. Ascending by construction; the highest
+# crossed bound wins. Level 0 = no dunning notice sent yet. Tune per tenant later; constant for now.
+DUNNING_THRESHOLDS: tuple[int, ...] = (7, 30, 60)
+
+
+def dunning_level_for(days_overdue: int) -> int:
+    """The dunning level implied by ``days_overdue`` (as_of - due_date) given DUNNING_THRESHOLDS
+    (PLAN 4.6). Returns 0 when not yet at the first threshold, else the count of thresholds crossed
+    (1, 2, 3, ...). Total over any int; never raises."""
+    level = 0
+    for bound in DUNNING_THRESHOLDS:
+        if days_overdue >= bound:
+            level += 1
+        else:
+            break
+    return level
 
 
 # --- FX posting-default purposes (D-019) --------------------------------------
@@ -237,6 +308,11 @@ FINANCE_TAX_MANAGE = "finance.tax.manage"
 FINANCE_AP_READ = "finance.ap.read"
 FINANCE_AP_MANAGE = "finance.ap.manage"
 FINANCE_AP_PAY = "finance.ap.pay"
+# Accounts Receivable (PLAN 4.6): read invoices/receipts/aging, create+post invoices, collect
+# (receipts + dunning).
+FINANCE_AR_READ = "finance.ar.read"
+FINANCE_AR_MANAGE = "finance.ar.manage"
+FINANCE_AR_COLLECT = "finance.ar.collect"
 
 register_permissions(
     FINANCE_ACCOUNT_READ,
@@ -253,6 +329,9 @@ register_permissions(
     FINANCE_AP_READ,
     FINANCE_AP_MANAGE,
     FINANCE_AP_PAY,
+    FINANCE_AR_READ,
+    FINANCE_AR_MANAGE,
+    FINANCE_AR_COLLECT,
     descriptions={
         FINANCE_ACCOUNT_READ: "Read the chart of accounts and account groups",
         FINANCE_ACCOUNT_MANAGE: "Create and edit accounts and account groups",
@@ -268,5 +347,8 @@ register_permissions(
         FINANCE_AP_READ: "Read vendor bills, payments and AP aging",
         FINANCE_AP_MANAGE: "Create and post vendor bills",
         FINANCE_AP_PAY: "Create vendor payments and run payment batches",
+        FINANCE_AR_READ: "Read customer invoices, receipts and AR aging",
+        FINANCE_AR_MANAGE: "Create and post customer invoices",
+        FINANCE_AR_COLLECT: "Create customer receipts and run dunning",
     },
 )

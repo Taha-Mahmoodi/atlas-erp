@@ -27,6 +27,9 @@ from app.modules.finance.constants import (
     FINANCE_AP_MANAGE,
     FINANCE_AP_PAY,
     FINANCE_AP_READ,
+    FINANCE_AR_COLLECT,
+    FINANCE_AR_MANAGE,
+    FINANCE_AR_READ,
     FINANCE_FX_MANAGE,
     FINANCE_FX_REVALUE,
     FINANCE_JOURNAL_POST,
@@ -56,6 +59,9 @@ _FINANCE_KEYS = (
     FINANCE_AP_READ,
     FINANCE_AP_MANAGE,
     FINANCE_AP_PAY,
+    FINANCE_AR_READ,
+    FINANCE_AR_MANAGE,
+    FINANCE_AR_COLLECT,
 )
 
 # A minimal but type-complete chart of accounts: one account per statement-deriving type.
@@ -179,6 +185,62 @@ async def ap_setup(db_session: AsyncSession, tenant_a: uuid.UUID) -> ApSetup:
         await db_session.commit()
     year = await seed_fiscal_year(db_session, tenant_a)
     return ApSetup(
+        tenant_id=tenant_a,
+        accounts=by_code,
+        tax_code_id=tax_code.id,
+        fiscal_year_id=year.id,
+    )
+
+
+@dataclass(frozen=True)
+class ArSetup:
+    """A tenant ready to invoice + receive (PLAN 4.6): account ids by code (1000 bank, 1200 AR
+    control, 4000 revenue, 2200 output-tax payable), a wired 20% output tax code id, and the open
+    2026 year. Plain ids so a rollback (expiring loaded objects) can't break a follow-up payload."""
+
+    tenant_id: uuid.UUID
+    accounts: dict[str, uuid.UUID]
+    tax_code_id: uuid.UUID
+    fiscal_year_id: uuid.UUID
+
+
+@pytest.fixture
+async def ar_setup(db_session: AsyncSession, tenant_a: uuid.UUID) -> ArSetup:
+    """COA + an AR control account + an output-tax payable account + a 20% output tax code + open
+    year (PLAN 4.6). Reuses the small COA's 1000 (bank) and 4000 (revenue); adds 1200 (AR control)
+    and 2200 (output-tax payable)."""
+    from app.modules.finance.schemas import TaxCodeCreate
+
+    accounts = await seed_small_coa(db_session, tenant_a)
+    by_code = {a.code: a.id for a in accounts}
+    with tenant_context(tenant_a):
+        ar_control = await service.create_account(
+            db_session,
+            tenant_a,
+            AccountCreate(code="1200", name="Accounts Receivable", account_type=AccountType.ASSET),
+        )
+        by_code["1200"] = ar_control.id
+        payable = await service.create_account(
+            db_session,
+            tenant_a,
+            AccountCreate(
+                code="2200", name="Output VAT payable", account_type=AccountType.LIABILITY
+            ),
+        )
+        by_code["2200"] = payable.id
+        tax_code = await service.create_tax_code(
+            db_session,
+            tenant_a,
+            TaxCodeCreate(
+                code="VAT20O",
+                name="Output VAT 20%",
+                rate_percent=Decimal(20),
+                tax_payable_account_id=payable.id,
+            ),
+        )
+        await db_session.commit()
+    year = await seed_fiscal_year(db_session, tenant_a)
+    return ArSetup(
         tenant_id=tenant_a,
         accounts=by_code,
         tax_code_id=tax_code.id,

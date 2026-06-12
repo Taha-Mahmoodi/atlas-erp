@@ -8,6 +8,7 @@ tenancy mapper-enumeration suite) registers all tables on ``Base.metadata``.
 - ``fx``: currencies, exchange rates, posting defaults, revaluation runs (D-019).
 - ``tax``: configurable line-level tax codes (PLAN 4.4).
 - ``payables``: vendor bills, payments and payment allocations (PLAN 4.5, D-029).
+- ``receivables``: customer invoices, receipts, allocations + dunning (PLAN 4.6, D-029).
 """
 
 from app.modules.finance.models.accounts import (
@@ -29,12 +30,22 @@ from app.modules.finance.models.payables import (
     VendorPayment,
     VendorPaymentAllocation,
 )
+from app.modules.finance.models.receivables import (
+    CustomerInvoice,
+    CustomerInvoiceLine,
+    CustomerReceipt,
+    CustomerReceiptAllocation,
+)
 from app.modules.finance.models.tax import TaxCode
 
 __all__ = [
     "Account",
     "AccountGroup",
     "Currency",
+    "CustomerInvoice",
+    "CustomerInvoiceLine",
+    "CustomerReceipt",
+    "CustomerReceiptAllocation",
     "ExchangeRate",
     "FiscalPeriod",
     "FiscalYear",

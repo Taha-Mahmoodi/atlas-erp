@@ -74,3 +74,36 @@ class VendorPaymentPosted(DomainEvent):
     currency_code: str
     amount: Decimal
     cleared_bill_ids: tuple[uuid.UUID, ...]
+
+
+class CustomerInvoicePosted(DomainEvent):
+    """A customer invoice was posted to the journal (PLAN 4.6, AR). Fired inside the posting
+    transaction; the payload carries the opaque ``partner_id`` (D-029) + amounts so sales (later)
+    can react without a finance read. ``open_amount`` equals ``gross_amount`` at posting."""
+
+    key: ClassVar[str] = "finance.customer_invoice.posted"
+
+    invoice_id: uuid.UUID
+    invoice_number: str
+    journal_entry_id: uuid.UUID
+    partner_id: uuid.UUID
+    currency_code: str
+    gross_amount: Decimal
+    tax_amount: Decimal
+    net_amount: Decimal
+
+
+class CustomerReceiptPosted(DomainEvent):
+    """A customer receipt was posted, clearing one or more open invoices (PLAN 4.6, AR). Carries the
+    opaque ``partner_id`` (D-029), the bank amount, and the ids of the invoices it cleared so a
+    subscriber can mirror the clearing. Realized FX (D-019) is already inside the receipt entry."""
+
+    key: ClassVar[str] = "finance.customer_receipt.posted"
+
+    receipt_id: uuid.UUID
+    receipt_number: str
+    journal_entry_id: uuid.UUID
+    partner_id: uuid.UUID
+    currency_code: str
+    amount: Decimal
+    cleared_invoice_ids: tuple[uuid.UUID, ...]
