@@ -10,9 +10,11 @@ guide is the operator/contributor map, and it grows with each finance task (PLAN
 PLAN 4.1 laid the **schema foundation**: the chart of accounts and fiscal years/periods.
 PLAN 4.2 added the **universal journal** (D-017) — the heart of the system — and the **four
 DB-level guard triggers** (D-018/D-017). PLAN 4.3 added **multi-currency** (D-019): currencies +
-rates, posting-time translation, unrealized-FX revaluation. PLAN 4.4 (this task) adds the **tax
-engine**: configurable line-level tax codes + the calculation service AP/AR/Sales call. AP/AR and
-payments land in PLAN 4.5…4.10.
+rates, posting-time translation, unrealized-FX revaluation. PLAN 4.4 added the **tax engine**:
+configurable line-level tax codes + the calculation service AP/AR/Sales call. PLAN 4.5/4.6 added
+**Accounts Payable** and **Accounts Receivable** (D-029, opaque `partner_id`): bills, payments,
+invoices, receipts, open-item clearing with realized FX, dunning and aging. PLAN 4.7 (this task)
+adds **Controlling**: cost/profit centres as journal dimensions + allocation rules and runs.
 
 | File | Concern | Key decision |
 |---|---|---|
@@ -21,6 +23,7 @@ payments land in PLAN 4.5…4.10.
 | `models/journal.py` | `JournalEntry`, `JournalLine` (the universal journal) | D-017, D-021 |
 | `models/fx.py` | `Currency`, `ExchangeRate`, `PostingDefault`, `FxRevaluationRun` | D-019 |
 | `models/tax.py` | `TaxCode` (configurable line-level tax codes) | PLAN 4.4 |
+| `models/controlling.py` | `CostCenter`, `ProfitCenter`, `AllocationRule`, `AllocationRuleTarget`, `AllocationRun` | PLAN 4.7, D-021 |
 | `schemas.py` | Create/Update/Read/Filter for accounts, periods, journal, **FX**, **tax** | — |
 | `service/accounts.py` | chart-of-accounts business logic | D-021 |
 | `service/periods.py` | fiscal years/periods + open/close lifecycle | D-018 |
@@ -30,9 +33,12 @@ payments land in PLAN 4.5…4.10.
 | `service/fx_revaluation.py` | unrealized-FX revaluation run + auto-reversal | D-019 |
 | `service/posting_defaults.py` | purpose-keyed account wiring (reused by AP/AR/COGS) | D-019 |
 | `service/tax.py` | tax calculation (inclusive/exclusive, document grouping) + tax-code CRUD | PLAN 4.4 |
-| `events.py` | `JournalEntryPosted`, `JournalEntryReversed` | D-011 |
-| `queries.py` | the cross-module read interface finance **exposes** (+ `get_rate`, `functional_currency`, `get_tax_code`, `calculate_line_tax`) | STRUCTURE §5 |
-| `router.py` / `fx_router.py` / `tax_router.py` | thin HTTP layer at `/api/v1/finance` | D-013 (idempotent post/reverse/revalue) |
+| `service/controlling.py` | cost/profit-centre CRUD + acyclic hierarchy | PLAN 4.7 |
+| `service/allocation_rules.py` | allocation-rule + target CRUD + weight validation | PLAN 4.7 |
+| `service/allocation.py` | `run_allocation` redistribution engine | PLAN 4.7, D-021 |
+| `events.py` | `JournalEntryPosted`, `JournalEntryReversed`, `AllocationPosted` | D-011 |
+| `queries.py` | the cross-module read interface finance **exposes** (+ `get_rate`, `get_tax_code`, `cost_center_balance`, `cost_center_exists`, `profit_center_exists`) | STRUCTURE §5 |
+| `router.py` / `fx_router.py` / `tax_router.py` / `ap_router.py` / `ar_router.py` / `co_router.py` | thin HTTP layer at `/api/v1/finance` | D-013 (idempotent post/reverse/revalue/run) |
 
 > Money/quantity/rate exactness comes from `core/money.py` (D-015): `MoneyType`/`QuantityType`
 > store NUMERIC on Postgres and INTEGER scaled minor units on SQLite, so the balance trigger's
@@ -319,6 +325,12 @@ items are keyed by the opaque `partner_id` (D-029) — finance never FK-referenc
 | `finance.ar.read` | read customer invoices, receipts and AR aging |
 | `finance.ar.manage` | create and post customer invoices |
 | `finance.ar.collect` | create customer receipts and run dunning |
+| `finance.costcenter.read` | read cost centres |
+| `finance.costcenter.manage` | create/edit cost centres |
+| `finance.profitcenter.read` | read profit centres |
+| `finance.profitcenter.manage` | create/edit profit centres |
+| `finance.allocation.manage` | create/edit allocation rules |
+| `finance.allocation.run` | run cost allocations |
 
 ## API (`/api/v1/finance`)
 
@@ -444,3 +456,52 @@ list; a not-yet-overdue invoice stays at level 0.
 **Aging.** `GET /ar-aging` is a pure projection over open invoices: each invoice's `open_amount`
 lands in the bucket for `as_of − due_date` days (current / 1-30 / 31-60 / 61-90 / over-90), per
 partner and rolled up — identical to AP aging on the receivable side.
+
+## Controlling — cost/profit centres + allocations (PLAN 4.7, D-021)
+
+**CO is a projection of the universal journal — there is no separate CO ledger.** This is the
+load-bearing principle (D-021): every cost-centre report is a `SUM` over `fin_journal_lines` grouped
+by their `cost_center_id` dimension, exactly as P&L/balance-sheet are projections grouped by account.
+Controlling therefore adds only *master data* (the dimensions) and *one more kind of journal entry*
+(an allocation), never stored totals.
+
+**Cost / profit centres are journal-line dimensions.** A `CostCenter` (`fin_cost_centers`) and a
+`ProfitCenter` (`fin_profit_centers`) are tenant-scoped master data with a self-referential
+`parent_id` hierarchy the service keeps **acyclic** (the same walk-the-parent-chain cycle guard the
+account-group tree uses) and a unique `(tenant, code)`. A cost centre may carry a
+`default_profit_center_id`. Their ids are what a journal line stores in `cost_center_id` /
+`profit_center_id`.
+
+**Journal dimension integrity is enforced at the SERVICE layer (D-022).** `fin_journal_lines` is
+trigger-bearing, so per D-022 it must **not** gain FKs — the dimension columns stay opaque `sa.Uuid`.
+The integrity the absent FK would give is provided by `service/journal.create_draft_entry`, which now
+validates that every line's `cost_center_id` / `profit_center_id` exists for the tenant (via
+`queries.cost_center_exists` / `profit_center_exists`) and raises `finance.journal_cost_center_not_found`
+/ `finance.journal_profit_center_not_found` (422) otherwise. A valid dimension posts and the line
+carries it, so the projection sees it.
+
+**Allocation rules.** An `AllocationRule` (`fin_allocation_rules`) names a **source** cost centre
+whose net period cost is redistributed, a `basis`, and N `AllocationRuleTarget` rows (each a target
+cost centre + a `weight`). `basis` is `PERCENT` (weights must sum to **100**, validated) or
+`FIXED_WEIGHT` (any positive weights, distributed **proportionally**). The source can never be a
+target, and a target appears at most once.
+
+**Running an allocation** (`POST /allocation-runs`, `run_allocation(rule, period, run_date)`):
+
+1. Compute the source cost centre's **net functional balance** for the period via
+   `queries.cost_center_balance` (Σ posted functional debit − credit on lines carrying the source
+   `cost_center_id` in the period). That is the amount to allocate.
+2. Distribute it across the targets by their weights with `core.money.allocate` (largest-remainder),
+   so the parts sum **EXACTLY** to the source amount — e.g. 1000 split three ways gives
+   333.34 / 333.33 / 333.33 with no lost cent.
+3. Post **ONE balanced journal entry** on a single dedicated `cost_allocation` posting-default
+   account: one line **crediting** the source cost centre (moving the cost out) and N lines
+   **debiting** each target cost centre, every line tagged with its `cost_center_id`. The account
+   nets to zero; cost moves between cost centres purely via the line dimension, so cost-centre reports
+   (journal projections) reflect the reallocation. (A net-credit source flips the sides.)
+4. Claim the gapless `ALLOC-…` number, link run→journal in docflow (`posts`), track the run in
+   `fin_allocation_runs`, and publish `AllocationPosted`.
+
+The run is **idempotent** (a second run for the same `(rule, period)` returns the existing run) and
+**reversible** (its journal entry reverses like any other; a re-run after correction relies on that).
+A zero source balance is a clear 422 (`finance.allocation_zero_balance`) — nothing to allocate.

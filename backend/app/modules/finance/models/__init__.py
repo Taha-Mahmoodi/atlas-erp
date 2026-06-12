@@ -17,6 +17,13 @@ from app.modules.finance.models.accounts import (
     FiscalPeriod,
     FiscalYear,
 )
+from app.modules.finance.models.controlling import (
+    AllocationRule,
+    AllocationRuleTarget,
+    AllocationRun,
+    CostCenter,
+    ProfitCenter,
+)
 from app.modules.finance.models.fx import (
     Currency,
     ExchangeRate,
@@ -41,6 +48,10 @@ from app.modules.finance.models.tax import TaxCode
 __all__ = [
     "Account",
     "AccountGroup",
+    "AllocationRule",
+    "AllocationRuleTarget",
+    "AllocationRun",
+    "CostCenter",
     "Currency",
     "CustomerInvoice",
     "CustomerInvoiceLine",
@@ -53,6 +64,7 @@ __all__ = [
     "JournalEntry",
     "JournalLine",
     "PostingDefault",
+    "ProfitCenter",
     "TaxCode",
     "VendorBill",
     "VendorBillLine",

@@ -138,6 +138,23 @@ class ReceiptStatus(StrEnum):
     REVERSED = "REVERSED"
 
 
+class AllocationBasis(StrEnum):
+    """Read of allocation-rule target weights (PLAN 4.7). PERCENT must sum to 100; FIXED_WEIGHT are
+    positive numbers distributed PROPORTIONALLY. Parts sum EXACTLY via ``core.money.allocate``."""
+
+    PERCENT = "PERCENT"
+    FIXED_WEIGHT = "FIXED_WEIGHT"
+
+
+class AllocationRunStatus(StrEnum):
+    """Lifecycle of an allocation run (PLAN 4.7): POSTED (numbered + a redistribution entry whose
+    lines carry cost_center_id so CO reporting reflects it), REVERSED, or DRAFT (transient)."""
+
+    DRAFT = "DRAFT"
+    POSTED = "POSTED"
+    REVERSED = "REVERSED"
+
+
 class RateKind(StrEnum):
     """Exchange-rate type (D-019). SPOT is the day's rate used for posting-time translation;
     CLOSING is the period-end rate used for unrealized-FX revaluation. Stored as the UPPER_SNAKE
@@ -159,21 +176,17 @@ class FxRunStatus(StrEnum):
     REVERSED = "REVERSED"
 
 
-# core_documents doc_type for a journal entry (D-012 namespaced constant). Registered with the
-# entry at creation; the partial-unique (tenant, doc_number) index backstops gapless numbering.
+# core_documents doc_type for a journal entry + its number sequence (D-012). Registered at creation;
+# the sequence year-resets (JE-2026-00001), claimed at posting, never at draft creation.
 JOURNAL_ENTRY_DOC_TYPE = "finance.journal_entry"
-
-# core/numbering sequence key + format for journal entry numbers (D-012). The sequence
-# year-resets so numbers read JE-2026-00001; claimed at posting, never at draft creation.
 JOURNAL_SEQUENCE_NAME = "finance.journal"
 JOURNAL_NUMBER_PREFIX = "JE"
 JOURNAL_NUMBER_PADDING = 5
 
 
 # --- Accounts Payable (PLAN 4.5) ----------------------------------------------
-# core_documents doc_types for AP documents (D-012). A vendor bill and a vendor payment each
-# register a registry entry at creation (DocumentMixin) and claim their system number at posting;
-# the docflow edge payment->bill records the clearing flow.
+# core_documents doc_types for AP documents (D-012): a vendor bill + a vendor payment, each
+# registering at creation and numbering at posting; the docflow edge payment->bill records clearing.
 AP_BILL_DOC_TYPE = "finance.vendor_bill"
 AP_PAYMENT_DOC_TYPE = "finance.vendor_payment"
 
@@ -197,10 +210,8 @@ AP_PARTNER_TYPE = "VENDOR"
 
 
 # --- Accounts Receivable (PLAN 4.6) -------------------------------------------
-# core_documents doc_types for AR documents (D-012). A customer invoice and a customer receipt each
-# register a registry entry at creation (DocumentMixin) and claim their system number at posting;
-# the docflow edge receipt->invoice records the clearing flow. Mirrors the AP doc types, sign
-# flipped (Dr AR control / Cr revenue + output tax; receipts Cr AR / Dr bank).
+# core_documents doc_types for AR documents (D-012), mirroring AP sign-flipped (Dr AR control / Cr
+# revenue + output tax; receipts Cr AR / Dr bank). Each registers at creation, numbers at posting.
 AR_INVOICE_DOC_TYPE = "finance.customer_invoice"
 AR_RECEIPT_DOC_TYPE = "finance.customer_receipt"
 
@@ -241,11 +252,22 @@ def dunning_level_for(days_overdue: int) -> int:
     return level
 
 
+# --- Controlling: cost/profit centers + allocations (PLAN 4.7) ----------------
+# A run posts ONE balanced entry redistributing the source cost centre's cost to its targets on the
+# CO_ALLOCATION_CLEARING posting-default account, cost_center_id per line, so CO reporting (a
+# journal projection, D-021) reflects it; the account nets to zero (credit source, debit targets).
+CO_ALLOCATION_DOC_TYPE = "finance.allocation_run"
+ALLOCATION_SEQUENCE_NAME = "finance.allocation"
+ALLOCATION_NUMBER_PREFIX = "ALLOC"
+ALLOCATION_NUMBER_PADDING = 5
+CO_ALLOCATION_POSTS_LINK = "posts"
+CO_ALLOCATION_CLEARING = "cost_allocation"
+
+
 # --- FX posting-default purposes (D-019) --------------------------------------
-# The data-driven account wiring keys for fin_posting_defaults. The FX engine resolves these to
-# GL accounts via service/fx.get_posting_default, so account selection is configuration, not code.
-# Realized FX (gain/loss at clearing) is wired now for AP/AR (4.4+); unrealized FX (gain/loss at
-# revaluation) + the balance-sheet adjustment account are used by the revaluation run here.
+# Data-driven account wiring keys for fin_posting_defaults, resolved to GL accounts via
+# service/fx.get_posting_default (account selection is config, not code). Realized FX is wired for
+# AP/AR (4.4+); unrealized FX + the adjustment account feed the revaluation run.
 FX_REALIZED_GAIN = "fx_realized_gain"
 FX_REALIZED_LOSS = "fx_realized_loss"
 FX_UNREALIZED_GAIN = "fx_unrealized_gain"
@@ -263,9 +285,12 @@ FX_POSTING_PURPOSES: frozenset[str] = frozenset(
     }
 )
 
-# docflow link type joining a revaluation run's adjustment entry to its auto-reversal, and the
-# run-bookkeeping doc_type is not needed (runs are tracked in fin_fx_revaluation_runs, not the
-# document registry) — the FX_REVAL entries themselves register as journal documents (D-012).
+# Every known posting-default purpose (set_posting_default accepts only these): FX + the CO
+# cost-allocation clearing account (PLAN 4.7); later phases (COGS) extend this set.
+POSTING_PURPOSES: frozenset[str] = FX_POSTING_PURPOSES | frozenset({CO_ALLOCATION_CLEARING})
+
+# docflow link type joining a revaluation run's adjustment entry to its auto-reversal. Runs are
+# tracked in fin_fx_revaluation_runs; the FX_REVAL entries register as journal documents (D-012).
 FX_REVALUES_LINK = "revalues"
 
 
@@ -313,6 +338,14 @@ FINANCE_AP_PAY = "finance.ap.pay"
 FINANCE_AR_READ = "finance.ar.read"
 FINANCE_AR_MANAGE = "finance.ar.manage"
 FINANCE_AR_COLLECT = "finance.ar.collect"
+# Controlling (PLAN 4.7): read vs manage on cost/profit centres + allocation rules; running an
+# allocation posts a journal, so it is its own action (D-009 module.entity.action convention).
+FINANCE_COST_CENTER_READ = "finance.costcenter.read"
+FINANCE_COST_CENTER_MANAGE = "finance.costcenter.manage"
+FINANCE_PROFIT_CENTER_READ = "finance.profitcenter.read"
+FINANCE_PROFIT_CENTER_MANAGE = "finance.profitcenter.manage"
+FINANCE_ALLOCATION_MANAGE = "finance.allocation.manage"
+FINANCE_ALLOCATION_RUN = "finance.allocation.run"
 
 register_permissions(
     FINANCE_ACCOUNT_READ,
@@ -332,6 +365,12 @@ register_permissions(
     FINANCE_AR_READ,
     FINANCE_AR_MANAGE,
     FINANCE_AR_COLLECT,
+    FINANCE_COST_CENTER_READ,
+    FINANCE_COST_CENTER_MANAGE,
+    FINANCE_PROFIT_CENTER_READ,
+    FINANCE_PROFIT_CENTER_MANAGE,
+    FINANCE_ALLOCATION_MANAGE,
+    FINANCE_ALLOCATION_RUN,
     descriptions={
         FINANCE_ACCOUNT_READ: "Read the chart of accounts and account groups",
         FINANCE_ACCOUNT_MANAGE: "Create and edit accounts and account groups",
@@ -350,5 +389,11 @@ register_permissions(
         FINANCE_AR_READ: "Read customer invoices, receipts and AR aging",
         FINANCE_AR_MANAGE: "Create and post customer invoices",
         FINANCE_AR_COLLECT: "Create customer receipts and run dunning",
+        FINANCE_COST_CENTER_READ: "Read cost centres",
+        FINANCE_COST_CENTER_MANAGE: "Create and edit cost centres",
+        FINANCE_PROFIT_CENTER_READ: "Read profit centres",
+        FINANCE_PROFIT_CENTER_MANAGE: "Create and edit profit centres",
+        FINANCE_ALLOCATION_MANAGE: "Create and edit allocation rules",
+        FINANCE_ALLOCATION_RUN: "Run cost allocations",
     },
 )
