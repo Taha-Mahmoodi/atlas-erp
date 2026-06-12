@@ -17,6 +17,14 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.config import get_settings
+from app.core.tenancy import install_tenancy_guards
+
+# Import side effect ON PURPOSE: every engine/session factory in app, tests and
+# seed is built via this module, so importing it guarantees the D-007 listeners
+# exist before any session can be constructed. tenancy.py itself cannot self-install
+# from models.py (import cycle), and main.py would leave direct-session users
+# (tests, seed, alembic) unguarded.
+install_tenancy_guards()
 
 
 def _set_sqlite_fk_pragma(dbapi_connection: Any, connection_record: Any) -> None:

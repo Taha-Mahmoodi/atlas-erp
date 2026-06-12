@@ -28,6 +28,24 @@ def test_alembic_upgrade_head_succeeds_on_fresh_sqlite(
     assert rows == [(head,)]
 
 
+def test_0002_creates_tenant_tables_and_downgrade_removes_them(
+    tmp_path: Path, make_alembic_config: Callable[[str], Config]
+) -> None:
+    db_path = tmp_path / "tenants.sqlite"
+    config = make_alembic_config(f"sqlite+aiosqlite:///{db_path}")
+
+    def table_names() -> set[str]:
+        with closing(sqlite3.connect(db_path)) as connection:
+            rows = connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            return {row[0] for row in rows}
+
+    command.upgrade(config, "head")
+    assert {"adm_tenants", "adm_tenant_settings"} <= table_names()
+
+    command.downgrade(config, "0001")
+    assert not ({"adm_tenants", "adm_tenant_settings"} & table_names())
+
+
 async def test_build_engine_connections_enforce_foreign_keys(tmp_path: Path) -> None:
     engine = build_engine(f"sqlite+aiosqlite:///{tmp_path / 'fk.sqlite'}")
     try:
