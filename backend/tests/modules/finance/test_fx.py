@@ -27,6 +27,7 @@ from app.modules.finance.constants import (
 )
 from app.modules.finance.models import JournalLine
 from app.modules.finance.schemas import JournalEntryCreate, JournalLineCreate
+from tests.conftest import QueryCounter, assert_query_budget
 from tests.modules.finance.conftest import FinancePrincipal, FxSetup
 
 _PD = date(2026, 3, 15)  # inside the open 2026 fiscal year
@@ -318,3 +319,49 @@ async def test_fx_create_currency_and_rate_via_api(
     listed = await finance_client.get("/api/v1/finance/exchange-rates")
     assert listed.status_code == 200
     assert len(listed.json()["items"]) == 1
+
+
+async def test_fx_list_endpoints_query_count(
+    finance_client: AsyncClient, query_counter: Callable[[], QueryCounter]
+) -> None:
+    """PERFORMANCE §2: warm-path currency/rate/posting-default lists run ≤3 SQL statements,
+    and the newly paginated reference lists return the Page envelope (#27)."""
+    for code, name in (("USD", "US Dollar"), ("EUR", "Euro"), ("GBP", "Pound Sterling")):
+        created = await finance_client.post(
+            "/api/v1/finance/currencies", json={"code": code, "name": name}
+        )
+        assert created.status_code == 201, created.text
+    for day in ("01", "02", "03"):
+        rate = await finance_client.post(
+            "/api/v1/finance/exchange-rates",
+            json={
+                "rate_date": f"2026-03-{day}",
+                "from_currency_code": "EUR",
+                "to_currency_code": "USD",
+                "rate_type": "SPOT",
+                "rate": "1.20",
+            },
+        )
+        assert rate.status_code == 201, rate.text
+    account = await finance_client.post(
+        "/api/v1/finance/accounts",
+        json={"code": "7200", "name": "FX Unrealized Gain", "account_type": "REVENUE"},
+    )
+    assert account.status_code == 201, account.text
+    for purpose in (FX_UNREALIZED_GAIN, FX_REVALUATION_ADJUSTMENT):
+        mapped = await finance_client.put(
+            "/api/v1/finance/posting-defaults",
+            json={"purpose": purpose, "account_id": account.json()["id"]},
+        )
+        assert mapped.status_code == 200, mapped.text
+
+    currencies = await finance_client.get("/api/v1/finance/currencies")
+    assert [c["code"] for c in currencies.json()["items"]] == ["EUR", "GBP", "USD"]
+    defaults = await finance_client.get("/api/v1/finance/posting-defaults")
+    assert len(defaults.json()["items"]) == 2
+    for url in (
+        "/api/v1/finance/currencies",
+        "/api/v1/finance/exchange-rates",
+        "/api/v1/finance/posting-defaults",
+    ):
+        await assert_query_budget(finance_client, query_counter, url)

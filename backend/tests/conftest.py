@@ -4,8 +4,10 @@ session, copied per test, so real commits are allowed and nothing leaks across t
 import shutil
 import uuid
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from types import TracebackType
+from typing import Any
 
 import pytest
 from alembic import command
@@ -13,6 +15,8 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.db import (
@@ -74,6 +78,97 @@ async def db_engine(template_db_path: Path, tmp_path: Path) -> AsyncIterator[Asy
 async def db_session(db_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
     async with build_session_factory(db_engine)() as session:
         yield session
+
+
+# --- Query counting (PERFORMANCE §2: the N+1 ban, enforced mechanically) -------
+
+
+@dataclass
+class QueryCounter:
+    """Counts real SQL statements executed on the per-test engine while active.
+
+    Used as a context manager: ``with query_counter() as qc: ...`` then read ``qc.count``.
+    The ``after_cursor_execute`` listener attaches to the TEST engine's sync engine on enter
+    and detaches on exit (per-use, so the per-test engine pattern stays leak-free).
+    Transaction-control statements (BEGIN/COMMIT/ROLLBACK/SAVEPOINT/RELEASE) and PRAGMAs are
+    excluded — the budget measures real SELECT/INSERT/... statements. ``statements`` keeps
+    the counted SQL so a budget failure shows exactly which queries ran.
+    """
+
+    sync_engine: Engine
+    count: int = 0
+    statements: list[str] = field(default_factory=list)
+
+    _IGNORED_PREFIXES = ("BEGIN", "COMMIT", "ROLLBACK", "SAVEPOINT", "RELEASE", "PRAGMA")
+
+    def _after_cursor_execute(
+        self,
+        conn: Any,
+        cursor: Any,
+        statement: str,
+        parameters: Any,
+        context: Any,
+        executemany: bool,
+    ) -> None:
+        if statement.lstrip().upper().startswith(self._IGNORED_PREFIXES):
+            return
+        self.count += 1
+        self.statements.append(statement)
+
+    def __enter__(self) -> "QueryCounter":
+        self.count = 0
+        self.statements = []
+        event.listen(self.sync_engine, "after_cursor_execute", self._after_cursor_execute)
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        event.remove(self.sync_engine, "after_cursor_execute", self._after_cursor_execute)
+
+
+@pytest.fixture
+def query_counter(db_engine: AsyncEngine) -> Callable[[], QueryCounter]:
+    """Factory for a :class:`QueryCounter` bound to THIS test's engine — the same engine the
+    ``app`` fixture's session override uses, so statements issued by API requests are counted.
+
+    The list-endpoint budget (PERFORMANCE §2) is asserted on the WARM path: perform one
+    warm-up request first so the D-009 RBAC TTL cache is hot; the warm request then runs the
+    auth user load (1) + the page select (1) — the assertion allows ≤3 (one query of slack).
+    """
+
+    def _make() -> QueryCounter:
+        return QueryCounter(db_engine.sync_engine)
+
+    return _make
+
+
+async def assert_query_budget(
+    client: AsyncClient,
+    query_counter: Callable[[], QueryCounter],
+    url: str,
+    *,
+    budget: int = 3,
+) -> None:
+    """The PERFORMANCE §2 mechanical N+1 check every module's API tests reuse: one warm-up GET
+    (so the D-009 RBAC TTL cache is hot), then assert the SECOND request runs at most
+    ``budget`` SQL statements.
+
+    The warm path for a list endpoint is the auth user load (1) + the page select (1); the ≤3
+    budget leaves one query of slack and any count above it is a real regression to fix, never
+    a reason to raise the budget. Detail endpoints with children pass ``budget=4`` (header +
+    refresh + lines + user)."""
+    warm = await client.get(url)
+    assert warm.status_code == 200, warm.text
+    with query_counter() as qc:
+        response = await client.get(url)
+    assert response.status_code == 200, response.text
+    assert qc.count <= budget, (
+        f"{url} ran {qc.count} queries (budget {budget}):\n" + "\n".join(qc.statements)
+    )
 
 
 @pytest.fixture

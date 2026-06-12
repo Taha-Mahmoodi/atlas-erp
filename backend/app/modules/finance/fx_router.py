@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends
 from app.core.deps import CurrentUserDep, SessionDep
 from app.core.events import run_in_uow
 from app.core.idempotency import Idempotent, IdempotentDep
-from app.core.pagination import CursorParams, cursor_params
+from app.core.pagination import CursorParams, cursor_params, map_page
 from app.core.rbac import require_permission
 from app.core.schemas import Page
 from app.modules.finance import service
@@ -63,14 +63,16 @@ async def _commit[T](session: SessionDep, work: Callable[[], Awaitable[T]]) -> T
 
 @fx_router.get(
     "/currencies",
-    response_model=list[CurrencyRead],
+    response_model=Page[CurrencyRead],
     dependencies=[Depends(require_permission(FINANCE_FX_MANAGE))],
 )
 async def list_currencies(
-    current: CurrentUserDep, session: SessionDep
-) -> list[CurrencyRead]:
-    currencies = await service.list_currencies(session, current.tenant_id)
-    return [CurrencyRead.model_validate(c) for c in currencies]
+    current: CurrentUserDep, session: SessionDep, params: CursorParams = CursorParamsDep
+) -> Page[CurrencyRead]:
+    page = await service.list_currencies(
+        session, current.tenant_id, cursor=params.cursor, limit=params.limit
+    )
+    return map_page(page, CurrencyRead)
 
 
 @fx_router.post(
@@ -121,11 +123,7 @@ async def list_exchange_rates(
         to_currency_code=to_currency_code,
         rate_type=RateKind(rate_type) if rate_type is not None else None,
     )
-    return Page(
-        items=[ExchangeRateRead.model_validate(item) for item in page.items],
-        next_cursor=page.next_cursor,
-        limit=page.limit,
-    )
+    return map_page(page, ExchangeRateRead)
 
 
 @fx_router.post(
@@ -157,14 +155,16 @@ async def create_exchange_rate(
 
 @fx_router.get(
     "/posting-defaults",
-    response_model=list[PostingDefaultRead],
+    response_model=Page[PostingDefaultRead],
     dependencies=[Depends(require_permission(FINANCE_FX_MANAGE))],
 )
 async def list_posting_defaults(
-    current: CurrentUserDep, session: SessionDep
-) -> list[PostingDefaultRead]:
-    defaults = await service.list_posting_defaults(session, current.tenant_id)
-    return [PostingDefaultRead.model_validate(d) for d in defaults]
+    current: CurrentUserDep, session: SessionDep, params: CursorParams = CursorParamsDep
+) -> Page[PostingDefaultRead]:
+    page = await service.list_posting_defaults(
+        session, current.tenant_id, cursor=params.cursor, limit=params.limit
+    )
+    return map_page(page, PostingDefaultRead)
 
 
 @fx_router.put(
@@ -189,14 +189,16 @@ async def set_posting_default(
 
 @fx_router.get(
     "/fx-revaluation-runs",
-    response_model=list[FxRevaluationRunRead],
+    response_model=Page[FxRevaluationRunRead],
     dependencies=[Depends(require_permission(FINANCE_FX_REVALUE))],
 )
 async def list_fx_revaluation_runs(
-    current: CurrentUserDep, session: SessionDep
-) -> list[FxRevaluationRunRead]:
-    runs = await service.list_revaluation_runs(session, current.tenant_id)
-    return [FxRevaluationRunRead.model_validate(run) for run in runs]
+    current: CurrentUserDep, session: SessionDep, params: CursorParams = CursorParamsDep
+) -> Page[FxRevaluationRunRead]:
+    page = await service.list_revaluation_runs(
+        session, current.tenant_id, cursor=params.cursor, limit=params.limit
+    )
+    return map_page(page, FxRevaluationRunRead)
 
 
 @fx_router.post(

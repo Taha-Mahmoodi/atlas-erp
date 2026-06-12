@@ -25,6 +25,7 @@ from app.modules.finance.constants import (
 )
 from app.modules.finance.models import TaxCode
 from app.modules.finance.schemas import AccountCreate, TaxCodeCreate, TaxCodeUpdate
+from tests.conftest import QueryCounter, assert_query_budget
 from tests.modules.finance.conftest import FinancePrincipal
 
 
@@ -361,3 +362,16 @@ async def test_tax_code_crud_via_api(finance_client: AsyncClient) -> None:
     )
     assert patched.status_code == 200
     assert patched.json()["is_active"] is False
+
+
+async def test_tax_codes_list_query_count(
+    finance_client: AsyncClient, query_counter: Callable[[], QueryCounter]
+) -> None:
+    """PERFORMANCE §2: the warm-path GET /tax-codes runs ≤3 SQL statements (no N+1)."""
+    for i, rate in enumerate(("20", "5", "0")):
+        created = await finance_client.post(
+            "/api/v1/finance/tax-codes",
+            json={"code": f"VAT{i}", "name": f"VAT {rate}%", "rate_percent": rate},
+        )
+        assert created.status_code == 201, created.text
+    await assert_query_budget(finance_client, query_counter, "/api/v1/finance/tax-codes")

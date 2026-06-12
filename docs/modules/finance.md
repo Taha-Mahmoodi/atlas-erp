@@ -343,8 +343,9 @@ items are keyed by the opaque `partner_id` (D-029) — finance never FK-referenc
 - `GET/POST /accounts`, `GET/PATCH /accounts/{id}` — list uses cursor pagination + the `Page`
   envelope; filters (`account_type`, `is_postable`, `is_active`, `account_group_id`) fold into
   the cursor fingerprint.
-- `GET/POST /account-groups`
-- `GET/POST /fiscal-years` (POST generates the periods), `GET /fiscal-periods`
+- `GET/POST /account-groups` — list cursor-paginated (`Page` envelope; #27)
+- `GET/POST /fiscal-years` (POST generates the periods), `GET /fiscal-periods` — both lists
+  cursor-paginated (`Page` envelope; #27)
 - `POST /fiscal-periods/{id}/close` and `/open` — action sub-resources (STRUCTURE §7), guarded by
   `finance.period.manage`.
 - `POST /journal-entries` (create draft), `GET /journal-entries` (paginated), `GET /{id}` (with
@@ -352,10 +353,10 @@ items are keyed by the opaque `partner_id` (D-029) — finance never FK-referenc
 - `POST /journal-entries/{id}/post` and `/{id}/reverse` — action sub-resources, **idempotent**
   (D-013, require the `Idempotency-Key` header), guarded by `finance.journal.post` /
   `finance.journal.reverse`.
-- `GET/POST /currencies`, `GET/POST /exchange-rates` (list paginated), `GET/PUT /posting-defaults`
-  — guarded by `finance.fx.manage` (D-019).
+- `GET/POST /currencies`, `GET/POST /exchange-rates`, `GET/PUT /posting-defaults` — all lists
+  cursor-paginated (`Page` envelope; #27) — guarded by `finance.fx.manage` (D-019).
 - `POST /fx-revaluation-runs` (run; **idempotent**, guarded by `finance.fx.revalue`),
-  `GET /fx-revaluation-runs` (D-019). The FX endpoints live in `fx_router.py` and mount into the
+  `GET /fx-revaluation-runs` (paginated; #27, D-019). The FX endpoints live in `fx_router.py` and mount into the
   finance router, so the module is one surface at `/api/v1/finance`.
 - `GET/POST /tax-codes`, `GET/PATCH /tax-codes/{id}` (PLAN 4.4) — list cursor-paginated; reads
   guarded by `finance.tax.read`, writes by `finance.tax.manage`. The tax endpoints live in

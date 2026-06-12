@@ -8,6 +8,8 @@
   for the clearly-marked seam. ``close_fiscal_year`` requires all the year's periods closed.
 """
 
+from __future__ import annotations
+
 import calendar
 import uuid
 from datetime import date, timedelta
@@ -16,6 +18,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, NotFoundError, ValidationFailedError
+from app.core.pagination import (
+    DEFAULT_LIMIT,
+    OrderKey,
+    SortDirection,
+    filter_fingerprint,
+    paginate,
+)
+from app.core.schemas import Page
 from app.modules.finance.constants import EntryStatus, PeriodStatus
 from app.modules.finance.models import FiscalPeriod, FiscalYear, JournalEntry
 from app.modules.finance.schemas import FiscalYearCreate
@@ -101,23 +111,47 @@ async def create_fiscal_year(
     return year
 
 
-async def list_fiscal_years(session: AsyncSession, tenant_id: uuid.UUID) -> list[FiscalYear]:
-    stmt = (
-        select(FiscalYear)
-        .where(FiscalYear.tenant_id == tenant_id)
-        .order_by(FiscalYear.start_date)
+async def list_fiscal_years(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    cursor: str | None = None,
+    limit: int = DEFAULT_LIMIT,
+) -> Page[FiscalYear]:
+    """Keyset-paginated fiscal years, earliest first (start_date + id tiebreaker; #27)."""
+    stmt = select(FiscalYear).where(FiscalYear.tenant_id == tenant_id)
+    return await paginate(
+        session,
+        stmt,
+        order_by=[OrderKey(FiscalYear.start_date, SortDirection.ASC)],
+        pk=FiscalYear.id,
+        cursor=cursor,
+        limit=limit,
     )
-    return list((await session.execute(stmt)).scalars().all())
 
 
 async def list_fiscal_periods(
-    session: AsyncSession, tenant_id: uuid.UUID, fiscal_year_id: uuid.UUID | None = None
-) -> list[FiscalPeriod]:
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    fiscal_year_id: uuid.UUID | None = None,
+    *,
+    cursor: str | None = None,
+    limit: int = DEFAULT_LIMIT,
+) -> Page[FiscalPeriod]:
+    """Keyset-paginated fiscal periods, earliest first (start_date + id tiebreaker). The
+    fiscal_year_id filter folds into the cursor fingerprint (D-014; #27)."""
     stmt = select(FiscalPeriod).where(FiscalPeriod.tenant_id == tenant_id)
     if fiscal_year_id is not None:
         stmt = stmt.where(FiscalPeriod.fiscal_year_id == fiscal_year_id)
-    stmt = stmt.order_by(FiscalPeriod.start_date)
-    return list((await session.execute(stmt)).scalars().all())
+    return await paginate(
+        session,
+        stmt,
+        order_by=[OrderKey(FiscalPeriod.start_date, SortDirection.ASC)],
+        pk=FiscalPeriod.id,
+        cursor=cursor,
+        limit=limit,
+        filters=filter_fingerprint(fiscal_year_id),
+    )
 
 
 async def _require_period(

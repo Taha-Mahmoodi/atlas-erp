@@ -22,6 +22,7 @@ from app.modules.finance import service
 from app.modules.finance.constants import DocumentType, EntryStatus, FxRunStatus
 from app.modules.finance.models import FxRevaluationRun, JournalEntry, JournalLine
 from app.modules.finance.schemas import JournalEntryCreate, JournalLineCreate
+from tests.conftest import assert_query_budget
 from tests.modules.finance.conftest import FxSetup
 
 # A EUR entry posted mid-March gives the EUR bank a 100 EUR foreign balance carried at the
@@ -62,9 +63,11 @@ async def _post_eur_balance(
 
 async def _march_period_id(session: AsyncSession, fx_setup: FxSetup):
     with tenant_context(fx_setup.tenant_id):
-        periods = await service.list_fiscal_periods(
-            session, fx_setup.tenant_id, fx_setup.fiscal_year_id
-        )
+        periods = (
+            await service.list_fiscal_periods(
+                session, fx_setup.tenant_id, fx_setup.fiscal_year_id
+            )
+        ).items
     return next(p.id for p in periods if p.start_date == date(2026, 3, 1))
 
 
@@ -170,9 +173,11 @@ async def test_next_period_not_open_raises_422_up_front(
     period_id = await _march_period_id(db_session, fx_setup)
     # Close April (the next period); the run must refuse before posting anything.
     with tenant_context(fx_setup.tenant_id):
-        periods = await service.list_fiscal_periods(
-            db_session, fx_setup.tenant_id, fx_setup.fiscal_year_id
-        )
+        periods = (
+            await service.list_fiscal_periods(
+                db_session, fx_setup.tenant_id, fx_setup.fiscal_year_id
+            )
+        ).items
         april = next(p for p in periods if p.start_date == _NEXT_PERIOD_START)
         await service.close_period(db_session, fx_setup.tenant_id, april.id)
         await db_session.commit()
@@ -281,7 +286,7 @@ async def test_run_revaluation_via_api_is_idempotent(finance_client) -> None:
         json={"code": "2026", "name": "FY2026", "start_date": "2026-01-01"},
     )
     assert fy.status_code == 201
-    periods = (await finance_client.get("/api/v1/finance/fiscal-periods")).json()
+    periods = (await finance_client.get("/api/v1/finance/fiscal-periods")).json()["items"]
     march = next(p for p in periods if p["start_date"] == "2026-03-01")
 
     body = {"fiscal_period_id": march["id"], "rate_date": "2026-03-31"}
@@ -301,4 +306,30 @@ async def test_run_revaluation_via_api_is_idempotent(finance_client) -> None:
     assert replay.status_code == 201
     assert replay.json()["id"] == first.json()["id"]
     runs = (await finance_client.get("/api/v1/finance/fx-revaluation-runs")).json()
-    assert len(runs) == 1
+    assert len(runs["items"]) == 1
+
+
+async def test_revaluation_runs_list_query_count(finance_client, query_counter) -> None:
+    """PERFORMANCE §2: the warm-path GET /fx-revaluation-runs runs ≤3 SQL statements."""
+    assert (
+        await finance_client.post(
+            "/api/v1/finance/currencies",
+            json={"code": "USD", "name": "US Dollar", "is_functional": True},
+        )
+    ).status_code == 201
+    fy = await finance_client.post(
+        "/api/v1/finance/fiscal-years",
+        json={"code": "2026", "name": "FY2026", "start_date": "2026-01-01"},
+    )
+    assert fy.status_code == 201
+    periods = (await finance_client.get("/api/v1/finance/fiscal-periods")).json()["items"]
+    march = next(p for p in periods if p["start_date"] == "2026-03-01")
+    run = await finance_client.post(
+        "/api/v1/finance/fx-revaluation-runs",
+        headers={"Idempotency-Key": "reval-qc"},
+        json={"fiscal_period_id": march["id"], "rate_date": "2026-03-31"},
+    )
+    assert run.status_code == 201, run.text
+    await assert_query_budget(
+        finance_client, query_counter, "/api/v1/finance/fx-revaluation-runs"
+    )

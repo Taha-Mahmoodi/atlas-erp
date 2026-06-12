@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DBAPIError
 from starlette.datastructures import MutableHeaders
@@ -193,6 +194,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # Response compression (PERFORMANCE §3): bodies >= 500 bytes are gzipped when the client
+    # sends Accept-Encoding: gzip; tiny responses pass through uncompressed. Added between
+    # CORS and RequestIdMiddleware, so the request id header is stamped outside compression.
+    app.add_middleware(GZipMiddleware, minimum_size=500)
     # Added last == outermost user middleware: the request id exists for everything
     # below it, including CORS rejections.
     app.add_middleware(RequestIdMiddleware, trust_proxy=settings.trust_proxy)

@@ -29,7 +29,7 @@ The core package is the cross-cutting foundation every business module builds on
 3. **Audit.** Inserts/updates/deletes on `AuditMixin` models are captured automatically in the same transaction as the change. Never use ORM bulk `update()/delete()` on an audited model — it's a hard error; mutate loaded objects.
 4. **Events.** Publish a `DomainEvent` with `publish(session, event)` and commit through `run_in_uow(session, work)`; subscribers in another module's `handlers.py` run in the same transaction, so cross-module effects are atomic with their trigger.
 5. **Documents.** Register a business document with `register_document(...)`, link predecessors with `link_documents(...)`, and claim its number with `claim_number(...)` inside the committing transaction.
-6. **Idempotency & pagination.** Guard document-creating endpoints with `Idempotent("endpoint")` + `idem.capture(...)`; return list endpoints through `paginate(...)`.
+6. **Idempotency & pagination.** Guard document-creating endpoints with `Idempotent("endpoint")` + `idem.capture(...)`; return EVERY collection endpoint through `paginate(...)` + `map_page(...)` into the `Page` envelope — no bare-list responses (PERFORMANCE §3; #27). Responses ≥500 bytes are gzip-compressed app-wide (`GZipMiddleware` in `app/main.py`).
 
 ## Database & migrations
 

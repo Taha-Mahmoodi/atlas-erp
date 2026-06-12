@@ -21,7 +21,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, NotFoundError, ValidationFailedError
-from app.core.pagination import OrderKey, SortDirection, filter_fingerprint, paginate
+from app.core.pagination import (
+    DEFAULT_LIMIT,
+    OrderKey,
+    SortDirection,
+    filter_fingerprint,
+    paginate,
+)
 from app.core.schemas import Page
 from app.modules.finance.constants import (
     AccountType,
@@ -252,13 +258,23 @@ async def _assert_no_cycle(
 
 
 async def list_account_groups(
-    session: AsyncSession, tenant_id: uuid.UUID
-) -> list[AccountGroup]:
-    """All groups for the tenant, ordered for stable tree rendering (sort_order then code).
-    Groups are a bounded configuration set, so this returns the full list (no pagination)."""
-    stmt = (
-        select(AccountGroup)
-        .where(AccountGroup.tenant_id == tenant_id)
-        .order_by(AccountGroup.sort_order, AccountGroup.code)
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    cursor: str | None = None,
+    limit: int = DEFAULT_LIMIT,
+) -> Page[AccountGroup]:
+    """Keyset-paginated groups, ordered for stable tree rendering (sort_order, code, id
+    tiebreaker). Paginated like every other collection endpoint (PERFORMANCE §3 / #27)."""
+    stmt = select(AccountGroup).where(AccountGroup.tenant_id == tenant_id)
+    return await paginate(
+        session,
+        stmt,
+        order_by=[
+            OrderKey(AccountGroup.sort_order, SortDirection.ASC),
+            OrderKey(AccountGroup.code, SortDirection.ASC),
+        ],
+        pk=AccountGroup.id,
+        cursor=cursor,
+        limit=limit,
     )
-    return list((await session.execute(stmt)).scalars().all())

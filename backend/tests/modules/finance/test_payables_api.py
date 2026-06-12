@@ -6,6 +6,7 @@ Idempotency-Key header (D-013).
 """
 
 import uuid
+from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
 
@@ -19,6 +20,7 @@ from app.modules.finance.constants import (
     FINANCE_AP_READ,
 )
 from app.modules.finance.schemas import AccountCreate, FiscalYearCreate
+from tests.conftest import QueryCounter, assert_query_budget
 
 
 async def _bootstrap(db_session: AsyncSession, tenant_id: uuid.UUID) -> dict[str, str]:
@@ -170,6 +172,48 @@ async def test_ap_aging_endpoint(
     assert Decimal(body["days_1_30"]) == Decimal("100.00")
     assert Decimal(body["total"]) == Decimal("100.00")
     assert len(body["partners"]) == 1
+
+
+async def test_ap_list_and_detail_query_count(
+    finance_client: AsyncClient,
+    db_session: AsyncSession,
+    query_counter: Callable[[], QueryCounter],
+) -> None:
+    """PERFORMANCE §2: warm-path bill/payment lists ≤3 queries; bill detail (with lines) ≤4."""
+    tenant_id = await _tenant_of(finance_client)
+    ids = await _bootstrap(db_session, tenant_id)
+    partner = str(uuid.uuid4())
+    bill_id = ""
+    for _ in range(3):
+        created = await finance_client.post(
+            "/api/v1/finance/vendor-bills", json=_bill_body(ids, partner)
+        )
+        assert created.status_code == 201
+        bill_id = created.json()["id"]
+    posted = await finance_client.post(
+        f"/api/v1/finance/vendor-bills/{bill_id}/post",
+        headers={"Idempotency-Key": "qc-bill"},
+    )
+    assert posted.status_code == 200, posted.text
+    paid = await finance_client.post(
+        "/api/v1/finance/vendor-payments",
+        json={
+            "partner_id": partner,
+            "partner_name": "Acme Supplies",
+            "payment_date": "2026-03-15",
+            "currency_code": "USD",
+            "bank_account_id": ids["1000"],
+            "amount": "100.00",
+            "allocations": [{"bill_id": bill_id, "amount": "100.00"}],
+        },
+        headers={"Idempotency-Key": "qc-pay"},
+    )
+    assert paid.status_code == 201, paid.text
+    await assert_query_budget(finance_client, query_counter, "/api/v1/finance/vendor-bills")
+    await assert_query_budget(finance_client, query_counter, "/api/v1/finance/vendor-payments")
+    await assert_query_budget(
+        finance_client, query_counter, f"/api/v1/finance/vendor-bills/{bill_id}", budget=4
+    )
 
 
 # --- RBAC ---------------------------------------------------------------------

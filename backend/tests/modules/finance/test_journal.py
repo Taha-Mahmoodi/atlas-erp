@@ -209,9 +209,11 @@ async def test_post_to_closed_period_rejected_at_service(
 ) -> None:
     # Close the March period, then posting an entry dated in March is refused at the service.
     with tenant_context(journal_setup.tenant_id):
-        periods = await service.list_fiscal_periods(
-            db_session, journal_setup.tenant_id, journal_setup.fiscal_year_id
-        )
+        periods = (
+            await service.list_fiscal_periods(
+                db_session, journal_setup.tenant_id, journal_setup.fiscal_year_id
+            )
+        ).items
         march = next(p for p in periods if p.start_date == date(2026, 3, 1))
         await service.close_period(db_session, journal_setup.tenant_id, march.id)
         await db_session.commit()
@@ -260,9 +262,11 @@ async def test_rolled_back_post_does_not_burn_a_number(
 ) -> None:
     # A draft whose period is closed fails to post; the next good post must still get 00001.
     with tenant_context(journal_setup.tenant_id):
-        periods = await service.list_fiscal_periods(
-            db_session, journal_setup.tenant_id, journal_setup.fiscal_year_id
-        )
+        periods = (
+            await service.list_fiscal_periods(
+                db_session, journal_setup.tenant_id, journal_setup.fiscal_year_id
+            )
+        ).items
         feb = next(p for p in periods if p.start_date == date(2026, 2, 1))
         await service.close_period(db_session, journal_setup.tenant_id, feb.id)
         await db_session.commit()
@@ -369,9 +373,11 @@ async def test_close_period_with_draft_in_it_rejected(
 ) -> None:
     await _create_draft(db_session, journal_setup)  # DRAFT dated 2026-03-15
     with tenant_context(journal_setup.tenant_id):
-        periods = await service.list_fiscal_periods(
-            db_session, journal_setup.tenant_id, journal_setup.fiscal_year_id
-        )
+        periods = (
+            await service.list_fiscal_periods(
+                db_session, journal_setup.tenant_id, journal_setup.fiscal_year_id
+            )
+        ).items
         march = next(p for p in periods if p.start_date == date(2026, 3, 1))
         with pytest.raises(ValidationFailedError) as exc:
             await service.close_period(db_session, journal_setup.tenant_id, march.id)
@@ -387,9 +393,11 @@ async def test_close_period_succeeds_after_posting_the_draft(
             db_session,
             lambda: service.post_entry(db_session, journal_setup.tenant_id, entry.id),
         )
-        periods = await service.list_fiscal_periods(
-            db_session, journal_setup.tenant_id, journal_setup.fiscal_year_id
-        )
+        periods = (
+            await service.list_fiscal_periods(
+                db_session, journal_setup.tenant_id, journal_setup.fiscal_year_id
+            )
+        ).items
         march = next(p for p in periods if p.start_date == date(2026, 3, 1))
         closed = await service.close_period(db_session, journal_setup.tenant_id, march.id)
     assert closed.status == "CLOSED"

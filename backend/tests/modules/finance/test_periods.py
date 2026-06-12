@@ -43,7 +43,7 @@ async def test_create_fiscal_year_creates_twelve_periods(
             FiscalYearCreate(code="2026", name="FY2026", start_date=date(2026, 1, 1)),
         )
         await db_session.commit()
-        periods = await service.list_fiscal_periods(db_session, tenant_a, year.id)
+        periods = (await service.list_fiscal_periods(db_session, tenant_a, year.id)).items
     assert len(periods) == 12
     assert year.end_date == date(2026, 12, 31)
     assert [p.period_number for p in periods] == list(range(1, 13))
@@ -109,7 +109,7 @@ async def test_close_then_open_period(
             FiscalYearCreate(code="2026", name="FY2026", start_date=date(2026, 1, 1)),
         )
         await db_session.commit()
-        periods = await service.list_fiscal_periods(db_session, tenant_a, year.id)
+        periods = (await service.list_fiscal_periods(db_session, tenant_a, year.id)).items
         first = periods[0]
 
         closed = await service.close_period(db_session, tenant_a, first.id)
@@ -129,7 +129,7 @@ async def test_close_already_closed_period_raises(
             FiscalYearCreate(code="2026", name="FY2026", start_date=date(2026, 1, 1)),
         )
         await db_session.commit()
-        period = (await service.list_fiscal_periods(db_session, tenant_a, year.id))[0]
+        period = (await service.list_fiscal_periods(db_session, tenant_a, year.id)).items[0]
         await service.close_period(db_session, tenant_a, period.id)
         with pytest.raises(ValidationFailedError) as excinfo:
             await service.close_period(db_session, tenant_a, period.id)
@@ -147,7 +147,7 @@ async def test_close_fiscal_year_blocked_while_a_period_is_open(
         )
         await db_session.commit()
         # Close every period but one, then closing the year must still fail.
-        periods = await service.list_fiscal_periods(db_session, tenant_a, year.id)
+        periods = (await service.list_fiscal_periods(db_session, tenant_a, year.id)).items
         for period in periods[:-1]:
             await service.close_period(db_session, tenant_a, period.id)
         with pytest.raises(ValidationFailedError) as excinfo:
@@ -165,7 +165,8 @@ async def test_close_fiscal_year_succeeds_when_all_periods_closed(
             FiscalYearCreate(code="2026", name="FY2026", start_date=date(2026, 1, 1)),
         )
         await db_session.commit()
-        for period in await service.list_fiscal_periods(db_session, tenant_a, year.id):
+        periods_page = await service.list_fiscal_periods(db_session, tenant_a, year.id)
+        for period in periods_page.items:
             await service.close_period(db_session, tenant_a, period.id)
         closed_year = await service.close_fiscal_year(db_session, tenant_a, year.id)
     assert closed_year.status == PeriodStatus.CLOSED.value
@@ -181,7 +182,7 @@ async def test_reopen_period_blocked_when_year_closed(
             FiscalYearCreate(code="2026", name="FY2026", start_date=date(2026, 1, 1)),
         )
         await db_session.commit()
-        periods = await service.list_fiscal_periods(db_session, tenant_a, year.id)
+        periods = (await service.list_fiscal_periods(db_session, tenant_a, year.id)).items
         for period in periods:
             await service.close_period(db_session, tenant_a, period.id)
         await service.close_fiscal_year(db_session, tenant_a, year.id)
