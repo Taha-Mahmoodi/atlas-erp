@@ -321,3 +321,49 @@ class FxRevaluationRunRead(ApiModel):
     status: FxRunStatus
     created_at: datetime
     updated_at: datetime
+
+
+# --- Tax codes (PLAN 4.4) -----------------------------------------------------
+# ``rate_percent`` is a Decimal PERCENTAGE (20 means 20%), serialized as a string (D-015).
+
+
+class TaxCodeCreate(ApiModel):
+    """Create a tax code. ``rate_percent`` is a percentage (20 == 20%). ``is_inclusive`` says a
+    line's base amount already contains the tax. The payable account collects OUTPUT (sales) tax,
+    the receivable account INPUT (purchase) tax — each optional so a code wires only its side."""
+
+    code: str
+    name: str
+    rate_percent: Decimal
+    jurisdiction: str | None = None
+    is_inclusive: bool = False
+    is_active: bool = True
+    tax_payable_account_id: uuid.UUID | None = None
+    tax_receivable_account_id: uuid.UUID | None = None
+
+
+class TaxCodeUpdate(ApiModel):
+    """Partial update — every field optional; ``code`` is immutable after creation (a posted line
+    references it) and so is deliberately absent from this schema."""
+
+    name: str | None = None
+    rate_percent: Decimal | None = None
+    jurisdiction: str | None = None
+    is_inclusive: bool | None = None
+    is_active: bool | None = None
+    tax_payable_account_id: uuid.UUID | None = None
+    tax_receivable_account_id: uuid.UUID | None = None
+
+
+class TaxCodeRead(ApiModel):
+    id: uuid.UUID
+    code: str
+    name: str
+    rate_percent: Decimal
+    jurisdiction: str | None
+    is_inclusive: bool
+    is_active: bool
+    tax_payable_account_id: uuid.UUID | None
+    tax_receivable_account_id: uuid.UUID | None
+    created_at: datetime
+    updated_at: datetime

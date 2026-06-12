@@ -9,17 +9,19 @@ guide is the operator/contributor map, and it grows with each finance task (PLAN
 
 PLAN 4.1 laid the **schema foundation**: the chart of accounts and fiscal years/periods.
 PLAN 4.2 added the **universal journal** (D-017) — the heart of the system — and the **four
-DB-level guard triggers** (D-018/D-017). PLAN 4.3 (this task) adds **multi-currency** (D-019):
-currencies + rates, posting-time translation, unrealized-FX revaluation. AP/AR and payments land
-in PLAN 4.4…4.10.
+DB-level guard triggers** (D-018/D-017). PLAN 4.3 added **multi-currency** (D-019): currencies +
+rates, posting-time translation, unrealized-FX revaluation. PLAN 4.4 (this task) adds the **tax
+engine**: configurable line-level tax codes + the calculation service AP/AR/Sales call. AP/AR and
+payments land in PLAN 4.5…4.10.
 
 | File | Concern | Key decision |
 |---|---|---|
-| `constants.py` | account/period/FX enums + normal-balance mapping; `EntryStatus`, `DocumentType`, `RateKind`, `FxRunStatus`; permission + posting-purpose keys | D-021, D-018, D-017, D-019, D-009 |
+| `constants.py` | account/period/FX enums + normal-balance mapping; `EntryStatus`, `DocumentType`, `RateKind`, `FxRunStatus`, `TaxDirection`; permission + posting-purpose keys | D-021, D-018, D-017, D-019, D-009 |
 | `models/accounts.py` | `Account` (+ `is_monetary`/`currency_code`), `AccountGroup`, `FiscalYear`, `FiscalPeriod` | D-021, D-018, D-019 |
 | `models/journal.py` | `JournalEntry`, `JournalLine` (the universal journal) | D-017, D-021 |
 | `models/fx.py` | `Currency`, `ExchangeRate`, `PostingDefault`, `FxRevaluationRun` | D-019 |
-| `schemas.py` | Create/Update/Read/Filter for accounts, periods, journal, **FX** | — |
+| `models/tax.py` | `TaxCode` (configurable line-level tax codes) | PLAN 4.4 |
+| `schemas.py` | Create/Update/Read/Filter for accounts, periods, journal, **FX**, **tax** | — |
 | `service/accounts.py` | chart-of-accounts business logic | D-021 |
 | `service/periods.py` | fiscal years/periods + open/close lifecycle | D-018 |
 | `service/journal.py` | draft creation, two-flush posting (+ FX translation), reversal | D-017, D-019 |
@@ -27,9 +29,10 @@ in PLAN 4.4…4.10.
 | `service/fx_translation.py` | posting-time line translation + largest-remainder balancing | D-019 |
 | `service/fx_revaluation.py` | unrealized-FX revaluation run + auto-reversal | D-019 |
 | `service/posting_defaults.py` | purpose-keyed account wiring (reused by AP/AR/COGS) | D-019 |
+| `service/tax.py` | tax calculation (inclusive/exclusive, document grouping) + tax-code CRUD | PLAN 4.4 |
 | `events.py` | `JournalEntryPosted`, `JournalEntryReversed` | D-011 |
-| `queries.py` | the cross-module read interface finance **exposes** (+ `get_rate`, `functional_currency`) | STRUCTURE §5 |
-| `router.py` / `fx_router.py` | thin HTTP layer at `/api/v1/finance` | D-013 (idempotent post/reverse/revalue) |
+| `queries.py` | the cross-module read interface finance **exposes** (+ `get_rate`, `functional_currency`, `get_tax_code`, `calculate_line_tax`) | STRUCTURE §5 |
+| `router.py` / `fx_router.py` / `tax_router.py` | thin HTTP layer at `/api/v1/finance` | D-013 (idempotent post/reverse/revalue) |
 
 > Money/quantity/rate exactness comes from `core/money.py` (D-015): `MoneyType`/`QuantityType`
 > store NUMERIC on Postgres and INTEGER scaled minor units on SQLite, so the balance trigger's
@@ -217,6 +220,59 @@ doc; it reuses exactly this rates-table + FX-account machinery when it lands. **
 open-item clearing) is likewise deferred to AP/AR — the `fx_realized_gain`/`fx_realized_loss`
 purposes are wired now for that consumer.
 
+## The tax engine (PLAN 4.4)
+
+Tax is configured as a catalog of **tax codes** (`fin_tax_codes`) and applied **at the line level**:
+a document line references a tax code, and the calculation service (`service/tax.py`) turns the
+line's base amount into net / tax / gross plus the GL account the tax posts to. AP (4.5), AR (4.6)
+and Sales all call this one engine through `queries.py`, so tax math is computed identically
+everywhere — finance is the bottom of the dependency order (STRUCTURE §5).
+
+### Tax codes
+
+A `TaxCode` carries `code` (e.g. `VAT20`), `name`, `rate_percent` (a **percentage** — `20` means
+20% — stored exactly via `MoneyType`, D-015, **not** a money amount), `jurisdiction` (e.g. `GB`),
+`is_inclusive`, `is_active`, and two **nullable** posting accounts:
+
+- `tax_payable_account_id` — collects **OUTPUT** (sales/AR) tax, a **liability** owed to the
+  authority;
+- `tax_receivable_account_id` — collects **INPUT** (purchase/AP) tax, **recoverable** from the
+  authority.
+
+Each is optional so a code wires only the side it serves. The calc service picks the account by
+`TaxDirection` (`OUTPUT` for sales, `INPUT` for purchase) and raises a clear 422 when the needed
+side is unwired. `UNIQUE(tenant_id, code)` keys the code per tenant; both account links are
+composite tenant FKs (D-007). `code` is immutable after creation (a posted line references it).
+
+### Inclusive vs exclusive math (ROUND_HALF_UP, D-015)
+
+Both modes quantize every amount HALF_UP to the currency's minor unit:
+
+- **Exclusive** — the line base **is the net**; tax is added on top:
+  `tax = round(net × rate)`, `gross = net + tax`. Net 100 @ 20% → tax 20, gross 120.
+- **Inclusive** — the line base **is the gross** (tax already inside the price):
+  `net = round(gross ÷ (1 + rate))`, `tax = gross − net`. Gross 120 @ 20% → net 100, tax 20.
+  Deriving tax as `gross − net` (not `gross × rate ÷ (1+rate)` directly) keeps `net + tax == gross`
+  exactly after rounding — the two rounded parts always reconstitute the rounded gross. On an
+  awkward rate (e.g. 19.6%) the HALF_UP rounding lands the cent deterministically.
+
+### Calculation API
+
+- `calculate_line_tax(base_amount, tax_code, *, direction, currency_code='USD') -> TaxCalculation`
+  — one line. `TaxCalculation` is `(tax_code, direction, net_amount, tax_amount, gross_amount,
+  tax_account_id)`.
+- `calculate_document_tax(lines, *, currency_code='USD') -> DocumentTaxSummary` — a whole document.
+  Lines are `(base_amount, tax_code, direction)`; the result groups by `(code, direction)` into **one
+  tax line per code** (`TaxLine`) plus `net_total` / `tax_total` / `gross_total`. The grouped tax is
+  the group's **net taxed once** (not the drifting sum of per-line rounded tax), and `allocate`
+  (D-015 largest-remainder) confirms the split reconstitutes exactly — so a document's posted tax
+  per code is exact to the cent.
+
+**Where AP/AR/Sales plug in:** each builds its journal from the summary — the per-line **net** feeds
+the expense/revenue lines, each `TaxLine.tax_amount` posts to its `tax_account_id` (payable for
+sales, receivable for purchases), and the **gross** feeds the AP/AR control account. Finance owns the
+tax codes and the math; the document modules own the posting.
+
 ## The `queries.py` contract (what other modules read)
 
 Finance exposes a thin, stable read surface (STRUCTURE §5 — everyone may import these):
@@ -226,11 +282,14 @@ Finance exposes a thin, stable read surface (STRUCTURE §5 — everyone may impo
 - `account_exists(session, tenant_id, code) -> bool`
 - `get_rate(session, tenant_id, from, to, on_date, rate_type=SPOT) -> Decimal` (D-019)
 - `functional_currency(session, tenant_id) -> str` (D-019)
+- `get_tax_code(session, tenant_id, code) -> TaxCode | None` (PLAN 4.4)
+- `calculate_line_tax(base_amount, tax_code, *, direction, currency_code='USD') -> TaxCalculation`
+  (PLAN 4.4)
 
 Inventory and sales call `get_period_status` to refuse stock/sales documents dated into a closed
 period before they reach the GL; the journal calls `find_period_for_date` to resolve an entry's
 period from its posting date; other modules price in functional terms via `get_rate` /
-`functional_currency`.
+`functional_currency`, and resolve + apply tax via `get_tax_code` / `calculate_line_tax`.
 
 ## Permissions (D-009)
 
@@ -245,8 +304,10 @@ period from its posting date; other modules price in functional terms via `get_r
 | `finance.journal.reverse` | reverse posted entries |
 | `finance.fx.manage` | manage currencies, exchange rates, posting defaults |
 | `finance.fx.revalue` | run foreign-currency revaluation |
+| `finance.tax.read` | read the tax-code catalog |
+| `finance.tax.manage` | create/edit tax codes |
 
-AP, AR and payment keys are registered by their own tasks (4.4+).
+AP, AR and payment keys are registered by their own tasks (4.5+).
 
 ## API (`/api/v1/finance`)
 
@@ -267,6 +328,9 @@ AP, AR and payment keys are registered by their own tasks (4.4+).
 - `POST /fx-revaluation-runs` (run; **idempotent**, guarded by `finance.fx.revalue`),
   `GET /fx-revaluation-runs` (D-019). The FX endpoints live in `fx_router.py` and mount into the
   finance router, so the module is one surface at `/api/v1/finance`.
+- `GET/POST /tax-codes`, `GET/PATCH /tax-codes/{id}` (PLAN 4.4) — list cursor-paginated; reads
+  guarded by `finance.tax.read`, writes by `finance.tax.manage`. The tax endpoints live in
+  `tax_router.py` and mount into the finance router (same one-surface pattern as FX).
 
 Writes commit through `run_in_uow` (D-011), so audit rows ride the same transaction and the
 event semantics will be identical to seed/CLI once finance publishes events.
