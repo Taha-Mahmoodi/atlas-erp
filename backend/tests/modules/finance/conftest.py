@@ -43,6 +43,7 @@ from app.modules.finance.constants import (
     FINANCE_PERIOD_READ,
     FINANCE_PROFIT_CENTER_MANAGE,
     FINANCE_PROFIT_CENTER_READ,
+    FINANCE_STATEMENTS_READ,
     FINANCE_TAX_MANAGE,
     FINANCE_TAX_READ,
     AccountType,
@@ -74,6 +75,7 @@ _FINANCE_KEYS = (
     FINANCE_PROFIT_CENTER_MANAGE,
     FINANCE_ALLOCATION_MANAGE,
     FINANCE_ALLOCATION_RUN,
+    FINANCE_STATEMENTS_READ,
 )
 
 # A minimal but type-complete chart of accounts: one account per statement-deriving type.

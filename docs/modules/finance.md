@@ -13,8 +13,11 @@ DB-level guard triggers** (D-018/D-017). PLAN 4.3 added **multi-currency** (D-01
 rates, posting-time translation, unrealized-FX revaluation. PLAN 4.4 added the **tax engine**:
 configurable line-level tax codes + the calculation service AP/AR/Sales call. PLAN 4.5/4.6 added
 **Accounts Payable** and **Accounts Receivable** (D-029, opaque `partner_id`): bills, payments,
-invoices, receipts, open-item clearing with realized FX, dunning and aging. PLAN 4.7 (this task)
-adds **Controlling**: cost/profit centres as journal dimensions + allocation rules and runs.
+invoices, receipts, open-item clearing with realized FX, dunning and aging. PLAN 4.7 added
+**Controlling**: cost/profit centres as journal dimensions + allocation rules and runs. PLAN 4.8
+(this task) adds the **financial statements** (D-021) — trial balance, P&L, balance sheet, indirect
+cash flow, cost-centre report and margin-by-product — all as pure projections of ONE base aggregate
+over `fin_journal_lines`, with no stored totals anywhere.
 
 | File | Concern | Key decision |
 |---|---|---|
@@ -36,6 +39,8 @@ adds **Controlling**: cost/profit centres as journal dimensions + allocation rul
 | `service/controlling.py` | cost/profit-centre CRUD + acyclic hierarchy | PLAN 4.7 |
 | `service/allocation_rules.py` | allocation-rule + target CRUD + weight validation | PLAN 4.7 |
 | `service/allocation.py` | `run_allocation` redistribution engine | PLAN 4.7, D-021 |
+| `service/statements/` | the six statement projections + `base._account_balances` (the single aggregate) + shared `grouping` | PLAN 4.8, D-021 |
+| `statements_schemas.py` / `statements_router.py` | statement Read schemas + the six read-only GET endpoints | PLAN 4.8 |
 | `events.py` | `JournalEntryPosted`, `JournalEntryReversed`, `AllocationPosted` | D-011 |
 | `queries.py` | the cross-module read interface finance **exposes** (+ `get_rate`, `get_tax_code`, `cost_center_balance`, `cost_center_exists`, `profit_center_exists`) | STRUCTURE §5 |
 | `router.py` / `fx_router.py` / `tax_router.py` / `ap_router.py` / `ar_router.py` / `co_router.py` | thin HTTP layer at `/api/v1/finance` | D-013 (idempotent post/reverse/revalue/run) |
@@ -331,6 +336,7 @@ items are keyed by the opaque `partner_id` (D-029) — finance never FK-referenc
 | `finance.profitcenter.manage` | create/edit profit centres |
 | `finance.allocation.manage` | create/edit allocation rules |
 | `finance.allocation.run` | run cost allocations |
+| `finance.statements.read` | read the financial statements (trial balance, P&L, balance sheet, cash flow, cost-centre, margin) |
 
 ## API (`/api/v1/finance`)
 
@@ -505,3 +511,72 @@ target, and a target appears at most once.
 The run is **idempotent** (a second run for the same `(rule, period)` returns the existing run) and
 **reversible** (its journal entry reverses like any other; a re-run after correction relies on that).
 A zero source balance is a clear 422 (`finance.allocation_zero_balance`) — nothing to allocate.
+
+## Financial statements — every report is a projection of ONE aggregate (PLAN 4.8, D-021)
+
+**This is the payoff of the universal journal.** Every statement Atlas produces — trial balance,
+P&L, balance sheet, cash flow, cost-centre report, margin-by-product — is a **projection of one
+base aggregate over `fin_journal_lines`**. There are **no stored totals, no balance tables, no
+materialized views** (CLAUDE.md rule 1, D-021). Because every statement reads the **same** query
+with the **same** predicate, each is provably consistent with the trial balance by construction —
+FI/CO reconciliation is eliminated, not reconciled.
+
+**The single base aggregate** (`service/statements/base._account_balances`):
+
+```python
+select(JournalLine.account_id,
+       func.sum(functional_debit_amount - functional_credit_amount))
+.where(tenant_id == ..., is_posted == True, posting_date <= date_to [, >= date_from])
+.group_by(account_id)
+```
+
+It returns `{account_id: signed_balance}`, debit-positive (ASSET/EXPENSE positive, the credit-side
+types negative). **No header join** is needed — the line denormalizes `tenant_id`/`posting_date`/
+`is_posted` during the two-flush posting protocol (D-017). `MoneyType` type propagation keeps the
+`SUM` exact on both engines (D-015). Every statement below builds on exactly this.
+
+- **Trial balance** (`as_of`): the signed balance split per account onto its natural debit/credit
+  side. Asserts the universal-journal **debit == credit** identity into `is_balanced` + the totals —
+  every posted entry balances (the DB balance trigger), so the whole ledger does.
+- **P&L** (`date_from..date_to`): REVENUE and EXPENSE accounts over the range, laid out under the
+  `account_group` hierarchy with a subtotal per group. **Net income = revenue − expense**,
+  hand-checkable and equal to the figure the balance sheet folds into retained earnings.
+- **Balance sheet** (`as_of`): ASSET/LIABILITY/EQUITY cumulative to date, grouped by `account_group`.
+  **Retained earnings is computed on the fly** — net income over *all* history to `as_of`
+  (`net_income_signed`), presented as a synthetic **"Current & accumulated earnings"** equity line.
+  This is exact by construction (every balanced posting moved equal debits and credits), so
+  **Assets == Liabilities + Equity** holds identically — asserted into `is_balanced` + the totals.
+  v1 needs **no year-end carryforward**: deriving retained earnings from genesis makes that sound
+  rather than a hole.
+- **Cash flow, indirect** (`date_from..date_to`): starts from net income for the period, then adds
+  the signed deltas of every **non-cash** balance-sheet account between `date_from − 1` and `date_to`,
+  bucketed by `cash_flow_category` (OPERATING/INVESTING/FINANCING). The **built-in self-check**: the
+  net change those movements imply MUST equal the actual movement in `is_cash_equivalent` accounts
+  over the period — double-entry forces them equal. `is_reconciled` exposes that identity, and
+  `net_change_from_activities` / `cash_account_movement` expose the cash delta **both ways** so any
+  discrepancy is visible, not hidden.
+- **Cost-centre report** (`date_from..date_to`, optional `cost_center_id`): the same aggregate
+  grouped by the line's `cost_center_id` dimension and account — CO without a separate ledger.
+- **Margin by product** (`date_from..date_to`): revenue − COGS grouped by the line's `item_id`
+  dimension, per item with revenue / cogs / margin / margin %. Sparse until inventory posts COGS with
+  `item_id` (PLAN 5), but structurally correct now and tested with item-tagged journal lines.
+
+**No stored totals, ever.** Post another entry and the trial balance, P&L and balance sheet reflect
+it on the very next read — there is nothing to refresh. `queries.account_balances` / `queries.net_income`
+expose the same aggregate to the reporting module (PLAN 13) so its views are projections of the
+*same* query, never a copy.
+
+**Performance** (D-021): the partial covering index `ix_fin_journal_lines_proj` ON
+`(tenant_id, account_id, posting_date) WHERE is_posted` — declared with **both** dialect predicates
+(`postgresql_where` AND `sqlite_where`) — plus `INCLUDE (functional_debit_amount,
+functional_credit_amount)` on Postgres for index-only scans (ignored on SQLite). Migration **0015**
+brings the index up to this covering shape (0009 created the bare partial form). The migration uses
+plain `CREATE/DROP INDEX`, **not** `batch_alter_table`, so SQLite does not copy-rebuild the
+trigger-bearing `fin_journal_lines` table — the line-immutability trigger **survives the migration**
+(a pg-marked guard test proves it still fires afterwards).
+
+**API** (`/api/v1/finance/statements/*`, all `GET`, all guarded by `finance.statements.read`):
+`trial-balance?as_of=`, `profit-loss?date_from=&date_to=`, `balance-sheet?as_of=`,
+`cash-flow?date_from=&date_to=`, `cost-center-report?date_from=&date_to=&cost_center_id=`,
+`margin-by-product?date_from=&date_to=`. Every response carries its self-check flag (`is_balanced` /
+`is_reconciled`) so the guarantee is visible on the wire.

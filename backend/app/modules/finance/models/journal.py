@@ -184,7 +184,10 @@ sa.Index(
 )
 
 # Statement-projection covering index (D-021): lines grouped by account over a date range, only
-# the posted ones.
+# the posted ones. Both dialect partial predicates (each engine needs its own); on Postgres the
+# two functional amount columns are INCLUDE'd so the statement aggregate is an index-only scan
+# (the kwarg is harmlessly ignored on SQLite). Migration 0015 brings the physical index up to this
+# covering shape — 0009 created the bare partial index; this declaration is its final form.
 sa.Index(
     "ix_fin_journal_lines_proj",
     JournalLine.tenant_id,
@@ -192,4 +195,5 @@ sa.Index(
     JournalLine.posting_date,
     postgresql_where=JournalLine.is_posted,
     sqlite_where=JournalLine.is_posted,
+    postgresql_include=["functional_debit_amount", "functional_credit_amount"],
 )

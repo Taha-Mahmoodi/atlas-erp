@@ -242,3 +242,46 @@ async def cost_center_balance(
     )
     result = (await session.execute(stmt)).scalar_one()
     return Decimal(str(result)) if result is not None else Decimal(0)
+
+
+# --- Statements: the base aggregate, exposed for reporting reuse (PLAN 4.8, D-021) -----------
+
+
+async def account_balances(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    date_to: date,
+    date_from: date | None = None,
+) -> dict[uuid.UUID, Decimal]:
+    """Signed (debit-positive) net balance per account over the posted journal (D-021). The single
+    statement base aggregate, exposed here so the reporting module (PLAN 13) builds its own views as
+    projections of the SAME query the statements use — never a stored total. ``date_from`` bounds
+    the range (a P&L-style window); omit it for cumulative-to-date balances (balance-sheet-style).
+    Thin re-export of ``service.statements._account_balances`` — one aggregate, one index."""
+    from app.modules.finance.service.statements import _account_balances
+
+    return await _account_balances(
+        session, tenant_id, date_to=date_to, date_from=date_from
+    )
+
+
+async def net_income(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    date_to: date,
+    date_from: date | None = None,
+) -> Decimal:
+    """Net income (revenue - expense, credit-positive so a profit is positive) over the range
+    (D-021). Derived from ``account_balances`` + account types so reporting reads it as a projection
+    of the journal — the same figure the balance sheet folds into retained earnings. Cumulative to
+    ``date_to`` when ``date_from`` is omitted."""
+    from app.modules.finance.service.statements import net_income_signed
+    from app.modules.finance.service.statements.base import load_account_meta
+
+    balances = await account_balances(
+        session, tenant_id, date_to=date_to, date_from=date_from
+    )
+    meta = await load_account_meta(session, tenant_id)
+    return net_income_signed(balances, meta)
