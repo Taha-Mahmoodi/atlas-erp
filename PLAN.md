@@ -53,7 +53,7 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 
 - [x] 4P.1 Commit PERFORMANCE.md at repo root; bind it in CLAUDE.md; add these tasks; per-endpoint DoD now includes the §6 checklist
 - [ ] 4P.2 Retrofit: SQL query-count fixture (SQLAlchemy event listener) in tests/conftest.py; every existing list-endpoint test asserts query_count ≤ 3 (PERFORMANCE §2); fix any N+1 found (issue-first)
-- [ ] 4P.3 Retrofit: audit every FK + hot filter column across migrations 0002–0015 against PERFORMANCE §1; one migration adding all missing indexes (tenant_id leads composites); issue-first per finding
+- [x] 4P.3 Retrofit: audit every FK + hot filter column across migrations 0002–0015 against PERFORMANCE §1; one migration adding all missing indexes (tenant_id leads composites); issue-first per finding
 - [ ] 4P.4 Retrofit: gzip response middleware (PERFORMANCE §3); assert pagination is mandatory on every collection endpoint (cursor, default 50, max 200)
 - [ ] 4P.5 Background-job core (PERFORMANCE §3): in-process job runner + `core_jobs` table + job-id/polling endpoint pattern for long operations (bank-statement imports >1k lines, MRP, big payment runs); required before 4.9 import and Phase 8 MRP
 - [ ] 4P.6 ETag/If-None-Match on slow-changing reference data (COA, item master, settings) (PERFORMANCE §3)
