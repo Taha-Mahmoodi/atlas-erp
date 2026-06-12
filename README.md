@@ -17,6 +17,18 @@ The parity map itself lives at [docs/research/s4hana-parity.md](docs/research/s4
 
 🚧 **Pre-alpha, under active construction.** The build journal is public: see [PLAN.md](PLAN.md) for the phased plan, [PROGRESS.md](PROGRESS.md) for the running log, and [DECISIONS.md](DECISIONS.md) for the design-decision record.
 
+**Latest release: `v0.1.0` — core platform.** The cross-cutting foundation is complete and tested on both SQLite and PostgreSQL ([core module guide](docs/modules/core.md)):
+
+- Non-bypassable row-level multi-tenancy (session filter + composite-FK backstop)
+- JWT auth (argon2id, rotating refresh sessions with reuse detection)
+- RBAC as data (permission catalog, route guards, field-level read masking)
+- Append-only audit trail captured in the same transaction as each change
+- In-process domain-event bus dispatched inside the transaction
+- Document registry with predecessor/successor flow chains
+- Gapless per-tenant document numbering, idempotency keys, keyset pagination
+
+Business modules (Finance & Controlling first) are next on the plan.
+
 ## Stack
 
 | Layer | Choice |
