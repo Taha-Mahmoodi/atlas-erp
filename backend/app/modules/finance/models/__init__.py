@@ -10,6 +10,7 @@ tenancy mapper-enumeration suite) registers all tables on ``Base.metadata``.
 - ``payables``: vendor bills, payments and payment allocations (PLAN 4.5, D-029).
 - ``receivables``: customer invoices, receipts, allocations + dunning (PLAN 4.6, D-029).
 - ``bank``: imported bank statements + lines for reconciliation (PLAN 4.9).
+- ``assets``: the asset register + depreciation runs/entries (PLAN 4.10).
 """
 
 from app.modules.finance.models.accounts import (
@@ -18,6 +19,7 @@ from app.modules.finance.models.accounts import (
     FiscalPeriod,
     FiscalYear,
 )
+from app.modules.finance.models.assets import Asset, DepreciationEntry, DepreciationRun
 from app.modules.finance.models.bank import BankStatement, BankStatementLine
 from app.modules.finance.models.controlling import (
     AllocationRule,
@@ -53,6 +55,7 @@ __all__ = [
     "AllocationRule",
     "AllocationRuleTarget",
     "AllocationRun",
+    "Asset",
     "BankStatement",
     "BankStatementLine",
     "CostCenter",
@@ -61,6 +64,8 @@ __all__ = [
     "CustomerInvoiceLine",
     "CustomerReceipt",
     "CustomerReceiptAllocation",
+    "DepreciationEntry",
+    "DepreciationRun",
     "ExchangeRate",
     "FiscalPeriod",
     "FiscalYear",

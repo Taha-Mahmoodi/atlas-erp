@@ -17,19 +17,23 @@ invoices, receipts, open-item clearing with realized FX, dunning and aging. PLAN
 **Controlling**: cost/profit centres as journal dimensions + allocation rules and runs. PLAN 4.8
 added the **financial statements** (D-021) — trial balance, P&L, balance sheet, indirect
 cash flow, cost-centre report and margin-by-product — all as pure projections of ONE base aggregate
-over `fin_journal_lines`, with no stored totals anywhere. PLAN 4.9 (this task) adds **bank
+over `fin_journal_lines`, with no stored totals anywhere. PLAN 4.9 added **bank
 reconciliation**: CSV statement import (background job above 1k lines, PERFORMANCE §3), match
 suggestions against posted journal lines, and clearing postings for bank-only lines.
+PLAN 4.10 (this task — **completes Phase 4**) adds **asset accounting lite**: the asset
+register, straight-line + declining-balance depreciation runs posting ONE grouped journal
+entry each, and the register-as-projection report.
 
 | File | Concern | Key decision |
 |---|---|---|
-| `constants.py` | account/period/FX enums + normal-balance mapping; `EntryStatus`, `DocumentType`, `RateKind`, `FxRunStatus`, `TaxDirection`; permission + posting-purpose keys | D-021, D-018, D-017, D-019, D-009 |
+| `constants/` (`enums.py`, `documents.py`, `permissions.py`) | every finance StrEnum + normal-balance mapping; doc types, sequences, link types, posting purposes, job keys; permission keys — split into a package at the 400-line cap (STRUCTURE §8.4), fully re-exported from `__init__` so every existing import is unchanged | D-021, D-018, D-017, D-019, D-009 |
 | `models/accounts.py` | `Account` (+ `is_monetary`/`currency_code`), `AccountGroup`, `FiscalYear`, `FiscalPeriod` | D-021, D-018, D-019 |
 | `models/journal.py` | `JournalEntry`, `JournalLine` (the universal journal) | D-017, D-021 |
 | `models/fx.py` | `Currency`, `ExchangeRate`, `PostingDefault`, `FxRevaluationRun` | D-019 |
 | `models/tax.py` | `TaxCode` (configurable line-level tax codes) | PLAN 4.4 |
 | `models/controlling.py` | `CostCenter`, `ProfitCenter`, `AllocationRule`, `AllocationRuleTarget`, `AllocationRun` | PLAN 4.7, D-021 |
 | `models/bank.py` | `BankStatement`, `BankStatementLine` (imported statements for reconciliation) | PLAN 4.9, D-012 |
+| `models/assets.py` | `Asset`, `DepreciationRun`, `DepreciationEntry` (UNIQUE(asset, period) idempotency backbone) | PLAN 4.10, D-012 |
 | `schemas.py` | Create/Update/Read/Filter for accounts, periods, journal, **FX**, **tax** | — |
 | `service/accounts.py` | chart-of-accounts business logic | D-021 |
 | `service/periods.py` | fiscal years/periods + open/close lifecycle | D-018 |
@@ -48,9 +52,13 @@ suggestions against posted journal lines, and clearing postings for bank-only li
 | `service/bank_import.py` | statement import (bulk line insert), the import job handler, progress/status derivation, reads | PLAN 4.9, PERF §2/§3 |
 | `service/bank_reconcile.py` | match suggestions (two rules), confirm/reject, clearing postings | PLAN 4.9 |
 | `bank_schemas.py` / `bank_router.py` | bank-reconciliation schemas + endpoints (201/202 import split) | PLAN 4.9, D-013 |
+| `service/assets.py` | asset register lifecycle: create/update DRAFT, activate (+ acquisition posting) | PLAN 4.10, D-012 |
+| `service/depreciation.py` | `compute_depreciation` (the two formulas) + the set-based posting run + the run job handler | PLAN 4.10, PERF §2/§3 |
+| `service/depreciation_read.py` | run/entry reads + the asset-register projection | PLAN 4.10, D-021 |
+| `assets_schemas.py` / `assets_router.py` | asset-accounting schemas + endpoints (201/202 run split) | PLAN 4.10, D-013 |
 | `events.py` | `JournalEntryPosted`, `JournalEntryReversed`, `AllocationPosted` | D-011 |
 | `queries.py` | the cross-module read interface finance **exposes** (+ `get_rate`, `get_tax_code`, `cost_center_balance`, `cost_center_exists`, `profit_center_exists`) | STRUCTURE §5 |
-| `router.py` / `fx_router.py` / `tax_router.py` / `ap_router.py` / `ar_router.py` / `co_router.py` / `bank_router.py` | thin HTTP layer at `/api/v1/finance` | D-013 (idempotent post/reverse/revalue/run/import/clear) |
+| `router.py` / `fx_router.py` / `tax_router.py` / `ap_router.py` / `ar_router.py` / `co_router.py` / `bank_router.py` / `assets_router.py` | thin HTTP layer at `/api/v1/finance` | D-013 (idempotent post/reverse/revalue/run/import/clear/activate) |
 
 > Money/quantity/rate exactness comes from `core/money.py` (D-015): `MoneyType`/`QuantityType`
 > store NUMERIC on Postgres and INTEGER scaled minor units on SQLite, so the balance trigger's
@@ -344,6 +352,9 @@ items are keyed by the opaque `partner_id` (D-029) — finance never FK-referenc
 | `finance.allocation.manage` | create/edit allocation rules |
 | `finance.allocation.run` | run cost allocations |
 | `finance.statements.read` | read the financial statements (trial balance, P&L, balance sheet, cash flow, cost-centre, margin) |
+| `finance.asset.read` | read assets, depreciation runs and the asset register |
+| `finance.asset.manage` | create, edit and activate assets |
+| `finance.depreciation.run` | run depreciation for a fiscal period (posts a journal) |
 
 ## API (`/api/v1/finance`)
 
@@ -665,3 +676,76 @@ docflow-linked statement → `posts` → entry (D-012).
 (`finance.bank.reconcile`; clear requires an Idempotency-Key). Statement lists sort by
 `(statement_date DESC, id)` — deliberately no created_at seek key on SQLite (see the tracked
 core-pagination datetime issue).
+
+## Asset accounting lite (PLAN 4.10)
+
+The parity-doc scope is deliberately "lite": a register plus straight-line and
+declining-balance depreciation runs posting journals. **No** transfers, retirements with
+gain/loss, revaluation, parallel depreciation areas or assets under construction — those are
+the recorded "later" path (extend the register with lifecycle events reusing this run poster).
+
+**Lifecycle.** `fin_assets` rows are created DRAFT (registered in `core_documents` with
+`doc_number` NULL) and freely editable; **activation** claims the gapless `AST-YYYY-NNNNN`
+number (the D-012 claim-at-permanence moment) and flips ACTIVE. `activate` takes
+`capitalize`: `true` ALSO posts the acquisition journal — Dr the asset's balance-sheet
+account / Cr the `asset_acquisition_clearing` posting default (D-019 purpose wiring), dated
+`acquisition_date` (must fall in an OPEN period), docflow-linked asset → `posts` → entry;
+`false` just activates, for assets entered with opening balances already on the books. Once
+every cent of `cost − salvage` is depreciated the asset flips FULLY_DEPRECIATED and drops out
+of future runs. Validation at create/update: the asset + accumulated-depreciation accounts
+must be postable ASSET accounts, the expense account a postable EXPENSE account, salvage <
+cost, the declining rate required (0 < rate ≤ 100) exactly when the method is
+DECLINING_BALANCE, and the optional `cost_center_id` dimension must exist (D-022
+service-level integrity).
+
+**The two methods + exactness guarantees** (`compute_depreciation(asset, period_index,
+prior_accumulated)`; `period_index` is the asset's 1-based position in its own schedule =
+prior entry count + 1):
+
+- **STRAIGHT_LINE** — drift-free cumulative formulation:
+  `amount(n) = quantize((cost − salvage) × n / life, HALF_UP) − prior_accumulated`, and the
+  final period (`n ≥ life`) takes exactly `(cost − salvage) − prior_accumulated`. Because each
+  period is cumulative-to-date minus what was already taken (largest-remainder-style), the
+  per-period amounts can never drift and the schedule sums to `cost − salvage` EXACTLY —
+  10000/12 months yields 833.33/833.34 alternating and totals 10000.00 to the cent.
+- **DECLINING_BALANCE** — `amount(n) = quantize(NBV_start × annual_rate% / 12, HALF_UP)`,
+  floored at salvage: when the naive charge would cross the floor the period takes
+  `NBV_start − salvage` and NBV lands EXACTLY on salvage; when the schedule exhausts
+  (`n ≥ life`) the final period likewise takes the remainder to salvage.
+
+**Run mechanics** (`run_depreciation`, set-based per PERFORMANCE §2 — the SQL statement count
+is CONSTANT in the asset count): select eligible ACTIVE assets via a NOT EXISTS anti-join on
+`fin_depreciation_entries` for the target period; read every asset's prior schedule position +
+accumulated total in ONE grouped aggregate (no N+1); compute per-asset amounts (zero amounts
+skipped); bulk-insert the entries with ONE executemany (each freezing `accumulated_after` /
+`nbv_after` as the per-entry audit trail); and post **ONE** journal entry (document_type
+DEPRECIATION) with lines GROUPED per (expense account, cost centre) on the debit side and per
+accumulated-depreciation account on the credit side — never per-asset lines. The run claims
+the gapless `DEP-YYYY-NNNNN` number and is docflow-linked run → `posts` → entry.
+**Idempotency is by construction**: `UNIQUE(tenant, asset_id, fiscal_period_id)` means an
+asset depreciates once per period ever (overlapping runs collide at the DB); a re-run for a
+finished period finds nothing eligible and returns the existing POSTED run unchanged; and the
+endpoint requires an Idempotency-Key (D-013). Closed periods are rejected at the service
+(`422 finance.period_closed`) with the journal's period trigger as the bypass-proof backstop;
+`run_date` must fall inside the target period (the trigger re-derives the period from the
+posting date, so a mismatch would post elsewhere).
+
+**Run size threshold** (PERFORMANCE §3): `POST /depreciation-runs` counts the period's
+eligible assets — up to **100** (`DEPRECIATION_RUN_SYNC_MAX_ASSETS`) the run executes inline
+(201 with the run); above that it submits a `finance.depreciation_run` job and returns
+`202 {job_id}` for `/api/v1/jobs/{id}` polling (the handler calls the SAME
+`run_depreciation`; a replayed key returns the same run or the SAME job id).
+
+**Register as projection** (`GET /asset-register?as_of=`): per activated asset acquired by
+`as_of` — cost, accumulated depreciation to date, NBV — RECOMPUTED in one statement as
+`SUM(fin_depreciation_entries.amount)` over the fiscal periods ending on or before `as_of`.
+No NBV or accumulated total is stored on the asset row; the entries' `*_after` columns are
+per-entry audit trail only (the D-021 no-stored-totals discipline applied to the sub-ledger).
+
+**API** (`/api/v1/finance`, PERFORMANCE §6: paginated, indexed, ≤3-query lists):
+`POST /assets` + `PATCH /assets/{id}` (DRAFT only) + `POST /assets/{id}/activate`
+(Idempotency-Key required) (`finance.asset.manage`), `GET /assets?status=` + `/{id}`
+(`finance.asset.read`), `POST /depreciation-runs` (`finance.depreciation.run`,
+Idempotency-Key required, 201/202 split), `GET /depreciation-runs?fiscal_period_id=` + `/{id}`
++ `/{id}/entries`, `GET /asset-register?as_of=` (`finance.asset.read`). Asset lists sort by
+`(acquisition_date DESC, id)`, runs by `(run_date DESC, id)`.

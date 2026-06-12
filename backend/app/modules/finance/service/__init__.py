@@ -29,6 +29,13 @@ from app.modules.finance.service.allocation_rules import (
 )
 from app.modules.finance.service.ap_aging import vendor_aging
 from app.modules.finance.service.ar_aging import customer_aging
+from app.modules.finance.service.assets import (
+    activate_asset,
+    create_asset,
+    get_asset,
+    list_assets,
+    update_asset,
+)
 from app.modules.finance.service.bank_import import (
     get_bank_statement,
     import_statement,
@@ -65,6 +72,16 @@ from app.modules.finance.service.customer_receipts import (
     get_customer_receipt,
     get_receipt_allocations,
     list_customer_receipts,
+)
+from app.modules.finance.service.depreciation import (
+    count_eligible_assets,
+    run_depreciation,
+)
+from app.modules.finance.service.depreciation_read import (
+    asset_register,
+    get_depreciation_run,
+    list_depreciation_entries,
+    list_depreciation_runs,
 )
 from app.modules.finance.service.dunning import run_dunning
 from app.modules.finance.service.fx import (
@@ -142,7 +159,9 @@ from app.modules.finance.service.vendor_payments import (
 )
 
 __all__ = [
+    "activate_asset",
     "assert_period_closable",
+    "asset_register",
     "balance_sheet",
     "calculate_document_tax",
     "calculate_line_tax",
@@ -152,11 +171,13 @@ __all__ = [
     "close_period",
     "confirm_match",
     "cost_center_report",
+    "count_eligible_assets",
     "create_account",
     "create_account_group",
     "create_allocation_rule",
     "create_and_post_payment",
     "create_and_post_receipt",
+    "create_asset",
     "create_cost_center",
     "create_currency",
     "create_customer_invoice",
@@ -174,12 +195,14 @@ __all__ = [
     "get_account",
     "get_allocation_rule",
     "get_allocation_run",
+    "get_asset",
     "get_bank_statement",
     "get_cost_center",
     "get_currency",
     "get_customer_invoice",
     "get_customer_invoice_lines",
     "get_customer_receipt",
+    "get_depreciation_run",
     "get_entry",
     "get_entry_with_lines",
     "get_payment_allocations",
@@ -197,11 +220,14 @@ __all__ = [
     "list_accounts",
     "list_allocation_rules",
     "list_allocation_runs",
+    "list_assets",
     "list_bank_statements",
     "list_cost_centers",
     "list_currencies",
     "list_customer_invoices",
     "list_customer_receipts",
+    "list_depreciation_entries",
+    "list_depreciation_runs",
     "list_entries",
     "list_exchange_rates",
     "list_fiscal_periods",
@@ -224,6 +250,7 @@ __all__ = [
     "reparent_account_group",
     "reverse_entry",
     "run_allocation",
+    "run_depreciation",
     "run_dunning",
     "run_fx_revaluation",
     "run_payment_batch",
@@ -236,6 +263,7 @@ __all__ = [
     "trial_balance",
     "update_account",
     "update_allocation_rule",
+    "update_asset",
     "update_cost_center",
     "update_profit_center",
     "update_tax_code",
