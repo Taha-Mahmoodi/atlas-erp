@@ -63,3 +63,20 @@ class MeResponse(ApiModel):
     email: str
     full_name: str | None
     permissions: list[str]
+
+
+# Field-level read masking (D-009) lives in core/rbac.py with the rest of the RBAC
+# engine; re-exported here so D-009's stated home (Masked in core/schemas.py) holds and
+# module schemas import it alongside ApiModel from one surface.
+from app.core.rbac import Masked  # noqa: E402 - re-export at end avoids an import cycle
+
+__all__ = [
+    "ApiModel",
+    "ErrorBody",
+    "ErrorEnvelope",
+    "LoginRequest",
+    "Masked",
+    "MeResponse",
+    "Page",
+    "TokenResponse",
+]
