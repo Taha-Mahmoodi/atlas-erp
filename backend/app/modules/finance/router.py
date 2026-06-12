@@ -48,11 +48,12 @@ from app.modules.finance.schemas import (
     JournalEntryReverseRequest,
     JournalLineRead,
 )
+from app.modules.finance.statements_router import statements_router
 from app.modules.finance.tax_router import tax_router
 
 router = APIRouter(prefix="/api/v1/finance", tags=["finance"])
-# FX (4.3), tax (4.4), AP (4.5), AR (4.6) + controlling (4.7) sub-routers mount here (one surface).
-for _sub in (fx_router, tax_router, ap_router, ar_router, co_router):
+# FX/tax/AP/AR/controlling/statements (4.3-4.8) sub-routers mount here (one surface).
+for _sub in (fx_router, tax_router, ap_router, ar_router, co_router, statements_router):
     router.include_router(_sub)
 CursorParamsDep = Depends(cursor_params)
 # Module-level Depends singletons (ruff B008): each is the D-013 reservation guard for its endpoint.

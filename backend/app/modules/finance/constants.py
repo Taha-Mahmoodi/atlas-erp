@@ -346,6 +346,9 @@ FINANCE_PROFIT_CENTER_READ = "finance.profitcenter.read"
 FINANCE_PROFIT_CENTER_MANAGE = "finance.profitcenter.manage"
 FINANCE_ALLOCATION_MANAGE = "finance.allocation.manage"
 FINANCE_ALLOCATION_RUN = "finance.allocation.run"
+# Financial statements (PLAN 4.8, D-021): read the projection statements (trial balance, P&L,
+# balance sheet, cash flow, cost-centre report, margin) — all read-only, one key gates them all.
+FINANCE_STATEMENTS_READ = "finance.statements.read"
 
 register_permissions(
     FINANCE_ACCOUNT_READ,
@@ -371,6 +374,7 @@ register_permissions(
     FINANCE_PROFIT_CENTER_MANAGE,
     FINANCE_ALLOCATION_MANAGE,
     FINANCE_ALLOCATION_RUN,
+    FINANCE_STATEMENTS_READ,
     descriptions={
         FINANCE_ACCOUNT_READ: "Read the chart of accounts and account groups",
         FINANCE_ACCOUNT_MANAGE: "Create and edit accounts and account groups",
@@ -395,5 +399,7 @@ register_permissions(
         FINANCE_PROFIT_CENTER_MANAGE: "Create and edit profit centres",
         FINANCE_ALLOCATION_MANAGE: "Create and edit allocation rules",
         FINANCE_ALLOCATION_RUN: "Run cost allocations",
+        FINANCE_STATEMENTS_READ: "Read financial statements (trial balance, P&L, balance sheet, "
+        "cash flow, cost-centre and margin reports)",
     },
 )
