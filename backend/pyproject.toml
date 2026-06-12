@@ -48,6 +48,11 @@ known-third-party = ["alembic"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+markers = [
+    # Runs only against a real PostgreSQL (ATLAS_DATABASE_URL must point at it).
+    # The SQLite job runs `-m "not pg"`; the Postgres CI step runs `-m pg` (D-022).
+    "pg: requires a PostgreSQL database; skipped on the SQLite test engine",
+]
 filterwarnings = [
     "error::DeprecationWarning:app",
     # The test JWT secret is intentionally the short .env.example placeholder; the
