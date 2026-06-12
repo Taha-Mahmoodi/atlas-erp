@@ -10,12 +10,12 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 - [x] 0.4 State files: CLAUDE.md, PLAN.md, PROGRESS.md, DECISIONS.md; copy STRUCTURE.md + GITHUB-WORKFLOW.md to repo root
 - [x] 0.5 Governance: LICENSE (Apache-2.0), NOTICE, README skeleton, CONTRIBUTING.md, SECURITY.md, .env.example
 - [x] 0.6 CI workflow (`backend` + `frontend` jobs, green even before those dirs exist) + PR template + issue templates
-- [ ] 0.7 Bootstrap PR merged to `dev`; branch protection on `main` + `dev` requiring both CI checks
+- [x] 0.7 Bootstrap PR merged to `dev`; branch protection on `main` + `dev` requiring both CI checks
 
 ## Phase 1 — S/4HANA research & parity map
 
-- [ ] 1.1 Parallel web research across 12 S/4HANA functional areas (FI, CO, MM-PUR, MM-IM/EWM, SD, PP, QM/PM, HCM, PS, cross-cutting, Fiori/analytics, industry solutions)
-- [ ] 1.2 `docs/research/s4hana-parity.md`: parity table (capability → full/partial/out-of-scope → owning Atlas module → reason + later path), committed via PR
+- [x] 1.1 Parallel web research across 12 S/4HANA functional areas (FI, CO, MM-PUR, MM-IM/EWM, SD, PP, QM/PM, HCM, PS, cross-cutting, Fiori/analytics, industry solutions)
+- [x] 1.2 `docs/research/s4hana-parity.md`: parity table (capability → full/partial/out-of-scope → owning Atlas module → reason + later path), committed via PR
 
 ## Phase 2 — Full plan & key decisions
 
