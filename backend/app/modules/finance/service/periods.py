@@ -16,8 +16,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, NotFoundError, ValidationFailedError
-from app.modules.finance.constants import PeriodStatus
-from app.modules.finance.models import FiscalPeriod, FiscalYear
+from app.modules.finance.constants import EntryStatus, PeriodStatus
+from app.modules.finance.models import FiscalPeriod, FiscalYear, JournalEntry
 from app.modules.finance.schemas import FiscalYearCreate
 
 
@@ -134,20 +134,35 @@ async def _require_period(
 async def assert_period_closable(
     session: AsyncSession, tenant_id: uuid.UUID, period: FiscalPeriod
 ) -> None:
-    """JOURNAL SEAM (D-018) — the extension point the journal task (4.2) plugs into.
+    """The close-time invariant (D-018): a period may close only if it is not already closed
+    AND it holds no DRAFT journal entries dated within it.
 
-    Today there is no journal table, so the only thing a period close can violate is its
-    own already-closed state, which we check here. When the journal lands, 4.2 EXTENDS this
-    function to also refuse closing a period that still has DRAFT journal entries dated
-    within it (the service-level half of D-018), while the DB-level posting-rejection
-    trigger on ``fin_journal_entries`` becomes the bypass-proof backstop. This is a real
-    check that does what it can now — not a stub — and the journal task widens it in place
-    rather than adding a new gate elsewhere.
+    Closing a period asserts it is settled; a DRAFT entry dated inside it is unfinished work
+    that would become unpostable (the period trigger would then reject its posting). So we
+    refuse the close until every draft in the period is posted or removed. Posted/reversed
+    entries are fine — they are immutable settled facts. This is the service-level half of
+    D-018; the DB-level period-posting trigger on ``fin_journal_entries`` is the bypass-proof
+    backstop for postings themselves.
     """
     if period.status == PeriodStatus.CLOSED.value:
         raise ValidationFailedError(
             message="Fiscal period is already closed",
             code="finance.period_already_closed",
+        )
+    draft_in_period = (
+        await session.execute(
+            select(JournalEntry.id).where(
+                JournalEntry.tenant_id == tenant_id,
+                JournalEntry.status == EntryStatus.DRAFT.value,
+                JournalEntry.posting_date >= period.start_date,
+                JournalEntry.posting_date <= period.end_date,
+            )
+        )
+    ).first()
+    if draft_in_period is not None:
+        raise ValidationFailedError(
+            message="Cannot close a period that contains draft journal entries",
+            code="finance.period_has_draft_entries",
         )
 
 

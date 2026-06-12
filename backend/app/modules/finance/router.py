@@ -1,20 +1,11 @@
-"""Finance HTTP layer (thin): parse -> call service -> return schema (PLAN 4.1).
+"""Finance HTTP layer (thin): parse -> call service -> return schema (PLAN 4.1 + 4.2).
 
-Routes are guarded by the finance permission keys (D-009): reads need ``finance.account.read``
-/ ``finance.period.read``, writes need ``finance.account.manage`` / ``finance.period.manage``.
-Writes commit through ``run_in_uow`` (D-011) — the one sanctioned unit-of-work path — so audit
-rows ride the same transaction and the (future) event semantics are identical to seed/CLI.
-Tenant scoping rides the D-007 filter: ``get_current_user`` set the tenant context, and the
-service also passes ``current.tenant_id`` explicitly, so a request can only ever touch its own
-tenant's accounts and periods.
-
-The ORM object a write produces is validated into its Read schema AFTER ``run_in_uow`` commits
-(``expire_on_commit=False`` keeps the attributes loaded), not inside the uow work — validating a
-just-flushed object whose ``updated_at`` is expired would trigger an async lazy-load in a sync
-serialization context.
-
-Action sub-resources (``/close``, ``/open``) follow STRUCTURE §7 (actions as sub-resources,
-never verbs in resource names).
+Routes are guarded by the finance permission keys (D-009). Writes commit through ``run_in_uow``
+(D-011) so audit rows ride the same transaction; the journal post/reverse actions are IDEMPOTENT
+(D-013). Tenant scoping rides the D-007 filter plus the explicit ``current.tenant_id``. Write
+results are validated into their Read schema AFTER the uow commits (``expire_on_commit=False``);
+validating a just-flushed object whose ``updated_at`` is expired would trip an async lazy-load in
+a sync serialization context. Actions are sub-resources (``/close``, ``/post``, STRUCTURE §7).
 """
 
 import uuid
@@ -24,6 +15,7 @@ from fastapi import APIRouter, Depends
 
 from app.core.deps import CurrentUserDep, SessionDep
 from app.core.events import run_in_uow
+from app.core.idempotency import Idempotent, IdempotentDep
 from app.core.pagination import CursorParams, cursor_params
 from app.core.rbac import require_permission
 from app.core.schemas import Page
@@ -31,6 +23,9 @@ from app.modules.finance import service
 from app.modules.finance.constants import (
     FINANCE_ACCOUNT_MANAGE,
     FINANCE_ACCOUNT_READ,
+    FINANCE_JOURNAL_POST,
+    FINANCE_JOURNAL_READ,
+    FINANCE_JOURNAL_REVERSE,
     FINANCE_PERIOD_MANAGE,
     FINANCE_PERIOD_READ,
 )
@@ -44,20 +39,28 @@ from app.modules.finance.schemas import (
     FiscalPeriodRead,
     FiscalYearCreate,
     FiscalYearRead,
+    JournalEntryCreate,
+    JournalEntryDetail,
+    JournalEntryRead,
+    JournalEntryReverseRequest,
+    JournalLineRead,
 )
 
 router = APIRouter(prefix="/api/v1/finance", tags=["finance"])
 
 CursorParamsDep = Depends(cursor_params)
 
+# Module-level Depends singletons (ruff B008: never call Depends/Idempotent in arg defaults).
+# Each is the D-013 reservation guard scoped to its endpoint identifier.
+_PostIdempotentDep = Depends(Idempotent("finance.journal.post"))
+_ReverseIdempotentDep = Depends(Idempotent("finance.journal.reverse"))
+
 
 async def _commit[T](session: SessionDep, work: Callable[[], Awaitable[T]]) -> T:
-    """Run a service call inside the D-011 unit of work and return its ORM result. The
-    result is captured in a one-slot holder because ``run_in_uow`` returns None. The object
-    is refreshed inside the awaited work so server-side defaults / ``onupdate`` columns
-    (``created_at``, ``updated_at``) are materialized in the async context — otherwise the
-    caller's synchronous ``model_validate`` would trigger an async lazy-load on an expired
-    attribute and raise MissingGreenlet."""
+    """Run a service call inside the D-011 uow and return its ORM result (captured in a one-slot
+    holder since ``run_in_uow`` returns None). The result is refreshed inside the work so server
+    defaults/``onupdate`` columns materialize in the async context — else the caller's sync
+    ``model_validate`` would trip an async lazy-load on an expired attribute (MissingGreenlet)."""
     holder: list[T] = []
 
     async def _work() -> None:
@@ -267,3 +270,131 @@ async def open_fiscal_period(
         session, lambda: service.open_period(session, current.tenant_id, period_id)
     )
     return FiscalPeriodRead.model_validate(period)
+
+
+# --- Journal entries (D-017) --------------------------------------------------
+
+
+async def _entry_detail(
+    session: SessionDep, tenant_id: uuid.UUID, entry_id: uuid.UUID
+) -> JournalEntryDetail:
+    """Load an entry + its lines into the detail schema. ``refresh`` materializes the server-side
+    ``updated_at`` in the async context before the sync ``model_validate`` (else an expired
+    attribute triggers an async lazy-load in sync serialization — MissingGreenlet)."""
+    entry, lines = await service.get_entry_with_lines(session, tenant_id, entry_id)
+    await session.refresh(entry)
+    header = JournalEntryRead.model_validate(entry)
+    return JournalEntryDetail(
+        **header.model_dump(),
+        lines=[JournalLineRead.model_validate(line) for line in lines],
+    )
+
+
+@router.post(
+    "/journal-entries",
+    response_model=JournalEntryRead,
+    status_code=201,
+    dependencies=[Depends(require_permission(FINANCE_JOURNAL_POST))],
+)
+async def create_journal_entry(
+    payload: JournalEntryCreate,
+    current: CurrentUserDep,
+    session: SessionDep,
+) -> JournalEntryRead:
+    """Create a DRAFT entry (no number claimed). journal.post covers create + post."""
+    entry = await _commit(
+        session, lambda: service.create_draft_entry(session, current.tenant_id, payload)
+    )
+    return JournalEntryRead.model_validate(entry)
+
+
+@router.post(
+    "/journal-entries/{entry_id}/post",
+    response_model=JournalEntryDetail,
+    dependencies=[Depends(require_permission(FINANCE_JOURNAL_POST))],
+)
+async def post_journal_entry(
+    entry_id: uuid.UUID,
+    current: CurrentUserDep,
+    session: SessionDep,
+    idem: IdempotentDep = _PostIdempotentDep,
+) -> JournalEntryDetail:
+    """Post a draft entry (D-017). IDEMPOTENT (D-013): capture() lands in the posting uow, so the
+    document and the replay record commit atomically."""
+    holder: dict[str, JournalEntryDetail] = {}
+
+    async def work() -> None:
+        await service.post_entry(session, current.tenant_id, entry_id)
+        detail = await _entry_detail(session, current.tenant_id, entry_id)
+        holder["read"] = await idem.capture(detail)
+
+    await run_in_uow(session, work)
+    return holder["read"]
+
+
+@router.post(
+    "/journal-entries/{entry_id}/reverse",
+    response_model=JournalEntryDetail,
+    dependencies=[Depends(require_permission(FINANCE_JOURNAL_REVERSE))],
+)
+async def reverse_journal_entry(
+    entry_id: uuid.UUID,
+    payload: JournalEntryReverseRequest,
+    current: CurrentUserDep,
+    session: SessionDep,
+    idem: IdempotentDep = _ReverseIdempotentDep,
+) -> JournalEntryDetail:
+    """Reverse a posted entry (D-017); returns the NEW reversing entry with lines. IDEMPOTENT."""
+    holder: dict[str, JournalEntryDetail] = {}
+
+    async def work() -> None:
+        reversal = await service.reverse_entry(
+            session,
+            current.tenant_id,
+            entry_id,
+            payload.reversal_date,
+            payload.description,
+        )
+        detail = await _entry_detail(session, current.tenant_id, reversal.id)
+        holder["read"] = await idem.capture(detail)
+
+    await run_in_uow(session, work)
+    return holder["read"]
+
+
+@router.get(
+    "/journal-entries",
+    response_model=Page[JournalEntryRead],
+    dependencies=[Depends(require_permission(FINANCE_JOURNAL_READ))],
+)
+async def list_journal_entries(
+    current: CurrentUserDep,
+    session: SessionDep,
+    params: CursorParams = CursorParamsDep,
+    status: str | None = None,
+) -> Page[JournalEntryRead]:
+    page = await service.list_entries(
+        session,
+        current.tenant_id,
+        cursor=params.cursor,
+        limit=params.limit,
+        status=status,
+    )
+    return Page(
+        items=[JournalEntryRead.model_validate(item) for item in page.items],
+        next_cursor=page.next_cursor,
+        limit=page.limit,
+    )
+
+
+@router.get(
+    "/journal-entries/{entry_id}",
+    response_model=JournalEntryDetail,
+    dependencies=[Depends(require_permission(FINANCE_JOURNAL_READ))],
+)
+async def get_journal_entry(
+    entry_id: uuid.UUID,
+    current: CurrentUserDep,
+    session: SessionDep,
+) -> JournalEntryDetail:
+    return await _entry_detail(session, current.tenant_id, entry_id)

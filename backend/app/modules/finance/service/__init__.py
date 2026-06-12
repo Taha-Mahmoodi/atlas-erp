@@ -15,6 +15,17 @@ from app.modules.finance.service.accounts import (
     reparent_account_group,
     update_account,
 )
+from app.modules.finance.service.journal import (
+    create_draft_entry,
+    post_entry,
+    reverse_entry,
+)
+from app.modules.finance.service.journal_read import (
+    entry_totals,
+    get_entry,
+    get_entry_with_lines,
+    list_entries,
+)
 from app.modules.finance.service.periods import (
     assert_period_closable,
     close_fiscal_year,
@@ -32,14 +43,21 @@ __all__ = [
     "close_period",
     "create_account",
     "create_account_group",
+    "create_draft_entry",
     "create_fiscal_year",
+    "entry_totals",
     "generate_periods",
     "get_account",
+    "get_entry",
+    "get_entry_with_lines",
     "list_account_groups",
     "list_accounts",
+    "list_entries",
     "list_fiscal_periods",
     "list_fiscal_years",
     "open_period",
+    "post_entry",
     "reparent_account_group",
+    "reverse_entry",
     "update_account",
 ]

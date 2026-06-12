@@ -1,4 +1,8 @@
-"""Finance models: chart of accounts (D-021) and fiscal years/periods (D-018).
+"""Chart of accounts (D-021) and fiscal years/periods (D-018).
+
+One of two files in the finance ``models/`` package (STRUCTURE §3 split: the universal-journal
+models in ``models/journal.py`` pushed the combined file over the 400-line cap). The package
+``__init__`` re-exports both so ``from app.modules.finance.models import Account`` is unchanged.
 
 Per D-021 the account-type model here is exactly what later statement projections consume:
 ``account_type`` drives every statement (trial balance, P&L, balance sheet, cash flow), the

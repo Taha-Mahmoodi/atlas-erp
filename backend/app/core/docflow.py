@@ -215,6 +215,39 @@ async def register_document(
     ).scalar_one()
 
 
+async def set_document_status(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    document_id: uuid.UUID,
+    *,
+    status: str | None = None,
+    doc_number: str | None = None,
+) -> None:
+    """Update a registry row's status and/or doc_number in the owning transaction (D-012).
+
+    The number is assigned at the moment a draft-lifecycle document becomes permanent (journal
+    posting) — passing ``doc_number`` here writes it through the partial-unique (tenant,
+    doc_number) backstop, so any numbering bug surfaces as a constraint violation. Only the
+    provided arguments are changed (``None`` leaves the column untouched, except doc_number which
+    is always set when supplied). A Core UPDATE addressed by (tenant_id, id) — a D-007 sanctioned
+    explicit-tenant raw-SQL site."""
+    values: dict[str, str | None] = {}
+    if status is not None:
+        values["status"] = status
+    if doc_number is not None:
+        values["doc_number"] = doc_number
+    if not values:
+        return
+    await session.execute(
+        sa.update(Document.__table__)
+        .where(
+            Document.__table__.c.tenant_id == tenant_id,
+            Document.__table__.c.id == document_id,
+        )
+        .values(**values)
+    )
+
+
 async def link_documents(
     session: AsyncSession,
     tenant_id: uuid.UUID,
