@@ -15,6 +15,20 @@ from app.modules.finance.service.accounts import (
     reparent_account_group,
     update_account,
 )
+from app.modules.finance.service.fx import (
+    create_currency,
+    create_exchange_rate,
+    functional_currency,
+    get_currency,
+    get_rate,
+    list_currencies,
+    list_exchange_rates,
+    set_functional_currency,
+)
+from app.modules.finance.service.fx_revaluation import (
+    list_revaluation_runs,
+    run_fx_revaluation,
+)
 from app.modules.finance.service.journal import (
     create_draft_entry,
     post_entry,
@@ -36,6 +50,11 @@ from app.modules.finance.service.periods import (
     list_fiscal_years,
     open_period,
 )
+from app.modules.finance.service.posting_defaults import (
+    get_posting_default,
+    list_posting_defaults,
+    set_posting_default,
+)
 
 __all__ = [
     "assert_period_closable",
@@ -43,21 +62,34 @@ __all__ = [
     "close_period",
     "create_account",
     "create_account_group",
+    "create_currency",
     "create_draft_entry",
+    "create_exchange_rate",
     "create_fiscal_year",
     "entry_totals",
+    "functional_currency",
     "generate_periods",
     "get_account",
+    "get_currency",
     "get_entry",
     "get_entry_with_lines",
+    "get_posting_default",
+    "get_rate",
     "list_account_groups",
     "list_accounts",
+    "list_currencies",
     "list_entries",
+    "list_exchange_rates",
     "list_fiscal_periods",
     "list_fiscal_years",
+    "list_posting_defaults",
+    "list_revaluation_runs",
     "open_period",
     "post_entry",
     "reparent_account_group",
     "reverse_entry",
+    "run_fx_revaluation",
+    "set_functional_currency",
+    "set_posting_default",
     "update_account",
 ]

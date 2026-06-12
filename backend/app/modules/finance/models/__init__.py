@@ -5,6 +5,7 @@ tenancy mapper-enumeration suite) registers all tables on ``Base.metadata``.
 
 - ``accounts``: chart of accounts + fiscal years/periods (D-021, D-018).
 - ``journal``: the universal journal header + lines (D-017).
+- ``fx``: currencies, exchange rates, posting defaults, revaluation runs (D-019).
 """
 
 from app.modules.finance.models.accounts import (
@@ -13,13 +14,23 @@ from app.modules.finance.models.accounts import (
     FiscalPeriod,
     FiscalYear,
 )
+from app.modules.finance.models.fx import (
+    Currency,
+    ExchangeRate,
+    FxRevaluationRun,
+    PostingDefault,
+)
 from app.modules.finance.models.journal import JournalEntry, JournalLine
 
 __all__ = [
     "Account",
     "AccountGroup",
+    "Currency",
+    "ExchangeRate",
     "FiscalPeriod",
     "FiscalYear",
+    "FxRevaluationRun",
     "JournalEntry",
     "JournalLine",
+    "PostingDefault",
 ]

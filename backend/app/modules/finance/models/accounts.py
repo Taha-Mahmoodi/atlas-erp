@@ -96,6 +96,15 @@ class Account(UuidPKMixin, TenantMixin, AuditMixin, TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, default=True, server_default=sa.true()
     )
+    # FX revaluation scope (D-019): a MONETARY account whose carried balance is denominated in a
+    # specific foreign ``currency_code`` is revalued at period end. ``is_monetary`` flags
+    # bank/cash/receivable/payable-style accounts (vs non-monetary assets like fixed assets or
+    # inventory, which are NOT revalued); ``currency_code`` names the foreign currency the
+    # account carries — NULL means the account is in the functional currency and never revalued.
+    is_monetary: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, default=False, server_default=sa.false()
+    )
+    currency_code: Mapped[str | None] = mapped_column(sa.String(3), nullable=True)
 
 
 class FiscalYear(UuidPKMixin, TenantMixin, AuditMixin, TimestampMixin, Base):

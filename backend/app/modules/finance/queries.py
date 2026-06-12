@@ -14,12 +14,14 @@ ORM reads, not a bypass.
 
 import uuid
 from datetime import date
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.finance.constants import PeriodStatus
+from app.modules.finance.constants import PeriodStatus, RateKind
 from app.modules.finance.models import Account, FiscalPeriod
+from app.modules.finance.service import fx as _fx
 
 
 async def find_period_for_date(
@@ -59,3 +61,23 @@ async def account_exists(
         Account.tenant_id == tenant_id, Account.code == code
     )
     return (await session.execute(stmt)).first() is not None
+
+
+async def get_rate(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    from_code: str,
+    to_code: str,
+    on_date: date,
+    rate_type: RateKind = RateKind.SPOT,
+) -> Decimal:
+    """The exchange rate to convert ``from_code`` into ``to_code`` on ``on_date`` (D-019). Exposed
+    here so other modules price in functional terms (AP/AR/inventory translate at this rate); a
+    missing rate raises (postings never guess). Same contract as service/fx.get_rate."""
+    return await _fx.get_rate(session, tenant_id, from_code, to_code, on_date, rate_type)
+
+
+async def functional_currency(session: AsyncSession, tenant_id: uuid.UUID) -> str:
+    """The tenant's functional (reporting) currency code (D-019). Exposed so other modules know the
+    currency every functional amount is denominated in. Raises if none is configured."""
+    return await _fx.functional_currency(session, tenant_id)

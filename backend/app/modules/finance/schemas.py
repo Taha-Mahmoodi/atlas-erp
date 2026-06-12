@@ -17,8 +17,10 @@ from app.modules.finance.constants import (
     CashFlowCategory,
     DocumentType,
     EntryStatus,
+    FxRunStatus,
     NormalBalance,
     PeriodStatus,
+    RateKind,
 )
 
 # --- Accounts -----------------------------------------------------------------
@@ -35,6 +37,9 @@ class AccountCreate(ApiModel):
     is_cash_equivalent: bool = False
     account_group_id: uuid.UUID | None = None
     is_active: bool = True
+    # FX revaluation scope (D-019): a monetary account in a foreign currency_code is revalued.
+    is_monetary: bool = False
+    currency_code: str | None = None
 
 
 class AccountUpdate(ApiModel):
@@ -49,6 +54,8 @@ class AccountUpdate(ApiModel):
     is_cash_equivalent: bool | None = None
     account_group_id: uuid.UUID | None = None
     is_active: bool | None = None
+    is_monetary: bool | None = None
+    currency_code: str | None = None
 
 
 class AccountRead(ApiModel):
@@ -62,6 +69,8 @@ class AccountRead(ApiModel):
     is_cash_equivalent: bool
     account_group_id: uuid.UUID | None
     is_active: bool
+    is_monetary: bool
+    currency_code: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -226,3 +235,89 @@ class JournalEntryDetail(JournalEntryRead):
     """Entry header WITH its lines — the GET /{id} shape."""
 
     lines: list[JournalLineRead]
+
+
+# --- Multi-currency (D-019) ---------------------------------------------------
+
+
+class CurrencyCreate(ApiModel):
+    """Create a currency. ``is_functional`` marks the tenant's single reporting currency — the
+    service refuses a second functional currency (use the set-functional action to switch)."""
+
+    code: str
+    name: str
+    decimal_places: int = 2
+    is_functional: bool = False
+
+
+class CurrencyRead(ApiModel):
+    id: uuid.UUID
+    code: str
+    name: str
+    decimal_places: int
+    is_functional: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class ExchangeRateCreate(ApiModel):
+    """Create an exchange rate for a (from, to, rate_type) pair on a date. ``rate`` is a Decimal
+    serialized as a string (D-015); full precision is kept (rates are never quantized)."""
+
+    rate_date: date
+    from_currency_code: str
+    to_currency_code: str
+    rate_type: RateKind = RateKind.SPOT
+    rate: Decimal
+
+
+class ExchangeRateRead(ApiModel):
+    id: uuid.UUID
+    rate_date: date
+    from_currency_code: str
+    to_currency_code: str
+    rate_type: RateKind
+    rate: Decimal
+    created_at: datetime
+    updated_at: datetime
+
+
+class ExchangeRateFilter(ApiModel):
+    """List filters for the exchange-rates endpoint; folded into the cursor fingerprint."""
+
+    from_currency_code: str | None = None
+    to_currency_code: str | None = None
+    rate_type: RateKind | None = None
+
+
+class PostingDefaultSet(ApiModel):
+    """Body for the posting-default PUT: map a purpose to an account. ``purpose`` is one of the FX
+    purpose keys (validated by the service)."""
+
+    purpose: str
+    account_id: uuid.UUID
+
+
+class PostingDefaultRead(ApiModel):
+    id: uuid.UUID
+    purpose: str
+    account_id: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
+
+
+class FxRevaluationRunRequest(ApiModel):
+    """Run unrealized-FX revaluation for ``fiscal_period_id`` at ``rate_date`` (the period-end
+    CLOSING-rate date). The next period must exist and be open (the auto-reversal posts there)."""
+
+    fiscal_period_id: uuid.UUID
+    rate_date: date
+
+
+class FxRevaluationRunRead(ApiModel):
+    id: uuid.UUID
+    fiscal_period_id: uuid.UUID
+    rate_date: date
+    status: FxRunStatus
+    created_at: datetime
+    updated_at: datetime

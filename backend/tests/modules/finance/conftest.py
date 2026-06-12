@@ -11,6 +11,7 @@ import uuid
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
@@ -23,6 +24,8 @@ from app.modules.finance import service
 from app.modules.finance.constants import (
     FINANCE_ACCOUNT_MANAGE,
     FINANCE_ACCOUNT_READ,
+    FINANCE_FX_MANAGE,
+    FINANCE_FX_REVALUE,
     FINANCE_JOURNAL_POST,
     FINANCE_JOURNAL_READ,
     FINANCE_JOURNAL_REVERSE,
@@ -41,6 +44,8 @@ _FINANCE_KEYS = (
     FINANCE_JOURNAL_READ,
     FINANCE_JOURNAL_POST,
     FINANCE_JOURNAL_REVERSE,
+    FINANCE_FX_MANAGE,
+    FINANCE_FX_REVALUE,
 )
 
 # A minimal but type-complete chart of accounts: one account per statement-deriving type.
@@ -122,6 +127,101 @@ async def journal_setup(
         tenant_id=tenant_a,
         accounts={account.code: account.id for account in accounts},
         fiscal_year_id=year.id,
+    )
+
+
+@dataclass(frozen=True)
+class FxSetup:
+    """A multi-currency-ready tenant (D-019): functional USD + foreign EUR, SPOT+CLOSING rates,
+    FX posting defaults wired, a monetary EUR bank account, and the small COA + open 2026 year.
+
+    Plain ids so a rollback (which expires loaded ORM objects) cannot break a follow-up payload."""
+
+    tenant_id: uuid.UUID
+    accounts: dict[str, uuid.UUID]
+    fiscal_year_id: uuid.UUID
+    eur_bank_id: uuid.UUID
+
+
+# FX posting-default accounts added to the small COA (one per FX purpose + the EUR bank).
+_FX_ACCOUNTS: tuple[tuple[str, str, AccountType], ...] = (
+    ("1100", "EUR Bank", AccountType.ASSET),
+    ("7100", "FX Realized Gain", AccountType.REVENUE),
+    ("7110", "FX Realized Loss", AccountType.EXPENSE),
+    ("7200", "FX Unrealized Gain", AccountType.REVENUE),
+    ("7210", "FX Unrealized Loss", AccountType.EXPENSE),
+    ("1900", "FX Revaluation Adjustment", AccountType.ASSET),
+)
+
+# (rate_date, from, to, rate_type, rate) — USD is functional; EUR->USD direct pairs.
+_FX_RATES: tuple[tuple[date, str, str, str, str], ...] = (
+    (date(2026, 1, 1), "EUR", "USD", "SPOT", "1.10"),
+    (date(2026, 3, 1), "EUR", "USD", "SPOT", "1.20"),
+    (date(2026, 3, 31), "EUR", "USD", "CLOSING", "1.25"),
+)
+
+
+@pytest.fixture
+async def fx_setup(db_session: AsyncSession, tenant_a: uuid.UUID) -> FxSetup:
+    """A tenant wired for multi-currency posting + revaluation (D-019)."""
+    from app.modules.finance.constants import (
+        FX_REALIZED_GAIN,
+        FX_REALIZED_LOSS,
+        FX_REVALUATION_ADJUSTMENT,
+        FX_UNREALIZED_GAIN,
+        FX_UNREALIZED_LOSS,
+        RateKind,
+    )
+
+    accounts = await seed_small_coa(db_session, tenant_a)
+    by_code = {a.code: a.id for a in accounts}
+    eur_bank_id = uuid.uuid4()
+    with tenant_context(tenant_a):
+        for code, name, atype in _FX_ACCOUNTS:
+            is_eur_bank = code == "1100"
+            account = await service.create_account(
+                db_session,
+                tenant_a,
+                AccountCreate(
+                    code=code,
+                    name=name,
+                    account_type=atype,
+                    is_monetary=is_eur_bank,
+                    currency_code="EUR" if is_eur_bank else None,
+                ),
+            )
+            by_code[code] = account.id
+            if is_eur_bank:
+                eur_bank_id = account.id
+        await service.create_currency(
+            db_session, tenant_a, code="USD", name="US Dollar", is_functional=True
+        )
+        await service.create_currency(db_session, tenant_a, code="EUR", name="Euro")
+        for rate_date, frm, to, rate_type, rate in _FX_RATES:
+            await service.create_exchange_rate(
+                db_session,
+                tenant_a,
+                rate_date=rate_date,
+                from_currency_code=frm,
+                to_currency_code=to,
+                rate=Decimal(rate),
+                rate_type=RateKind(rate_type),
+            )
+        for purpose, code in (
+            (FX_REALIZED_GAIN, "7100"),
+            (FX_REALIZED_LOSS, "7110"),
+            (FX_UNREALIZED_GAIN, "7200"),
+            (FX_UNREALIZED_LOSS, "7210"),
+            (FX_REVALUATION_ADJUSTMENT, "1900"),
+        ):
+            await service.set_posting_default(db_session, tenant_a, purpose, by_code[code])
+        await db_session.commit()
+    year = await seed_fiscal_year(db_session, tenant_a)
+    return FxSetup(
+        tenant_id=tenant_a,
+        accounts=by_code,
+        fiscal_year_id=year.id,
+        eur_bank_id=eur_bank_id,
     )
 
 
