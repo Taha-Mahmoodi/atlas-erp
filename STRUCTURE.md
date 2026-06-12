@@ -44,7 +44,7 @@ Nothing lives outside this tree. No `scratch/`, `tmp/`, `old/`, `backup/`, or `m
 
 # 2. `backend/app/core/` — what belongs and what doesn't
 
-One file per cross-cutting concern, flat, no subpackages: `config.py`, `db.py` (engine, session, tenant filter), `tenancy.py`, `auth.py`, `rbac.py`, `audit.py`, `events.py` (bus + base event class), `docflow.py`, `models.py` (Base, mixins: TenantMixin, AuditMixin, TimestampMixin), `schemas.py` (shared Pydantic bases, pagination envelope, error envelope), `numbering.py` (document sequences), `exceptions.py`, `deps.py` (FastAPI dependencies).
+One file per cross-cutting concern, flat, no subpackages: `config.py`, `db.py` (engine, session, tenant filter), `tenancy.py`, `auth.py`, `rbac.py`, `audit.py`, `events.py` (bus + base event class), `docflow.py`, `models.py` (Base, mixins: TenantMixin, AuditMixin, TimestampMixin), `schemas.py` (shared Pydantic bases, pagination envelope, error envelope), `numbering.py` (document sequences), `money.py` (Money/Quantity/Rate type decorators, quantize + largest-remainder allocate — added by D-015), `custom_fields.py` (custom-field defs registry, validation, JSON column helper — added by D-016), `exceptions.py`, `deps.py` (FastAPI dependencies).
 
 **Litmus test:** if a file mentions a specific business concept (invoice, item, employee), it does NOT belong in `core/` — move it to its module. If two modules need the same business logic, the dependency-rule in §5 decides who owns it; `core/` is never the dumping ground.
 
@@ -78,7 +78,7 @@ A new file type may not be invented per-module. If finance needs `depreciation.p
 # 5. Dependency Rules (what may import what)
 
 - `core` imports nothing from `modules`. Modules import `core` freely.
-- Modules never import each other's `service.py` or `models.py` directly. Cross-module effects go through the event bus (`finance/handlers.py` reacts to `inventory` events). Cross-module reads needed synchronously (e.g., sales needs an item's price) go through a small, explicit query interface the owning module exposes in `modules/<owner>/queries.py` — the only file another module may import.
+- Modules never import each other's `service.py` or `models.py` directly. Cross-module effects go through the event bus (`finance/handlers.py` reacts to `inventory` events). Cross-module reads needed synchronously (e.g., sales needs an item's price) go through a small, explicit query interface the owning module exposes in `modules/<owner>/queries.py` — plus `modules/<owner>/events.py` (declarative event dataclasses only, no logic), the two files another module may import (events.py allowance added by D-011 so handlers can subscribe to typed events).
 - Dependency direction for queries: finance is the bottom (everyone may use finance/queries), then inventory, then everything else. Two modules may never import each other's queries bidirectionally — if that seems needed, the shared concept is misplaced; file an issue and resolve ownership before coding.
 - Frontend: `modules/*` may import `lib` and `components`; `components` and `lib` never import from `modules`.
 
