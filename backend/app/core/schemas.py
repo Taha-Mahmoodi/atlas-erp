@@ -1,5 +1,11 @@
-"""Shared Pydantic v2 bases: API model config, D-014 error envelope, list envelope."""
+"""Shared Pydantic v2 bases: API model config, D-014 error envelope, list envelope.
 
+Auth request/response schemas (LoginRequest, TokenResponse, MeResponse) also live
+here rather than in a module: auth is core platform (D-008), and there is no
+modules/auth package — see core/security_router.py.
+"""
+
+import uuid
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
@@ -30,3 +36,30 @@ class Page[T](ApiModel):
     items: list[T]
     next_cursor: str | None = None
     limit: int
+
+
+# --- Auth schemas (D-008) -----------------------------------------------------
+# email is a plain str (not EmailStr) so no email-validator dependency is pulled in;
+# the User model column is likewise a plain String.
+
+
+class LoginRequest(ApiModel):
+    tenant_slug: str
+    email: str
+    password: str
+
+
+class TokenResponse(ApiModel):
+    """Login/refresh body. The refresh token never appears here — it is set as an
+    httpOnly cookie; only the access token is returned for SPA in-memory storage."""
+
+    access_token: str
+    token_type: str = "bearer"
+
+
+class MeResponse(ApiModel):
+    id: uuid.UUID
+    tenant_id: uuid.UUID
+    email: str
+    full_name: str | None
+    permissions: list[str]

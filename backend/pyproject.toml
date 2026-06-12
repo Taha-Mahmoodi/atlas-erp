@@ -13,6 +13,8 @@ dependencies = [
     "pydantic>=2",
     "pydantic-settings",
     "greenlet",
+    "pyjwt>=2.13.0",
+    "argon2-cffi>=25.1.0",
 ]
 
 [dependency-groups]
@@ -48,4 +50,7 @@ asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 filterwarnings = [
     "error::DeprecationWarning:app",
+    # The test JWT secret is intentionally the short .env.example placeholder; the
+    # >=64-byte requirement (D-008) is a deployment concern, not a test one.
+    "ignore::jwt.warnings.InsecureKeyLengthWarning",
 ]
