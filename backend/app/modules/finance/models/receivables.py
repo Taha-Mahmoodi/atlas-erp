@@ -64,6 +64,15 @@ class CustomerInvoice(UuidPKMixin, TenantMixin, AuditMixin, TimestampMixin, Docu
         tenant_fk("fin_accounts", "ar_account_id"),
         # The journal entry created at posting (composite tenant FK; NULL until posted).
         tenant_fk("fin_journal_entries", "journal_entry_id"),
+        # Hot-list filter combination for GET /customer-invoices, aging, and dunning
+        # (PERFORMANCE §1, #25): tenant leads, then the dominant filters, then the sort key.
+        sa.Index(
+            "ix_fin_customer_invoices_list_filters",
+            "tenant_id",
+            "partner_id",
+            "status",
+            "invoice_date",
+        ),
     )
 
     partner_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, nullable=False)
