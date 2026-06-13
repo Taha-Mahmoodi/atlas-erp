@@ -47,7 +47,7 @@ jobs:
         run: |
           if [ ! -f backend/pyproject.toml ]; then echo "backend not present yet — skipping"; exit 0; fi
           cd backend
-          uv run pytest -q -m "not pg"
+          uv run pytest -q -m "not pg and not perf"
       - name: Migrations + DB guards (PostgreSQL)
         run: |
           if [ ! -f backend/pyproject.toml ]; then echo "backend not present yet — skipping"; exit 0; fi
@@ -57,6 +57,27 @@ jobs:
           ATLAS_DATABASE_URL="$ATLAS_PG_URL" uv run alembic downgrade base
           ATLAS_DATABASE_URL="$ATLAS_PG_URL" uv run alembic upgrade head
           ATLAS_DATABASE_URL="$ATLAS_PG_URL" uv run pytest -q -m pg
+
+  # PERFORMANCE §5: the perf smoke runs as its OWN job so a budget miss can never block a
+  # merge (continue-on-error) — this job must NOT be added to the required status checks on
+  # main/dev (those stay `backend` + `frontend`). SQLite at 2x the Postgres-defined budgets;
+  # the 1x Postgres run happens locally (`make perf` + ATLAS_PERF_DATABASE_URL) before each
+  # promotion. `-s` keeps the [perf] timing report lines visible in the job log.
+  perf-smoke:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - name: Perf budgets (pytest -m perf, SQLite, 2x budgets, non-blocking)
+        run: |
+          if [ ! -f backend/pyproject.toml ]; then echo "backend not present yet — skipping"; exit 0; fi
+          cd backend
+          uv sync --frozen
+          uv run pytest -q -m perf -s
 
   frontend:
     runs-on: ubuntu-latest

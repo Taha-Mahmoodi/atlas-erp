@@ -50,8 +50,12 @@ asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 markers = [
     # Runs only against a real PostgreSQL (ATLAS_DATABASE_URL must point at it).
-    # The SQLite job runs `-m "not pg"`; the Postgres CI step runs `-m pg` (D-022).
+    # The SQLite job runs `-m "not pg and not perf"`; the Postgres CI step runs `-m pg` (D-022).
     "pg: requires a PostgreSQL database; skipped on the SQLite test engine",
+    # PERFORMANCE §5 wall-clock budget smoke (PLAN 4P.7): excluded from default runs,
+    # executed by the non-blocking `perf-smoke` CI job (SQLite, 2x budgets) and locally
+    # against Postgres before each promotion (`make perf` + ATLAS_PERF_DATABASE_URL).
+    "perf: wall-clock perf budgets over the bulk-seeded mid-volume tenant",
 ]
 filterwarnings = [
     "error::DeprecationWarning:app",
