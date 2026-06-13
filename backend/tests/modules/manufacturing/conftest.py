@@ -10,20 +10,37 @@ manufacturing.* instead of inventory.*.
 
 import uuid
 from collections.abc import AsyncIterator, Callable
+from dataclasses import dataclass
 from functools import partial
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.main import register_event_handlers
 from tests.modules.manufacturing.factories import (
     ManufacturingPrincipal,
     ManufacturingSetup,
     build_manufacturing_setup,
     create_mfg_principal,
 )
+from tests.modules.manufacturing.production_factories import (
+    ProductionOrderSetup,
+    build_production_order_setup,
+)
 
-__all__ = ["ManufacturingPrincipal", "ManufacturingSetup"]
+__all__ = ["ManufacturingPrincipal", "ManufacturingSetup", "ProductionOrderSetup"]
+
+
+@pytest.fixture(autouse=True)
+def _register_event_handlers(clear_event_subscriptions: Callable[[], None]) -> None:
+    """Register the cross-module handlers for every manufacturing test (PLAN 8.2, D-048): the
+    production-order → inventory component-issue/finished-receipt bridges, the inventory → finance
+    WIP-journal handler, and the finance WIP-variance handler — so an issue/finish posted through
+    the SERVICE layer (not the HTTP app, which registers handlers in its factory) creates the stock
+    moves + WIP journals. Depends on the global ``clear_event_subscriptions`` so it runs AFTER the
+    per-test reset; idempotent (``register_event_handlers`` de-duplicates)."""
+    register_event_handlers()
 
 
 @pytest.fixture
@@ -32,6 +49,15 @@ async def manufacturing_setup(
 ) -> ManufacturingSetup:
     """An EA UoM, a category, and a parent + component item in tenant A, ready to author masters."""
     return await build_manufacturing_setup(db_session, tenant_a)
+
+
+@pytest.fixture
+async def production_order_setup(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> ProductionOrderSetup:
+    """A tenant fully wired for the production-order flow (PLAN 8.2): items + GL accounts + open
+    period + warehouse/bins + WIP/variance defaults + component on-hand + an ACTIVE BOM."""
+    return await build_production_order_setup(db_session, tenant_a)
 
 
 # --- Manufacturing-permissioned HTTP clients ----------------------------------
@@ -69,6 +95,31 @@ async def mfg_client(
     access_token = await _login(client, principal)
     client.headers["Authorization"] = f"Bearer {access_token}"
     yield client
+
+
+@dataclass(frozen=True)
+class ProductionApi:
+    """A logged-in full-rights client plus a ProductionOrderSetup seeded in THAT client's tenant —
+    so the production-order endpoints can be driven over the wire against a fully-wired tenant."""
+
+    client: AsyncClient
+    setup: ProductionOrderSetup
+
+
+@pytest.fixture
+async def production_api(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    mfg_user_factory: Callable[..., AsyncIterator[ManufacturingPrincipal]],
+) -> AsyncIterator[ProductionApi]:
+    """A bearer-token client whose principal holds all manufacturing keys, with the full
+    production-order setup (items + GL accounts + open period + warehouse/bins + WIP/variance
+    defaults + component on-hand + an ACTIVE BOM) seeded in that principal's tenant (PLAN 8.2)."""
+    principal = await mfg_user_factory()
+    setup = await build_production_order_setup(db_session, principal.tenant_id)
+    access_token = await _login(client, principal)
+    client.headers["Authorization"] = f"Bearer {access_token}"
+    yield ProductionApi(client=client, setup=setup)
 
 
 @pytest.fixture

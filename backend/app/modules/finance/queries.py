@@ -23,8 +23,10 @@ from app.modules.finance.constants import (
     AP_CONTROL,
     AR_CONTROL,
     GR_IR_CLEARING,
+    PRODUCTION_VARIANCE,
     PURCHASE_PRICE_VARIANCE,
     SALES_REVENUE,
+    WIP_CLEARING,
     BillStatus,
     InvoiceStatus,
     PeriodStatus,
@@ -151,64 +153,64 @@ async def functional_currency_or_none(
 async def gr_ir_clearing_account(
     session: AsyncSession, tenant_id: uuid.UUID
 ) -> uuid.UUID:
-    """The tenant's GR/IR (goods-received / invoice-received) clearing account id (PLAN 6.3,
-    D-041). A goods receipt credits this account (the inventory costing valuation-offset override),
-    and the matched vendor bill (6.4) debits it. Resolves the ``gr_ir_clearing`` posting default and
-    RAISES a clear 422 (``finance.posting_default_unmapped``) when the tenant has not mapped it — a
-    goods receipt cannot post without it, so failing loud here keeps the whole GR transaction from
-    committing a half-formed posting. Exposed on finance/queries so procurement reads it downward
-    (STRUCTURE §5) without importing finance/service."""
+    """The tenant's GR/IR clearing account id (PLAN 6.3, D-041): a goods receipt credits it (the
+    costing valuation-offset override), the matched vendor bill (6.4) debits it. Resolves the
+    ``gr_ir_clearing`` posting default; RAISES 422 (``finance.posting_default_unmapped``) when
+    unmapped. Exposed for procurement (STRUCTURE §5; no finance/service import)."""
     return await _posting_defaults.get_posting_default(session, tenant_id, GR_IR_CLEARING)
 
 
 async def purchase_price_variance_account(
     session: AsyncSession, tenant_id: uuid.UUID
 ) -> uuid.UUID:
-    """The tenant's purchase-price-variance (PPV) account id (PLAN 6.4, D-042). When a 3-way-matched
-    vendor bill's invoiced unit price differs from the PO price (within tolerance), the difference
-    posts here so GR/IR clears at EXACTLY the PO cost it was credited at receipt and the price
-    variance is recognized separately. Resolves the ``purchase_price_variance`` posting default and
-    RAISES a clear 422 (``finance.posting_default_unmapped``) when unmapped — a match carrying a
-    price variance cannot post without it. Exposed on finance/queries so procurement reads it
-    downward (STRUCTURE §5) without importing finance/service."""
+    """The tenant's PPV account id (PLAN 6.4, D-042): an in-tolerance price difference on a matched
+    bill posts here so GR/IR clears at exactly the PO cost. Resolves the ``purchase_price_variance``
+    posting default; RAISES 422 when unmapped. Exposed for procurement (STRUCTURE §5)."""
     return await _posting_defaults.get_posting_default(
         session, tenant_id, PURCHASE_PRICE_VARIANCE
     )
 
 
 async def ap_control_account(session: AsyncSession, tenant_id: uuid.UUID) -> uuid.UUID:
-    """The tenant's AP control (trade-payables) account id (PLAN 6.4, D-042). The 3-way-match-
-    triggered vendor bill CREDITS this account at the vendor-invoiced total (the open item is
-    partner-keyed by the opaque vendor id on that line, D-029). Resolves the ``ap_control`` posting
-    default and RAISES a clear 422 (``finance.posting_default_unmapped``) when unmapped — a match
-    cannot post without somewhere to credit AP. Exposed on finance/queries so procurement reads it
-    downward (STRUCTURE §5) without importing finance/service (a bill created directly in finance
-    supplies its own ap_account_id; the match-triggered bill resolves this default)."""
+    """The tenant's AP control account id (PLAN 6.4, D-042): the match-triggered vendor bill CREDITS
+    it at the invoiced total (partner-keyed by the opaque vendor id, D-029). Resolves the
+    ``ap_control`` posting default; RAISES 422 when unmapped. Exposed for procurement (STRUCTURE
+    §5)."""
     return await _posting_defaults.get_posting_default(session, tenant_id, AP_CONTROL)
 
 
 async def ar_control_account(session: AsyncSession, tenant_id: uuid.UUID) -> uuid.UUID:
-    """The tenant's AR control (trade-receivables) account id (PLAN 7.4, D-046). The sales-billing-
-    triggered customer invoice DEBITS this account at the invoiced total (the open item is partner-
-    keyed by the opaque customer id on that line, D-029), and a return's credit note CREDITS it.
-    Resolves the ``ar_control`` posting default and RAISES a clear 422
-    (``finance.posting_default_unmapped``) when unmapped — a billing cannot post without an AR
-    control to debit. Exposed on finance/queries so SALES reads it downward (STRUCTURE §5) without
-    importing finance/service (an invoice created directly in finance supplies its own
-    ar_account_id; the billing-triggered invoice resolves this default — the AP_CONTROL mirror)."""
+    """The tenant's AR control account id (PLAN 7.4, D-046): the billing-triggered customer invoice
+    DEBITS it at the invoiced total (partner-keyed by the opaque customer id, D-029), a return's
+    credit note CREDITS it. Resolves the ``ar_control`` posting default; RAISES 422 when unmapped.
+    Exposed for SALES (STRUCTURE §5; the AP_CONTROL mirror)."""
     return await _posting_defaults.get_posting_default(session, tenant_id, AR_CONTROL)
 
 
 async def sales_revenue_account(session: AsyncSession, tenant_id: uuid.UUID) -> uuid.UUID:
-    """The tenant's sales-revenue account id (PLAN 7.4, D-046). Each sales-billing-triggered
-    customer invoice line CREDITS this account at its net (Cr revenue), and a return's credit note
-    DEBITS it (Dr revenue, reversing the recognized revenue). Resolves the ``sales_revenue`` posting
-    default and RAISES a clear 422 (``finance.posting_default_unmapped``) when unmapped — a billing
-    cannot post without a revenue account to credit. Exposed on finance/queries so SALES reads it
-    downward
-    (STRUCTURE §5) without importing finance/service (a v1 single revenue account per tenant; the
-    line-level revenue split is a later, mirroring how PPV is one per-tenant default)."""
+    """The tenant's sales-revenue account id (PLAN 7.4, D-046): each billing-triggered invoice line
+    CREDITS it at its net, a return's credit note DEBITS it. Resolves the ``sales_revenue`` posting
+    default; RAISES 422 when unmapped. Exposed for SALES (STRUCTURE §5; v1 single revenue
+    account)."""
     return await _posting_defaults.get_posting_default(session, tenant_id, SALES_REVENUE)
+
+
+async def wip_clearing_account(session: AsyncSession, tenant_id: uuid.UUID) -> uuid.UUID:
+    """The tenant's WIP clearing account id (PLAN 8.2, D-048): a component ISSUE debits it (Dr WIP /
+    Cr Inventory, the valuation-offset OVERRIDE), the finished RECEIPT credits it, WIP nets to ZERO.
+    Resolves the ``wip_clearing`` posting default; RAISES 422 when unmapped (for MANUFACTURING,
+    STRUCTURE §5; the GR/IR mirror)."""
+    return await _posting_defaults.get_posting_default(session, tenant_id, WIP_CLEARING)
+
+
+async def production_variance_account(
+    session: AsyncSession, tenant_id: uuid.UUID
+) -> uuid.UUID:
+    """The tenant's production-variance account id (PLAN 8.2, D-048): a finished order's residual
+    WIP (over/under-absorption) flushes here so WIP nets to ZERO. Resolves the
+    ``production_variance`` posting default; RAISES 422 when unmapped. Exposed for manufacturing
+    (STRUCTURE §5; PPV mirror)."""
+    return await _posting_defaults.get_posting_default(session, tenant_id, PRODUCTION_VARIANCE)
 
 
 async def get_tax_code(
@@ -391,8 +393,6 @@ async def net_income(
     from app.modules.finance.service.statements import net_income_signed
     from app.modules.finance.service.statements.base import load_account_meta
 
-    balances = await account_balances(
-        session, tenant_id, date_to=date_to, date_from=date_from
-    )
+    balances = await account_balances(session, tenant_id, date_to=date_to, date_from=date_from)
     meta = await load_account_meta(session, tenant_id)
     return net_income_signed(balances, meta)

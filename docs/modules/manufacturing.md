@@ -101,12 +101,51 @@ id; manufacturing never reaches across with an FK.
 `get_work_center` / `work_center_capacity(work_center_id)`. This is the **only** manufacturing file
 8.2/8.3 import — thin, stable, no service imports.
 
-## What 8.2 / 8.3 add (and what parity defers)
+## Production orders (8.2, D-048) — the manufacturing↔inventory↔finance seam
 
-- **8.2 — production orders:** material reservation, issue to WIP, finish to stock, WIP journals
-  (the first manufacturing cross-module events + `handlers.py`).
+A **production order** (`mfg_production_orders`, prefix `MO-`) turns components into a finished parent
+item. Lifecycle: **DRAFT** (created + the active BOM **exploded** into reserved
+`mfg_production_order_components` rows and the routing snapshotted into
+`mfg_production_order_operations`) → **RELEASED** (materials reserved — the component rows ARE the
+reservation, v1 ATP-style; release does not block on availability) → **IN_PROGRESS** (components
+issued to WIP) → **FINISHED** (parent produced to stock) | **CANCELLED** (DRAFT/RELEASED only — once
+issued the order must finish, issued stock + WIP cannot strand).
+
+**Explosion (single-level):** `required_quantity = quantity_per × order_qty × (1 + scrap_percent/100)`,
+quantized. A sub-assembly component is produced by its OWN order (multi-level via references, D-047);
+this order issues it as a finished material, it does not recurse.
+
+**The WIP accounting (event bus, §5):** manufacturing PUBLISHES; inventory/finance handle. Manufacturing
+imports only `inventory/queries` + `finance/queries` + its own events — never inventory/finance service.
+
+- **Issue to WIP** — `issue_components` publishes `ComponentsIssued` → inventory's handler creates an
+  ISSUE move per component with `valuation_offset_account_id` = the WIP account (the 6.3 GR/IR-override
+  pattern applied to an ISSUE) → the costing event posts **Dr WIP / Cr Inventory** at the component's
+  moving-average/FIFO cost. The order raises each component's `issued_quantity` and its
+  `accumulated_wip_cost` (the running WIP debit, the SSOT for the invariant) and goes IN_PROGRESS.
+- **Finish to stock** — `finish_order` publishes `OrderFinished` → inventory's handler creates a RECEIPT
+  move with `unit_cost` = accumulated WIP / ordered quantity and the WIP offset → **Dr Inventory / Cr
+  WIP**. On the FINAL finish any residual WIP is carried on the event so finance's
+  `post_production_variance` handler posts **Dr/Cr WIP / Cr/Dr production-variance** (over/under-
+  absorption — the MAV zero-quantity-flush analogue) so **WIP nets to ZERO** at completion.
+
+**WIP-nets-to-zero invariant (proven end-to-end):** once an order is fully issued + finished, the WIP
+clearing account balance is exactly 0 (issue debits = finished credit + variance flush), the finished
+item's inventory value equals the issued component cost, and any rounding/absorption residual holds in
+the production-variance account. Atomic: a closed period or insufficient stock rolls the whole
+issue/finish back (the move/journal triggers fire in the same transaction).
+
+**Posting defaults:** a tenant maps the `wip_clearing` (ASSET) and `production_variance` (EXPENSE)
+purposes (resolved via `finance/queries.wip_clearing_account` / `.production_variance_account`); an
+unmapped WIP account fails an issue/finish loud (422). Permissions: `manufacturing.production_order`
+`.read` / `.manage` (create+cancel) / `.release` / `.execute` (issue+finish). Docflow: order →
+`issued_to` → ISSUE moves, order → `finished_to` → finished RECEIPT move + variance entry.
+
+## What 8.3 adds (and what parity defers)
+
 - **8.3 — MRP run + rough capacity check:** explode sales-order demand + reorder points against
-  supply → planned orders; load work centres vs available hours.
+  supply → planned orders; load work centres vs available hours (the snapshotted order operations'
+  `planned_minutes` are the per-order load).
 
 **Deferred per s4hana-parity (PP):** operation-level confirmations (8.2 plans order-level
 completion only), capacity *leveling*/finite scheduling (8.3 does rough infinite-capacity load

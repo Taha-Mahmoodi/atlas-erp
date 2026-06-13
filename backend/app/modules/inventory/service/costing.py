@@ -121,10 +121,10 @@ async def apply_costing(
     move's passed ``unit_cost`` (the entry cost); ISSUE/negative-ADJUSTMENT IGNORE it and
     compute.
 
-    ``valuation_offset_account_id`` (PLAN 6.3, D-041) OVERRIDES the standard receipt offset
-    (price-difference) when the caller — the procurement goods-receipt path — supplies the GR/IR
-    clearing account. Applied only on the inbound (RECEIPT / positive-ADJUSTMENT) side; the
-    outbound/transfer paths ignore it (they offset to COGS / their own account)."""
+    ``valuation_offset_account_id`` (PLAN 6.3, D-041) OVERRIDES the standard offset on BOTH the
+    inbound (RECEIPT, normally price-difference → GR/IR for a goods receipt) and the outbound
+    (ISSUE, normally COGS → WIP for a component issue, PLAN 8.2 D-048) side. The ADJUSTMENT-down /
+    transfer paths ignore it."""
     move_type = MoveType(move.move_type)
     qty = Decimal(move.quantity)
     method = CostingMethod(item.costing_method)
@@ -159,6 +159,7 @@ async def apply_costing(
         return await _apply_outbound(
             session, tenant_id, item, move, qty, method, currency_code,
             from_warehouse_id, accounts,
+            valuation_offset_account_id=valuation_offset_account_id,
         )
     raise ValidationFailedError(
         message="The move has no warehouse side to value",
@@ -222,12 +223,14 @@ async def _apply_outbound(
     currency_code: str,
     warehouse_id: uuid.UUID,
     accounts: tuple[uuid.UUID, uuid.UUID, uuid.UUID],
+    *,
+    valuation_offset_account_id: uuid.UUID | None = None,
 ) -> CostingResult:
     """ISSUE / negative ADJUSTMENT: the engine COMPUTES the cost of the stock that left (the passed
-    unit_cost is ignored). Moving average quantizes qty × avg + flushes residual at zero on-hand;
-    FIFO sums per-layer quantized costs. Emits a value-decreasing StockValued event the handler
-    posts
-    as Dr COGS / Cr inventory."""
+    unit_cost is ignored). MAV quantizes qty × avg + flushes residual at zero on-hand; FIFO sums
+    per-layer costs. Emits a value-decreasing StockValued event posting Dr COGS / Cr inventory — or,
+    when ``valuation_offset_account_id`` overrides COGS (a component issue to WIP, PLAN 8.2), Dr WIP
+    / Cr inventory."""
     residual_flush = Decimal(0)
     if method == CostingMethod.MOVING_AVERAGE:
         cogs, residual_flush = await costing_mav.mav_issue(
@@ -246,13 +249,14 @@ async def _apply_outbound(
     unit_cost = (cogs / qty) if qty > 0 else Decimal(0)
     move.unit_cost = unit_cost
     inventory_account_id, cogs_account_id, price_diff_account_id = accounts
-    # An ISSUE charges COGS (goods left for sale/production); an ADJUSTMENT-down is an inventory
-    # write-off with no document behind it, so it offsets to the price-difference account (D-020).
-    offset_account_id = (
-        cogs_account_id
-        if MoveType(move.move_type) == MoveType.ISSUE
-        else price_diff_account_id
-    )
+    # An ISSUE charges COGS; an ADJUSTMENT-down is a write-off, so it offsets to price-difference
+    # (D-020). The ``valuation_offset_account_id`` OVERRIDE (PLAN 8.2, D-048) routes a manufacturing
+    # component ISSUE to the WIP clearing account instead of COGS (Dr WIP / Cr Inventory) — applied
+    # only on an ISSUE, mirroring how the inbound override applies only on a RECEIPT.
+    if MoveType(move.move_type) == MoveType.ISSUE:
+        offset_account_id = valuation_offset_account_id or cogs_account_id
+    else:
+        offset_account_id = price_diff_account_id
     event = _build_event(
         move, warehouse_id, qty, cogs, residual_flush,
         inventory_account_id, offset_account_id, price_diff_account_id,
@@ -390,8 +394,6 @@ def _build_event(
 # Reversal sequencing lives in costing_reversal.py (kept here under 400 lines); re-exported so call
 # sites keep one ``from ...service.costing import reverse_costing``. Imported at the END to avoid a
 # cycle: costing_reversal imports the shared helpers + apply_costing from THIS module.
-from app.modules.inventory.service.costing_reversal import (  # noqa: E402
-    reverse_costing,
-)
+from app.modules.inventory.service.costing_reversal import reverse_costing  # noqa: E402
 
 __all__ = ["CostingResult", "apply_costing", "reverse_costing"]

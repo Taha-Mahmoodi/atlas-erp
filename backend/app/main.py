@@ -277,14 +277,18 @@ def register_event_handlers() -> None:
         create_bill_for_match,
         create_credit_note_for_return,
         create_invoice_for_billing,
+        post_production_variance,
         post_stock_valuation_journal,
     )
     from app.modules.inventory.events import StockValued
     from app.modules.inventory.handlers import (
         issue_delivery_moves,
+        issue_production_components,
+        receive_finished_order_move,
         receive_goods_receipt_moves,
         receive_return_moves,
     )
+    from app.modules.manufacturing.events import ComponentsIssued, OrderFinished
     from app.modules.procurement.events import GoodsReceiptPosted, InvoiceMatched
     from app.modules.sales.events import (
         BillingInvoiced,
@@ -330,6 +334,22 @@ def register_event_handlers() -> None:
     # return posts. The second leg of an atomic return post (the first is the stock receipt above).
     if create_credit_note_for_return not in handlers_for(ReturnCredited.key):
         subscribe(ReturnCredited.key, create_credit_note_for_return)
+    # Manufacturing production-order → inventory stock-move bridges (PLAN 8.2, D-048), the
+    # manufacturing↔inventory↔finance seam. A component ISSUE posts Dr WIP / Cr Inventory (the
+    # valuation-offset OVERRIDE to the WIP account — the 6.3 GR/IR-override pattern applied to an
+    # ISSUE) and a finished RECEIPT posts Dr Inventory / Cr WIP, both via inventory's handlers
+    # creating the moves which in turn publish StockValued for the finance handler above — the same
+    # two-hop same-transaction chain (manufacturing → inventory → finance). WIP nets to zero per
+    # fully-issued + finished order; the variance flush is posted by manufacturing's finish flow.
+    if issue_production_components not in handlers_for(ComponentsIssued.key):
+        subscribe(ComponentsIssued.key, issue_production_components)
+    # OrderFinished has TWO same-transaction subscribers: inventory's handler creates the finished
+    # RECEIPT move (Dr Inventory / Cr WIP) and finance's handler posts the residual WIP variance (so
+    # WIP nets to zero). Both drain in the finish's uow; either failure rolls the whole finish back.
+    if receive_finished_order_move not in handlers_for(OrderFinished.key):
+        subscribe(OrderFinished.key, receive_finished_order_move)
+    if post_production_variance not in handlers_for(OrderFinished.key):
+        subscribe(OrderFinished.key, post_production_variance)
 
 
 app = create_app()
