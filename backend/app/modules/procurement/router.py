@@ -9,6 +9,8 @@ finance ap_router/ar_router precedent — split at the 400-line cap, kept ONE su
 - rfq_router: RFQs + send/record-quote/close actions.
 - po_router: purchase orders + send/approve/cancel actions and the RFQ→PO conversion.
 - goods_receipt_router: goods receipts + post (move stock + GR/IR journal) / cancel actions.
+- invoice_match_router: 3-way invoice matches + post (create AP bill) / override / cancel, the
+  match-tolerance config, and the reorder-point scan (6.4).
 - approval_rule_router: the value-threshold approval-rule CRUD.
 
 Every route is guarded by a procurement permission key (D-009; manage vs approve distinct). Writes
@@ -38,6 +40,7 @@ from app.modules.procurement.constants import (
     PROCUREMENT_VENDOR_READ,
 )
 from app.modules.procurement.goods_receipt_router import goods_receipt_router
+from app.modules.procurement.invoice_match_router import invoice_match_router
 from app.modules.procurement.models import Vendor
 from app.modules.procurement.po_router import po_router
 from app.modules.procurement.requisition_router import requisition_router
@@ -60,6 +63,7 @@ router.include_router(requisition_router)
 router.include_router(rfq_router)
 router.include_router(po_router)
 router.include_router(goods_receipt_router)
+router.include_router(invoice_match_router)
 router.include_router(approval_rule_router)
 
 

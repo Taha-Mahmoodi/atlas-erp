@@ -13,6 +13,9 @@ an internal detail. Re-exported here so call sites use one import.
 - ``orders``: PO create/send/approve/cancel + reads + the shared PO writer (6.2).
 - ``conversions``: requisition→RFQ, requisition→PO, RFQ→PO (6.2).
 - ``approvals``: approval-rule CRUD + the requires_approval value-threshold evaluator (6.2, D-040).
+- ``invoice_matches`` / ``invoice_match_reads``: the 3-way match create/post/override/cancel + reads
+  + tolerance config (6.4, D-042).
+- ``reorder``: the reorder-point scan that raises draft requisitions from below-reorder items (6.4).
 """
 
 from app.modules.procurement.service.approvals import (
@@ -38,6 +41,19 @@ from app.modules.procurement.service.goods_receipts import (
     create_goods_receipt,
     post_goods_receipt,
 )
+from app.modules.procurement.service.invoice_match_post import (
+    cancel_invoice_match,
+    override_invoice_match,
+    post_invoice_match,
+)
+from app.modules.procurement.service.invoice_match_reads import (
+    get_invoice_match,
+    get_invoice_match_lines,
+    get_match_tolerance,
+    list_invoice_matches,
+    upsert_match_tolerance,
+)
+from app.modules.procurement.service.invoice_matches import create_invoice_match
 from app.modules.procurement.service.orders import (
     cancel_purchase_order,
     create_purchase_order,
@@ -47,6 +63,7 @@ from app.modules.procurement.service.orders import (
     list_purchase_orders,
     send_purchase_order,
 )
+from app.modules.procurement.service.reorder import run_reorder_scan
 from app.modules.procurement.service.requisitions import (
     cancel_requisition,
     create_requisition,
@@ -79,6 +96,7 @@ from app.modules.procurement.service.vendors import (
 __all__ = [
     "add_approved_item",
     "cancel_goods_receipt",
+    "cancel_invoice_match",
     "cancel_purchase_order",
     "cancel_requisition",
     "close_rfq",
@@ -87,6 +105,7 @@ __all__ = [
     "convert_rfq_to_po",
     "create_approval_rule",
     "create_goods_receipt",
+    "create_invoice_match",
     "create_purchase_order",
     "create_requisition",
     "create_rfq",
@@ -96,6 +115,9 @@ __all__ = [
     "get_approval_rule",
     "get_goods_receipt",
     "get_goods_receipt_lines",
+    "get_invoice_match",
+    "get_invoice_match_lines",
+    "get_match_tolerance",
     "get_purchase_order",
     "get_purchase_order_lines",
     "get_requisition",
@@ -107,18 +129,23 @@ __all__ = [
     "list_approval_rules",
     "list_approved_items",
     "list_goods_receipts",
+    "list_invoice_matches",
     "list_purchase_orders",
     "list_requisitions",
     "list_rfqs",
     "list_vendors",
+    "override_invoice_match",
     "post_goods_receipt",
+    "post_invoice_match",
     "record_quote",
     "remove_approved_item",
     "requires_approval",
+    "run_reorder_scan",
     "send_purchase_order",
     "send_rfq",
     "submit_requisition",
     "update_approval_rule",
     "update_requisition",
     "update_vendor",
+    "upsert_match_tolerance",
 ]

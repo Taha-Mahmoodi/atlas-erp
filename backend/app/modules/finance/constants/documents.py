@@ -134,13 +134,30 @@ DEPRECIATION_RUN_SYNC_MAX_ASSETS = 100
 # the GR has nowhere to credit otherwise (resolved via finance/queries.gr_ir_clearing_account).
 GR_IR_CLEARING = "gr_ir_clearing"
 
-# Every known posting-default purpose: FX + the CO/bank/asset clearing accounts + GR-IR.
+# --- Purchase price variance + AP control (PLAN 6.4, D-042) -------------------
+# When the matched vendor bill's invoiced unit price differs from the PO price (within tolerance),
+# the difference posts to this per-tenant posting default (an EXPENSE/income variance account) so
+# GR/IR clears at EXACTLY the PO cost it was credited at receipt, and the price difference is
+# recognized separately. Resolved via finance/queries.purchase_price_variance_account; a tenant MUST
+# map it before a match carrying a price variance can post (it has nowhere to route the difference).
+PURCHASE_PRICE_VARIANCE = "purchase_price_variance"
+
+# The AP control (trade-payables) account the matched vendor bill CREDITS at the invoiced total
+# (D-029: the open item is partner-keyed by the opaque vendor id on that line). A bill created
+# DIRECTLY in finance (4.5) supplies its own ap_account_id per bill; the 3-way-match-triggered bill
+# resolves it from this per-tenant posting default (procurement holds no AP account), so a tenant
+# MUST map it before a match can post — resolved via finance/queries.ap_control_account.
+AP_CONTROL = "ap_control"
+
+# Every known posting-default purpose: FX + the CO/bank/asset clearing accounts + GR-IR + PPV + AP.
 POSTING_PURPOSES: frozenset[str] = FX_POSTING_PURPOSES | frozenset(
     {
         CO_ALLOCATION_CLEARING,
         BANK_UNMATCHED_CLEARING,
         ASSET_ACQUISITION_CLEARING,
         GR_IR_CLEARING,
+        PURCHASE_PRICE_VARIANCE,
+        AP_CONTROL,
     }
 )
 

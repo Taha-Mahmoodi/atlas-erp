@@ -149,6 +149,44 @@ class GoodsReceiptStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class MatchStatus(StrEnum):
+    """Lifecycle of a 3-way invoice match — the procure-to-pay closing document (PLAN 6.4, D-042).
+
+    A match compares a vendor's invoice against the PO (price) and the goods receipt (quantity);
+    on POST it triggers the AP vendor bill (Dr GR/IR + PPV / Cr AP) that clears the GR/IR account
+    the goods receipt credited at receipt.
+
+    - DRAFT: created, editable; the MATCH number is already claimed (D-040 claim-at-creation). No
+      bill yet. Can be CANCELLED.
+    - MATCHED: every line is within tolerance (price within X%, quantity exact against receipt) —
+      the match is clean and may be POSTed.
+    - EXCEPTION: at least one line exceeds the price tolerance — the match is BLOCKED from posting
+      until an authorized user OVERRIDEs it (the invoice-release control); override moves it to
+      MATCHED. A clerk cannot silently bill a price the buyer did not agree to.
+    - POSTED: the AP vendor bill was created + posted (Dr GR/IR / Cr AP, PPV for the price
+      variance), the PO billed_quantity was raised and the PO advanced toward CLOSED — ONE
+      transaction.
+      TERMINAL: corrected by a credit memo / reversal (Phase 7), never re-posted.
+    - CANCELLED: a DRAFT/EXCEPTION abandoned before posting; terminal. No bill ever created."""
+
+    DRAFT = "DRAFT"
+    MATCHED = "MATCHED"
+    EXCEPTION = "EXCEPTION"
+    POSTED = "POSTED"
+    CANCELLED = "CANCELLED"
+
+
+# Per-tenant 3-way-match tolerances (PLAN 6.4, D-042). A `proc_match_tolerances` row (single active
+# row per tenant in v1 — the ApprovalRule single-per-tenant precedent; per-vendor tolerance groups
+# are the documented later) holds the price + quantity tolerance PERCENTAGES. A line's invoiced unit
+# price within `price_tolerance_percent` of the PO price → within tolerance; over it → EXCEPTION.
+# These DEFAULTS apply when a tenant has not configured a row (the no-rule-runs-loose precedent of
+# the approval threshold): 0% price tolerance means any price difference is an exception by default,
+# so a tenant must opt into a band — chosen STRICT (a price change should be a deliberate decision).
+DEFAULT_PRICE_TOLERANCE_PERCENT = 0
+DEFAULT_QUANTITY_TOLERANCE_PERCENT = 0
+
+
 class ApprovalDecision(StrEnum):
     """An approver's verdict on a submitted requisition / pending PO (the approve/reject action)."""
 
@@ -191,6 +229,14 @@ GOODS_RECEIPT_SEQUENCE_NAME = "procurement.goods_receipt"
 GOODS_RECEIPT_NUMBER_PREFIX = "GR"
 GOODS_RECEIPT_NUMBER_PADDING = 5
 
+# Invoice match (PLAN 6.4, D-042): the 3-way-match document. Registers in core_documents + claims a
+# gapless MATCH number AT CREATION (D-040; year-resetting MATCH-2026-00001). This is the MATCH
+# document number — the finance vendor bill the match triggers claims its OWN BILL- number.
+INVOICE_MATCH_DOC_TYPE = "procurement.invoice_match"
+INVOICE_MATCH_SEQUENCE_NAME = "procurement.invoice_match"
+INVOICE_MATCH_NUMBER_PREFIX = "MATCH"
+INVOICE_MATCH_NUMBER_PADDING = 5
+
 # docflow link types joining the chain (D-012 vocabulary). The edge is predecessor → successor, so
 # the link_type names the edge from the predecessor's point of view:
 #   requisition → rfq : the requisition is "sourced_by" the RFQ.
@@ -204,10 +250,24 @@ REQUISITION_ORDERED_BY_PO_LINK = "ordered_by"
 PO_RECEIVED_BY_GR_LINK = "received_by"
 GR_MOVED_BY_STOCK_MOVE_LINK = "moved_by"
 
+# Invoice-match edges (PLAN 6.4, D-042): the PO is "matched_by" the match; each GR feeding the match
+# is "matched_by" it too; the match is "billed_by" the finance vendor bill it triggers. The match→
+# bill link spans into FINANCE's document (the AP-bill-posts-link precedent) — written by finance's
+# handler when it posts the bill, so procurement records no cross-module FK into the bill table.
+PO_MATCHED_BY_INVOICE_MATCH_LINK = "matched_by"
+GR_MATCHED_BY_INVOICE_MATCH_LINK = "matched_by"
+INVOICE_MATCH_BILLED_BY_BILL_LINK = "billed_by"
+
 # The procurement domain event the goods-receipt POST publishes (D-011/D-041): inventory's
 # handlers.py subscribes and creates the stock RECEIPT moves with the GR/IR offset in the SAME
 # transaction (the sanctioned cross-module mechanism — procurement never imports inventory/service).
 GOODS_RECEIPT_POSTED_EVENT_KEY = "procurement.goods_receipt.posted"
+
+# The procurement domain event the invoice-match POST publishes (D-011/D-042): finance's handlers.py
+# subscribes and creates+posts the AP vendor bill (Dr GR/IR + PPV / Cr AP) in the SAME transaction
+# (the sanctioned cross-module mechanism — procurement never imports finance/service; it publishes
+# the event and finance handles its OWN bill posting). Mirrors the GR→inventory bridge of 6.3.
+INVOICE_MATCHED_EVENT_KEY = "procurement.invoice_match.matched"
 
 
 # --- Permissions (D-009): one key per guarded endpoint action -----------------
@@ -238,6 +298,14 @@ PROCUREMENT_APPROVAL_RULE_MANAGE = "procurement.approval_rule.manage"
 PROCUREMENT_GOODS_RECEIPT_READ = "procurement.goods_receipt.read"
 PROCUREMENT_GOODS_RECEIPT_MANAGE = "procurement.goods_receipt.manage"
 PROCUREMENT_GOODS_RECEIPT_POST = "procurement.goods_receipt.post"
+# Invoice matches (PLAN 6.4): read vs create/edit/override/cancel the match vs the privileged POST
+# action (posting a match creates + posts the AP vendor bill via the event bus — its own authority,
+# the journal.post / goods_receipt.post precedent: building a document and committing it are
+# distinct rights). The OVERRIDE of an EXCEPTION rides MANAGE — clearing a price exception is the
+# manager's call, recorded in the audit trail (a future tenant may split it to its own key).
+PROCUREMENT_INVOICE_MATCH_READ = "procurement.invoice_match.read"
+PROCUREMENT_INVOICE_MATCH_MANAGE = "procurement.invoice_match.manage"
+PROCUREMENT_INVOICE_MATCH_POST = "procurement.invoice_match.post"
 
 register_permissions(
     PROCUREMENT_VENDOR_READ,
@@ -254,6 +322,9 @@ register_permissions(
     PROCUREMENT_GOODS_RECEIPT_READ,
     PROCUREMENT_GOODS_RECEIPT_MANAGE,
     PROCUREMENT_GOODS_RECEIPT_POST,
+    PROCUREMENT_INVOICE_MATCH_READ,
+    PROCUREMENT_INVOICE_MATCH_MANAGE,
+    PROCUREMENT_INVOICE_MATCH_POST,
     descriptions={
         PROCUREMENT_VENDOR_READ: "Read vendors and their approved items",
         PROCUREMENT_VENDOR_MANAGE: "Create and edit vendors and their approved items",
@@ -269,5 +340,8 @@ register_permissions(
         PROCUREMENT_GOODS_RECEIPT_READ: "Read goods receipts",
         PROCUREMENT_GOODS_RECEIPT_MANAGE: "Create, edit and cancel draft goods receipts",
         PROCUREMENT_GOODS_RECEIPT_POST: "Post goods receipts (move stock and post the GR/IR entry)",
+        PROCUREMENT_INVOICE_MATCH_READ: "Read 3-way invoice matches",
+        PROCUREMENT_INVOICE_MATCH_MANAGE: "Create, override and cancel invoice matches",
+        PROCUREMENT_INVOICE_MATCH_POST: "Post invoice matches (create and post the AP vendor bill)",
     },
 )

@@ -308,6 +308,83 @@ unlike bulk count posts / payment runs); the post is O(lines).
 | POST | `/goods-receipts/{id}/post` (idempotent) | `goods_receipt.post` |
 | POST | `/goods-receipts/{id}/cancel` | `goods_receipt.manage` |
 
+## 3-way invoice match → AP bill (PLAN 6.4, D-042)
+
+The **procure-to-pay closing step.** A 3-way match (`proc_invoice_matches` / `_lines`, `DocumentMixin`
++ a gapless `MATCH-` number claimed at creation) compares a vendor's invoice against the **PO** (price)
+and the **goods receipt** (quantity), then — on POST — triggers the AP vendor bill that **clears the
+GR/IR account the goods receipt credited at receipt**, closing the loop.
+
+**The tolerance model.** A per-tenant `proc_match_tolerances` row (single active row per tenant in v1,
+the ApprovalRule precedent) holds a `price_tolerance_percent` + `quantity_tolerance_percent`. When a
+tenant has no row, the **strict 0% defaults** apply — any price difference is an exception by default,
+so a tenant must opt into a band (a price change should be a deliberate decision). On create, each line's
+invoiced unit price is compared to the PO price; a deviation **within** the band → `within_tolerance`,
+**over** it → not. A match is **MATCHED** when every line is within tolerance, **EXCEPTION** when any
+line exceeds it. An EXCEPTION is **blocked from posting** until an authorized user **OVERRIDEs** it (the
+invoice-release control — a clerk cannot silently bill a price the buyer did not agree to); override
+moves it to MATCHED.
+
+**The over-billing 3-way constraint.** A `billed_quantity` counter on the PO line (raised by 6.4 like
+`received_quantity` is by 6.3) gives `po_line_open_to_bill = received − billed`. A match line's matched
+quantity **cannot exceed** received − already-billed → 422 `procurement.over_billing`: **you can never
+bill beyond what was physically received** (the heart of the 3-way match).
+
+**The GR/IR-clearing + PPV accounting (the subtlety).** At receipt (6.3) the goods receipt posted
+**Dr Inventory / Cr GR/IR** at PO cost. The matched bill posts **Dr GR/IR (at the SAME PO cost) + Dr/Cr
+purchase-price-variance (any in-tolerance invoice-vs-PO price difference) + Dr input tax / Cr AP control
+(at the vendor-invoiced total)**. Because the bill debits GR/IR at *exactly* the cost it was credited at
+receipt, **GR/IR nets to zero** once a PO line is fully received and billed; the invoice-price difference
+is recognized separately on the **PPV account** (a new `purchase_price_variance` posting default). The
+AP control credit = the vendor-invoiced gross, partner-keyed by the opaque vendor id (D-029); the bill's
+due date = invoice_date + the vendor's payment terms. The AP control account is itself a posting default
+(`ap_control`) so the match-triggered bill resolves it without procurement holding any GL account.
+
+**The cross-module mechanism (STRUCTURE §5 / D-042).** The bill is created in **FINANCE**, not
+procurement — procurement must not import finance/service. So `post_invoice_match` PUBLISHES
+`InvoiceMatched` (a plain typed event carrying the per-line GR/IR portion at PO cost + the price variance
++ the resolved GR/IR, PPV and AP-control accounts) and **`finance/handlers.py`** subscribes and creates +
+posts the AP vendor bill via the finance AP service in the SAME `run_in_uow` transaction (the mirror of
+the inventory→finance COGS handler — finance handling its own bill posting, the event published by
+procurement). The whole post — match POSTED + AP bill posted + GR/IR cleared + PO `billed_quantity`
+raised + PO advanced to CLOSED (when fully received AND billed) — is **ONE transaction**; a closed
+invoice-date period trips the bill's journal period trigger and rolls it ALL back. Docflow links span
+**PO → match (matched_by) · GR → match (matched_by) · match → bill (billed_by)** so the full
+requisition → PO → GR → match → bill chain is queryable. A POSTED match is terminal (corrected by a
+credit memo / reversal, Phase 7).
+
+| Method | Path | Permission |
+|---|---|---|
+| POST | `/invoice-matches` (create draft; idempotent) | `invoice_match.manage` |
+| GET | `/invoice-matches` (paginated; filter po/status) · `/{id}` | `invoice_match.read` |
+| POST | `/invoice-matches/{id}/post` (idempotent; creates the AP bill) | `invoice_match.post` |
+| POST | `/invoice-matches/{id}/override` (clear an EXCEPTION) | `invoice_match.manage` |
+| POST | `/invoice-matches/{id}/cancel` | `invoice_match.manage` |
+| GET / PUT | `/match-tolerances` (the per-tenant tolerance config) | `invoice_match.read` / `.manage` |
+
+## Reorder-point auto-requisitions (PLAN 6.4 Part B, D-042)
+
+Inventory **owns** `reorder_point` / `reorder_quantity` on the item (5.1) and exposes
+`items_below_reorder_point` (a set-based LEFT JOIN + GROUP BY over the on-hand quant projection, no
+N+1). The **draft requisition is a procurement document** (6.2). So `run_reorder_scan` reads that
+inventory query **downward** (never importing inventory models/service), then creates **one DRAFT
+requisition with a line per below-reorder item** (qty = `reorder_quantity`, in the item's base UoM) via
+the existing 6.2 requisition create — so the proposal flows through the normal requisition approval
+chain.
+
+**Idempotent dedup.** A second scan the same day must not duplicate a still-open proposal:
+`open_requisition_item_ids` collects every item already on a DRAFT/SUBMITTED/APPROVED (un-converted)
+requisition line, and the scan **skips** those items, so re-running only adds genuinely new shortfalls.
+Returns the created requisition, or 200 with a null body when nothing needs reordering.
+
+The scan runs **inline** (a tenant's item count is modest in v1; the work is two set-based queries + one
+insert). A volume that outgrows the sync budget would move it behind the existing job runner
+(`procurement.reorder_scan`) — documented, not built for v1 (PERFORMANCE §3).
+
+| Method | Path | Permission |
+|---|---|---|
+| POST | `/reorder-scan` (idempotent; returns the draft requisition or null) | `requisition.manage` |
+
 ## What's deferred (per parity)
 
 - **Multi-characteristic / multi-step release strategies** — Atlas implements amount-only,
@@ -316,16 +393,21 @@ unlike bulk count posts / payment runs); the post is O(lines).
 - **Time-dependent info-record conditions** (price, lead-time, valid-from/to) on approved items.
 - **Partner functions** (separate ordering vs invoicing addresses) and **granular block levels**.
 - **Source determination** (source lists, quota arrangements, automatic source proposal).
-- **3-way match (PO/receipt/bill with tolerances) → AP bill** — PLAN 6.4 (the `tax_code_id` column +
-  the `goods_receipts_for_po` / `po_line_open_quantity` queries are staged for it now). The 6.4 bill
-  clears the GR/IR account this receipt credited.
+- **Configurable tolerance GROUPS + invoice-release workflow + ERS** — v1 ships a single-per-tenant
+  price/quantity tolerance band + a one-step EXCEPTION-override release (PLAN 6.4); per-vendor tolerance
+  groups, multi-step release approvals and evaluated-receipt-settlement are the documented follow-ons.
 - **Over-receipt tolerance** — v1 rejects any receipt beyond a PO line's open quantity; a configurable
   receipt tolerance is a later refinement.
+- **Reorder-scan as a background job** — v1 runs the reorder scan inline (modest item counts); a
+  volume past the sync budget moves it behind the `procurement.reorder_scan` job (documented).
 - **Inspection-lot disposition (accept/reject/rework, QI bins, blocking)** — Phase 9 Quality; v1's
   `requires_inspection` is a flag only.
 
 Migrations: **0024_procurement_vendors** (`proc_vendors` + `proc_vendor_approved_items`);
 **0025_procurement_documents** (`proc_requisitions`/`_lines`, `proc_rfqs`/`_lines`,
 `proc_purchase_orders`/`_lines`, `proc_approval_rules` + indexes); **0026_procurement_goods_receipts**
-(`proc_goods_receipts`/`_lines` + indexes). All with no trigger-bearing alters, portable on SQLite +
-Postgres. The `gr_ir_clearing` posting purpose is DATA (a posting default), not schema.
+(`proc_goods_receipts`/`_lines` + indexes); **0027_procurement_invoice_matches**
+(`proc_invoice_matches`/`_lines` + `proc_match_tolerances` + the `billed_quantity` column on
+`proc_purchase_order_lines` + indexes). All with no trigger-bearing alters, portable on SQLite +
+Postgres. The `gr_ir_clearing` / `purchase_price_variance` / `ap_control` posting purposes are DATA
+(posting defaults), not schema. **Procurement is COMPLETE (Phase 6 done).**

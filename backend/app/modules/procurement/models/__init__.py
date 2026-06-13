@@ -10,11 +10,17 @@ env.py, the tenancy mapper-enumeration suite) registers all tables on ``Base.met
 - ``rfqs``: the request-for-quotation header + lines (6.2) — the sourcing document.
 - ``orders``: the purchase-order header + lines (6.2) — the committing document.
 - ``goods_receipts``: the goods-receipt header + lines (6.3) — receipt of PO goods → stock + GR/IR.
+- ``invoice_matches``: the 3-way-match header + lines + tolerance config (6.4) — match → AP bill.
 - ``approvals``: the value-threshold approval rule that gates requisition submit + PO send (6.2).
 """
 
 from app.modules.procurement.models.approvals import ApprovalRule
 from app.modules.procurement.models.goods_receipts import GoodsReceipt, GoodsReceiptLine
+from app.modules.procurement.models.invoice_matches import (
+    InvoiceMatch,
+    InvoiceMatchLine,
+    MatchTolerance,
+)
 from app.modules.procurement.models.orders import PurchaseOrder, PurchaseOrderLine
 from app.modules.procurement.models.requisitions import (
     PurchaseRequisition,
@@ -27,6 +33,9 @@ __all__ = [
     "ApprovalRule",
     "GoodsReceipt",
     "GoodsReceiptLine",
+    "InvoiceMatch",
+    "InvoiceMatchLine",
+    "MatchTolerance",
     "PurchaseOrder",
     "PurchaseOrderLine",
     "PurchaseRequisition",

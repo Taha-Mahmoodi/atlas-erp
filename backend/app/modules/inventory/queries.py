@@ -145,6 +145,53 @@ async def on_hand(
     return (await session.execute(stmt)).scalar_one()
 
 
+async def items_below_reorder_point(
+    session: AsyncSession, tenant_id: uuid.UUID
+) -> list[tuple[uuid.UUID, Decimal, Decimal, Decimal]]:
+    """Items whose total on-hand is AT OR BELOW their reorder point (PLAN 6.4, D-042) — the
+    consumption-based replenishment scan. Returns ``(item_id, on_hand, reorder_point,
+    reorder_quantity)`` for each ACTIVE item that carries a positive reorder point, has a positive
+    reorder quantity, and whose on-hand (the maintained ``inv_stock_quants`` projection, summed per
+    item) has fallen to or under that point. Procurement's reorder scan turns each into a draft
+    requisition line for ``reorder_quantity``.
+
+    SET-BASED (no per-item N+1, PERFORMANCE §2): the on-hand sum is a LEFT JOIN + GROUP BY over the
+    quant projection (items with no stock read 0 via coalesce), and the reorder predicate filters in
+    SQL. Inventory OWNS reorder_point/reorder_quantity (5.1); the DRAFT requisition is a procurement
+    document (6.2) — this query is the contract procurement reads, never importing inventory
+    models."""
+    on_hand_sum = func.coalesce(func.sum(StockQuant.on_hand_qty), 0)
+    stmt = (
+        select(
+            Item.id,
+            on_hand_sum.label("on_hand"),
+            Item.reorder_point,
+            Item.reorder_quantity,
+        )
+        .join(
+            StockQuant,
+            (StockQuant.tenant_id == Item.tenant_id) & (StockQuant.item_id == Item.id),
+            isouter=True,
+        )
+        .where(
+            Item.tenant_id == tenant_id,
+            Item.is_active.is_(True),
+            Item.reorder_point.is_not(None),
+            Item.reorder_point > 0,
+            Item.reorder_quantity.is_not(None),
+            Item.reorder_quantity > 0,
+        )
+        .group_by(Item.id, Item.reorder_point, Item.reorder_quantity)
+        .having(on_hand_sum <= Item.reorder_point)
+        .order_by(Item.item_code)
+    )
+    rows = (await session.execute(stmt)).all()
+    return [
+        (row[0], Decimal(row[1]), Decimal(row[2]), Decimal(row[3]))
+        for row in rows
+    ]
+
+
 async def on_hand_by_bin(
     session: AsyncSession, tenant_id: uuid.UUID, item_id: uuid.UUID
 ) -> dict[uuid.UUID, Decimal]:

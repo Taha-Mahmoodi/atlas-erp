@@ -122,4 +122,10 @@ class PurchaseOrderLine(UuidPKMixin, TenantMixin, TimestampMixin, Base):
     received_quantity: Mapped[object] = mapped_column(
         QuantityType(), nullable=False, default=0, server_default="0"
     )
+    # Raised by 6.4 invoice matches (D-042); received − billed is the open-to-bill quantity. A match
+    # line cannot exceed received − billed (the 3-way over-billing constraint: no billing beyond
+    # goods receipt). Default 0 so a fresh / just-received line is fully open to bill.
+    billed_quantity: Mapped[object] = mapped_column(
+        QuantityType(), nullable=False, default=0, server_default="0"
+    )
     tax_code_id: Mapped[uuid.UUID | None] = mapped_column(sa.Uuid, nullable=True)

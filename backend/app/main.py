@@ -260,10 +260,13 @@ def register_event_handlers() -> None:
     test harness's ``clear_subscriptions`` reset (D-025) — yields exactly one subscription per
     handler, never a duplicate that would double-post."""
     from app.core.events import handlers_for, subscribe
-    from app.modules.finance.handlers import post_stock_valuation_journal
+    from app.modules.finance.handlers import (
+        create_bill_for_match,
+        post_stock_valuation_journal,
+    )
     from app.modules.inventory.events import StockValued
     from app.modules.inventory.handlers import receive_goods_receipt_moves
-    from app.modules.procurement.events import GoodsReceiptPosted
+    from app.modules.procurement.events import GoodsReceiptPosted, InvoiceMatched
 
     if post_stock_valuation_journal not in handlers_for(StockValued.key):
         subscribe(StockValued.key, post_stock_valuation_journal)
@@ -273,6 +276,12 @@ def register_event_handlers() -> None:
     # (procurement → inventory → finance).
     if receive_goods_receipt_moves not in handlers_for(GoodsReceiptPosted.key):
         subscribe(GoodsReceiptPosted.key, receive_goods_receipt_moves)
+    # Procurement invoice-match → finance AP-bill bridge (PLAN 6.4, D-042): finance's handler
+    # creates + posts the matched vendor bill (Dr GR/IR + PPV / Cr AP) when a match posts, clearing
+    # the GR/IR account the goods receipt credited — closing the procure-to-pay loop. Procurement
+    # publishes; finance handles its own bill posting (STRUCTURE §5).
+    if create_bill_for_match not in handlers_for(InvoiceMatched.key):
+        subscribe(InvoiceMatched.key, create_bill_for_match)
 
 
 app = create_app()
