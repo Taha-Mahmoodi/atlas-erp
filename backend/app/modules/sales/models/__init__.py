@@ -7,11 +7,13 @@ Customer``).
 - ``pricing``: the ``PriceList`` condition header + its ``PriceListItem`` base prices (7.1).
 - ``orders``: the ``Quote`` + ``QuoteLine`` and ``SalesOrder`` + ``SalesOrderLine`` O2C documents
   (7.2).
+- ``deliveries``: the ``Delivery`` + ``DeliveryLine`` outbound fulfilment documents (7.3).
 
-The delivery/invoice document tables (7.3–7.4) will add their own files here.
+The invoice document tables (7.4) will add their own file here.
 """
 
 from app.modules.sales.models.customers import Customer, CustomerGroup
+from app.modules.sales.models.deliveries import Delivery, DeliveryLine
 from app.modules.sales.models.orders import (
     Quote,
     QuoteLine,
@@ -23,6 +25,8 @@ from app.modules.sales.models.pricing import PriceList, PriceListItem
 __all__ = [
     "Customer",
     "CustomerGroup",
+    "Delivery",
+    "DeliveryLine",
     "PriceList",
     "PriceListItem",
     "Quote",

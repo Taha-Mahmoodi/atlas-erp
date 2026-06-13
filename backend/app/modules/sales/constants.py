@@ -133,6 +133,26 @@ class SalesOrderStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class DeliveryStatus(StrEnum):
+    """Lifecycle of an outbound delivery — the O2C fulfilment document (PLAN 7.3), the outbound twin
+    of the procurement goods receipt (the GoodsReceiptStatus precedent, mirrored).
+
+    - DRAFT: created, editable; a shipping clerk picks order lines + source bins + quantities. The
+      DN number is claimed AT CREATION (D-012/D-040 claim-at-creation — a delivery is referenceable
+      the moment it exists, the goods-receipt precedent). No stock has moved yet.
+    - POSTED: the delivery shipped (DRAFT → POSTED). At POST it ISSUES stock (one inventory ISSUE
+      move per line, via the event bus) — each move's costing posts Dr COGS / Cr Inventory — raises
+      the order lines' delivered_quantity, and advances the order (PARTIALLY_DELIVERED / DELIVERED).
+      All ONE transaction (D-011/D-020). TERMINAL: a POSTED delivery has moved stock + posted COGS,
+      so it is corrected by a return / RMA (7.4), never cancelled or re-posted — the goods-receipt
+      terminal-POSTED precedent.
+    - CANCELLED: a DRAFT delivery abandoned before posting (DRAFT → CANCELLED); moves nothing."""
+
+    DRAFT = "DRAFT"
+    POSTED = "POSTED"
+    CANCELLED = "CANCELLED"
+
+
 class CreditCheckStatus(StrEnum):
     """The result of an order's confirm-time credit check (PLAN 7.2, D-044), stored on the order so
     the UI + audit can see why a confirmation blocked and that it was released.
@@ -210,6 +230,15 @@ SALES_ORDER_MANAGE = "sales.order.manage"
 SALES_ORDER_CONFIRM = "sales.order.confirm"
 SALES_ORDER_CREDIT_RELEASE = "sales.order.credit_release"
 
+# Deliveries (PLAN 7.3): read the delivery register vs create/edit/cancel the DRAFT vs the
+# privileged POST action (issue stock + post the COGS journal). POST is its own key (the
+# journal.post / goods_receipt.post precedent): building a delivery note and shipping it — which
+# moves stock and posts COGS — are separate authorities. A clerk who picks a delivery cannot
+# silently post the goods issue.
+SALES_DELIVERY_READ = "sales.delivery.read"
+SALES_DELIVERY_MANAGE = "sales.delivery.manage"
+SALES_DELIVERY_POST = "sales.delivery.post"
+
 register_permissions(
     SALES_CUSTOMER_READ,
     SALES_CUSTOMER_MANAGE,
@@ -221,6 +250,9 @@ register_permissions(
     SALES_ORDER_MANAGE,
     SALES_ORDER_CONFIRM,
     SALES_ORDER_CREDIT_RELEASE,
+    SALES_DELIVERY_READ,
+    SALES_DELIVERY_MANAGE,
+    SALES_DELIVERY_POST,
     descriptions={
         SALES_CUSTOMER_READ: "Read customers and customer groups",
         SALES_CUSTOMER_MANAGE: "Create and edit customers and customer groups",
@@ -232,6 +264,9 @@ register_permissions(
         SALES_ORDER_MANAGE: "Create, edit, convert and cancel sales orders",
         SALES_ORDER_CONFIRM: "Confirm sales orders (run the ATP and credit-limit checks)",
         SALES_ORDER_CREDIT_RELEASE: "Release a credit-blocked sales order past the credit limit",
+        SALES_DELIVERY_READ: "Read outbound deliveries",
+        SALES_DELIVERY_MANAGE: "Create, edit and cancel draft deliveries",
+        SALES_DELIVERY_POST: "Post deliveries (issue stock and post the COGS journal)",
     },
 )
 
@@ -258,3 +293,30 @@ SALES_ORDER_NUMBER_PADDING = 5
 # the order raised from it (the order carries source_quote_id; the quote→order edge is the chain the
 # DocFlowViewer renders). The reverse ("quoted_by") is the successor's view, kept here for the docs.
 QUOTE_CONVERTED_TO_ORDER_LINK = "converted_to"
+
+# Delivery (PLAN 7.3): the outbound fulfilment document. Registers in core_documents + claims a
+# gapless DN number AT CREATION (D-040; year-resetting DN-2026-00001), the goods-receipt precedent.
+# A delivery is built DRAFT then POSTED; the POST issues stock (an inventory ISSUE move per line)
+# whose costing posts COGS — but the delivery claims its OWN DN- number, distinct from the STK- the
+# inventory move claims.
+DELIVERY_DOC_TYPE = "sales.delivery"
+DELIVERY_SEQUENCE_NAME = "sales.delivery"
+DELIVERY_NUMBER_PREFIX = "DN"
+DELIVERY_NUMBER_PADDING = 5
+
+# Delivery docflow edges (PLAN 7.3, D-041). The edge is predecessor → successor named from the
+# predecessor's point of view:
+#   order → delivery   : the sales order is "delivered_by" the delivery (written by sales at POST).
+#   delivery → move    : the delivery is "moved_by" each inventory ISSUE move it generates (written
+#                        by INVENTORY's handler when it creates the moves — the GR "moved_by"
+#                        precedent; the delivery↔move linkage is docflow, NOT a cross-module FK).
+ORDER_DELIVERED_BY_DELIVERY_LINK = "delivered_by"
+DELIVERY_MOVED_BY_STOCK_MOVE_LINK = "moved_by"
+
+# The sales domain event the delivery POST publishes (D-011/D-041): inventory's handlers.py
+# subscribes and creates the stock ISSUE moves in the SAME transaction (the sanctioned cross-module
+# mechanism — sales never imports inventory/service). Mirrors GOODS_RECEIPT_POSTED_EVENT_KEY, but
+# the event carries NO GL accounts: an ISSUE move's default offset IS the item-category COGS
+# account (resolved inside the costing engine), so unlike the GR/IR receipt there is no offset to
+# override.
+DELIVERY_SHIPPED_EVENT_KEY = "sales.delivery.shipped"

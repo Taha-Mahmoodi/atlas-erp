@@ -29,6 +29,8 @@ from app.modules.inventory.models import (
     Item,
     ItemCategory,
     ItemValuation,
+    Lot,
+    SerialNumber,
     StockQuant,
 )
 
@@ -104,6 +106,33 @@ async def bin_exists(
     posts, so a receipt against an inactive-warehouse bin still fails (at post), loud."""
     stmt = select(Bin.id).where(Bin.tenant_id == tenant_id, Bin.id == bin_id)
     return (await session.execute(stmt)).first() is not None
+
+
+async def lot_id_for_code(
+    session: AsyncSession, tenant_id: uuid.UUID, item_id: uuid.UUID, lot_code: str
+) -> uuid.UUID | None:
+    """The id of an EXISTING lot for an item, by its lot_code (PLAN 7.3), or None. A sales delivery
+    (an outbound ISSUE) must reference an existing lot by id — unlike a receipt, an issue never
+    creates a lot — so the delivery resolves the human ``lot_code`` to a lot id through this
+    contract (D-029) before issuing. Index-served by (tenant, item_id)."""
+    stmt = select(Lot.id).where(
+        Lot.tenant_id == tenant_id, Lot.item_id == item_id, Lot.lot_code == lot_code
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def serial_id_for_code(
+    session: AsyncSession, tenant_id: uuid.UUID, item_id: uuid.UUID, serial_code: str
+) -> uuid.UUID | None:
+    """The id of an EXISTING serial for an item, by its serial_code (PLAN 7.3), or None. The serial
+    twin of ``lot_id_for_code``: a delivery resolves a serial-tracked line's ``serial_code`` to a
+    serial id before issuing (D-029). Index-served by (tenant, item_id)."""
+    stmt = select(SerialNumber.id).where(
+        SerialNumber.tenant_id == tenant_id,
+        SerialNumber.item_id == item_id,
+        SerialNumber.serial_code == serial_code,
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
 
 
 # --- On-hand projection reads (PLAN 5.2) --------------------------------------

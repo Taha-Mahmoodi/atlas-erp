@@ -15,6 +15,9 @@ internal detail. Re-exported here so call sites use one import.
 - ``orders``: sales-order create/update/cancel + reads + the shared writer (7.2).
 - ``order_confirm``: the confirm gate (ATP + credit) + credit-release (7.2, D-044).
 - ``conversions``: quote → order conversion (7.2).
+- ``deliveries``: outbound-delivery create/cancel (7.3, D-045).
+- ``delivery_post``: outbound-delivery post — the stock-issue → COGS seam (7.3, D-045).
+- ``delivery_reads``: delivery list + header/line point reads (7.3).
 """
 
 from app.modules.sales.service.conversions import convert_quote_to_order
@@ -29,6 +32,17 @@ from app.modules.sales.service.customers import (
     get_customer,
     list_customers,
     update_customer,
+)
+from app.modules.sales.service.deliveries import (
+    cancel_delivery,
+    create_delivery,
+)
+from app.modules.sales.service.delivery_post import post_delivery
+from app.modules.sales.service.delivery_reads import (
+    deliveries_for_order,
+    get_delivery,
+    get_delivery_lines,
+    list_deliveries,
 )
 from app.modules.sales.service.order_confirm import (
     ConfirmResult,
@@ -72,17 +86,22 @@ __all__ = [
     "ResolvedPrice",
     "accept_quote",
     "add_price_list_item",
+    "cancel_delivery",
     "cancel_quote",
     "cancel_sales_order",
     "confirm_order",
     "convert_quote_to_order",
     "create_customer",
     "create_customer_group",
+    "create_delivery",
     "create_price_list",
     "create_quote",
     "create_sales_order",
+    "deliveries_for_order",
     "get_customer",
     "get_customer_group",
+    "get_delivery",
+    "get_delivery_lines",
     "get_price_list",
     "get_quote",
     "get_quote_lines",
@@ -90,10 +109,12 @@ __all__ = [
     "get_sales_order_lines",
     "list_customer_groups",
     "list_customers",
+    "list_deliveries",
     "list_price_list_items",
     "list_price_lists",
     "list_quotes",
     "list_sales_orders",
+    "post_delivery",
     "mark_expired_if_lapsed",
     "mark_quote_expired",
     "reject_quote",

@@ -1,4 +1,13 @@
-"""Inventory domain-event handlers (D-011/D-041) — the cross-module GR → stock-move bridge.
+"""Inventory domain-event handlers (D-011/D-041/D-045) — the cross-module document → stock-move
+bridges.
+
+TWO symmetric handlers. ``receive_goods_receipt_moves`` (INBOUND, below) creates RECEIPT moves for
+a posted goods receipt; ``issue_delivery_moves`` (OUTBOUND, its twin, D-045) creates ISSUE moves for
+a posted sales delivery. The KEY asymmetry: a receipt passes ``valuation_offset_account_id`` = the
+GR/IR clearing account (so the move credits GR/IR); a delivery passes NO override, because an ISSUE
+move's DEFAULT valuation offset IS the item-category COGS account (the costing engine routes an
+ISSUE to COGS) — so a delivery posts Dr COGS / Cr Inventory with no account on the event. COGS *is*
+the issue offset.
 
 Subscribes to ``procurement.goods_receipt.posted`` and creates one stock RECEIPT move per GR line in
 the SAME transaction as the GR post (D-011 run_in_uow drains before commit). This is the SANCTIONED
@@ -38,6 +47,8 @@ from app.modules.inventory.schemas import StockMoveCreate
 from app.modules.inventory.service.stock_moves import create_move
 from app.modules.procurement.constants import GR_MOVED_BY_STOCK_MOVE_LINK
 from app.modules.procurement.events import GoodsReceiptPosted
+from app.modules.sales.constants import DELIVERY_MOVED_BY_STOCK_MOVE_LINK
+from app.modules.sales.events import DeliveryShipped
 
 
 async def receive_goods_receipt_moves(
@@ -76,4 +87,42 @@ async def receive_goods_receipt_moves(
         )
 
 
-__all__ = ["receive_goods_receipt_moves"]
+async def issue_delivery_moves(session: AsyncSession, event: DeliveryShipped) -> None:
+    """Create the stock ISSUE moves for a posted delivery (D-045), in the delivery's transaction —
+    the OUTBOUND twin of ``receive_goods_receipt_moves``.
+
+    One move per delivery line, each issuing FROM the line's source bin. NO
+    ``valuation_offset_account_id``: an ISSUE move's default offset is the item-category COGS
+    account (the costing engine routes an ISSUE to COGS), so each move's costing event posts Dr COGS
+    / Cr Inventory with no override — unlike the GR/IR receipt. The costing engine COMPUTES the COGS
+    of the stock that left (FIFO layers / moving-average), so no unit_cost is passed. Insufficient
+    stock at a bin raises InsufficientStockError, rolling the delivery post back (D-020). Links the
+    delivery document to each move document ('moved_by') so the docflow chain shows order →
+    delivery → move(s). Registered via ``app.main.register_event_handlers`` (not an import-time
+    ``@on``), so the test harness re-registers it after its per-test reset."""
+    move_date = date.fromisoformat(event.move_date)
+    for line in event.moves:
+        move = await create_move(
+            session,
+            event.tenant_id,
+            StockMoveCreate(
+                move_type=MoveType.ISSUE,
+                item_id=line.item_id,
+                quantity=line.quantity,
+                from_bin_id=line.bin_id,
+                lot_id=line.lot_id,
+                serial_id=line.serial_id,
+                move_date=move_date,
+                reference=event.delivery_number,
+            ),
+        )
+        await docflow.link_documents(
+            session,
+            event.tenant_id,
+            predecessor=event.document_id,
+            successor=move.document_id,
+            link_type=DELIVERY_MOVED_BY_STOCK_MOVE_LINK,
+        )
+
+
+__all__ = ["issue_delivery_moves", "receive_goods_receipt_moves"]

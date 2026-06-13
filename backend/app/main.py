@@ -271,8 +271,12 @@ def register_event_handlers() -> None:
         post_stock_valuation_journal,
     )
     from app.modules.inventory.events import StockValued
-    from app.modules.inventory.handlers import receive_goods_receipt_moves
+    from app.modules.inventory.handlers import (
+        issue_delivery_moves,
+        receive_goods_receipt_moves,
+    )
     from app.modules.procurement.events import GoodsReceiptPosted, InvoiceMatched
+    from app.modules.sales.events import DeliveryShipped
 
     if post_stock_valuation_journal not in handlers_for(StockValued.key):
         subscribe(StockValued.key, post_stock_valuation_journal)
@@ -282,6 +286,12 @@ def register_event_handlers() -> None:
     # (procurement → inventory → finance).
     if receive_goods_receipt_moves not in handlers_for(GoodsReceiptPosted.key):
         subscribe(GoodsReceiptPosted.key, receive_goods_receipt_moves)
+    # Sales delivery → inventory stock-move bridge (PLAN 7.3, D-045): the OUTBOUND twin of the GR
+    # bridge — inventory's handler creates the ISSUE moves (Dr COGS / Cr Inventory, COGS the default
+    # issue offset — no override) when a delivery posts, which in turn publish StockValued for the
+    # finance handler above — the same two-hop same-transaction chain (sales → inventory → finance).
+    if issue_delivery_moves not in handlers_for(DeliveryShipped.key):
+        subscribe(DeliveryShipped.key, issue_delivery_moves)
     # Procurement invoice-match → finance AP-bill bridge (PLAN 6.4, D-042): finance's handler
     # creates + posts the matched vendor bill (Dr GR/IR + PPV / Cr AP) when a match posts, clearing
     # the GR/IR account the goods receipt credited — closing the procure-to-pay loop. Procurement
