@@ -26,6 +26,7 @@ from app.core.security_router import router as security_router
 from app.core.tenancy import current_tenant_id
 from app.modules.finance.router import router as finance_router
 from app.modules.inventory.router import router as inventory_router
+from app.modules.manufacturing.router import router as manufacturing_router
 from app.modules.procurement.router import router as procurement_router
 from app.modules.sales.router import router as sales_router
 
@@ -243,6 +244,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # reads finance/queries + inventory/queries downward (STRUCTURE §5 / D-029). 7.1 publishes no
     # cross-module events (masters + pricing drive no effects; orders in 7.2 will).
     app.include_router(sales_router)
+    # Manufacturing module (PLAN 8): PP master data (work centres, multi-level versioned BOMs,
+    # routings) at /api/v1/manufacturing. Mounted after sales, the D-011 handler-registration
+    # order; manufacturing reads finance/queries + inventory/queries downward (STRUCTURE §5 /
+    # D-029). 8.1 publishes no cross-module events (masters drive no effects; production orders in
+    # 8.2 will).
+    app.include_router(manufacturing_router)
 
     # Cross-module event handlers (D-011): registered here, at the app factory, so registration
     # order
