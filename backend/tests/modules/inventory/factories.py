@@ -26,7 +26,16 @@ from app.modules.finance.constants import AccountType
 from app.modules.finance.schemas import AccountCreate, FiscalYearCreate
 from app.modules.inventory import service
 from app.modules.inventory.constants import CostingMethod, MoveType
-from app.modules.inventory.models import Bin, Item, ItemCategory, StockMove, Uom, Warehouse
+from app.modules.inventory.count_schemas import StockCountCreate
+from app.modules.inventory.models import (
+    Bin,
+    Item,
+    ItemCategory,
+    StockCount,
+    StockMove,
+    Uom,
+    Warehouse,
+)
 from app.modules.inventory.schemas import (
     BinCreate,
     ItemCategoryCreate,
@@ -347,6 +356,26 @@ async def build_stock_setup(
         price_difference_account_id=category.price_difference_account_id,
         fiscal_year_id=year.id,
     )
+
+
+async def build_count(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    payload: StockCountCreate,
+) -> StockCount:
+    """Create a count through the REAL service inside a uow (D-025), so numbering, docflow and the
+    line snapshot fire exactly as in production. Returns the persisted count re-read after the uow
+    commit (PLAN 5.4)."""
+    holder: dict[str, uuid.UUID] = {}
+
+    async def work() -> None:
+        with tenant_context(tenant_id):
+            count = await service.create_count(session, tenant_id, payload)
+            holder["id"] = count.id
+
+    with tenant_context(tenant_id):
+        await run_in_uow(session, work)
+        return await service.get_count(session, tenant_id, holder["id"])
 
 
 async def _seed_open_year(session: AsyncSession, tenant_id: uuid.UUID):

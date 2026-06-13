@@ -254,3 +254,57 @@ event so the COGS journal is reversed too.
 **Python** (each factor a typed Decimal), never `func.sum(qty × cost)` — multiplying two
 scaled-integer columns on SQLite would yield a ×10^12 value the MoneyType result processor cannot
 un-scale (D-015 trigger discipline).
+
+## Physical & cycle counts (PLAN 5.4, D-038)
+
+A **stock count** captures the warehouse team's *counted* quantity per `(item, bin, lot)`, compares
+it to system on-hand, and posts the differences. Two tables: `inv_stock_counts` (the count document —
+`DocumentMixin` + a gapless `CNT-` number claimed at creation, `count_type`, `warehouse_id`,
+`status`, `count_date`) and `inv_stock_count_lines` (one line per in-scope quant — `system_qty`
+snapshot, `counted_qty`, and, filled at post, `variance_qty` / `adjustment_move_id` / `unit_cost`).
+
+**Physical vs cycle.** A `PHYSICAL` count snapshots **every** quant in the warehouse; a `CYCLE` count
+snapshots only the chosen `item_ids` / `bin_ids` (the recurring spot count). The type only changes
+which quants are enumerated into lines — the post path is identical for both.
+
+**The flow: snapshot → count → post.** `POST /api/v1/inventory/stock-counts` creates the count
+(`DRAFT`) and snapshots one line per in-scope quant with `system_qty` = current on-hand and
+`counted_qty` NULL. `POST /stock-counts/{id}/lines/{line}/count` records a counted quantity and moves
+the count to `COUNTING`. `GET /stock-counts/{id}/variance-preview` shows per-line live-system vs
+counted vs variance vs estimated value impact before posting. `POST /stock-counts/{id}/post` posts
+the variances; `POST /stock-counts/{id}/cancel` abandons a `DRAFT`/`COUNTING` count.
+
+**Variance posts via an ADJUSTMENT move, never a bespoke journal (D-038).** For each line the post
+computes `variance = counted − live-system`; a non-zero variance posts ONE stock **ADJUSTMENT** move
+through `stock_moves.create_move` (positive → ADJUSTMENT *into* the bin, negative → *out of* it). That
+move runs the 5.3 costing engine and publishes `StockValued`, so the price-difference journal posts
+via the event bus **in the same transaction** — the count inherits every costing/GL/audit invariant
+for free. The count's document is linked to each adjustment move via docflow (`counts`), so the
+DocFlow viewer renders count → adjustment-move → journal. A **zero-variance** line posts no move
+(`adjustment_move_id` stays NULL). The positive-adjustment **unit cost** is sourced from
+`queries.current_unit_cost` (the moving-average `avg_unit_cost`, or the FIFO live-layer weighted
+average — the same book cost a value-neutral transfer carries), so the value added matches the book
+cost; an item the system thinks is empty enters at cost 0 (a quantity-only correction).
+
+**`system_qty` is re-validated at post (D-038 concurrency safety).** The `system_qty` snapshot is only
+the *preview* baseline; `post_count` **re-reads live on-hand** for each line as the authoritative
+system quantity, so a move that lands between snapshot and post can never post a wrong variance — the
+resulting on-hand always equals the *counted* quantity, not `counted − stale`.
+
+**Closed-period interaction.** The whole post runs in `run_in_uow`, so every variance move's costing
+journal + the count commit as one transaction. A **closed-period `count_date`** makes the
+adjustment's journal trip the period trigger inside that transaction, rolling the **whole** post back
+— the count stays unposted (D-018).
+
+**`POSTED` is terminal.** A posted count is never re-posted (the status guard rejects re-post — no
+double adjustment, D-013) and never cancelled; corrections are new counts/adjustments (the
+append-only ledger philosophy). Posting requires **every** line to be counted (else 422).
+
+**Large counts run as a background job (PERFORMANCE §3).** A post whose snapshot shows more than
+`COUNT_POST_SYNC_MAX_VARIANCES` (200) variance lines is submitted as an `inventory.count_post` job
+and returns `202 {job_id}` for `/api/v1/jobs` polling; at or below it the post runs inline (200) —
+mirroring the depreciation-run (100) / bank-import (1000) thresholds. The job handler delegates to the
+same `post_count` engine, so the re-validation and one-transaction guarantee hold off-request too.
+
+Permissions: `inventory.count.read` (the GETs), `inventory.count.manage` (create / record-count /
+cancel), `inventory.count.post` (the privileged post — it changes on-hand AND posts GL journals).

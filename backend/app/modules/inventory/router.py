@@ -33,6 +33,7 @@ from app.modules.inventory.constants import (
     INVENTORY_UOM_MANAGE,
     INVENTORY_UOM_READ,
 )
+from app.modules.inventory.count_router import count_router
 from app.modules.inventory.models import Item, ItemCategory, Uom
 from app.modules.inventory.schemas import (
     ItemCategoryCreate,
@@ -317,9 +318,10 @@ async def create_item_conversion(
     return UomConversionRead.model_validate(conversion)
 
 
-# PLAN 5.2 stock surface (warehouses, bins, moves, on-hand) and the PLAN 5.3 valuation surface
-# (stock-valuations, cost-layers) are sibling sub-routers mounted here, so the whole module stays
-# ONE surface at /api/v1/inventory — the finance journal_router/ap_router include precedent (no
-# second mount in main.py).
+# PLAN 5.2 stock surface (warehouses, bins, moves, on-hand), the PLAN 5.3 valuation surface
+# (stock-valuations, cost-layers) and the PLAN 5.4 count surface (stock-counts) are sibling
+# sub-routers mounted here, so the whole module stays ONE surface at /api/v1/inventory — the finance
+# journal_router/ap_router include precedent (no second mount in main.py).
 router.include_router(stock_router)
 router.include_router(valuation_router)
+router.include_router(count_router)

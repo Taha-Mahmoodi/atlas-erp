@@ -30,6 +30,24 @@ from app.modules.inventory.service.costing import (
     apply_costing,
     reverse_costing,
 )
+
+# Imported for its @register_job side effect (the large-count-post background handler registers at
+# import, like the permission catalog) — exposed as count_post_job so the import is not "unused".
+from app.modules.inventory.service.count_jobs import count_post_job
+from app.modules.inventory.service.count_reads import (
+    get_count,
+    get_line,
+    list_count_lines,
+    list_counts,
+    variance_preview,
+)
+from app.modules.inventory.service.counts import (
+    cancel_count,
+    count_variance_estimate,
+    create_count,
+    post_count,
+    record_counted,
+)
 from app.modules.inventory.service.items import (
     create_item,
     get_item,
@@ -62,10 +80,14 @@ __all__ = [
     "CostingResult",
     "InsufficientStockError",
     "apply_costing",
+    "cancel_count",
     "convert_quantity",
+    "count_post_job",
+    "count_variance_estimate",
     "create_bin",
     "create_category",
     "create_conversion",
+    "create_count",
     "create_item",
     "create_move",
     "create_uom",
@@ -74,13 +96,17 @@ __all__ = [
     "get_bin",
     "get_category",
     "get_conversion_factors",
+    "get_count",
     "get_item",
+    "get_line",
     "get_move",
     "get_uom",
     "get_warehouse",
     "list_bins",
     "list_categories",
     "list_conversions",
+    "list_count_lines",
+    "list_counts",
     "list_cost_layers",
     "list_items",
     "list_moves",
@@ -88,10 +114,14 @@ __all__ = [
     "list_uoms",
     "list_valuations",
     "list_warehouses",
+    "post_count",
+    "record_counted",
+    "reverse_costing",
     "reverse_move",
     "update_bin",
     "update_category",
     "update_item",
     "update_uom",
     "update_warehouse",
+    "variance_preview",
 ]
