@@ -13,6 +13,7 @@ procurement.* keys (and supports a narrowed ``keys`` grant for the 403 RBAC test
 
 import uuid
 from dataclasses import dataclass
+from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,8 +22,26 @@ from app.core.tenancy import system_context, tenant_context
 from app.modules.admin.service import assign_role, create_role, provision_tenant, provision_user
 from app.modules.finance import service as finance_service
 from app.modules.procurement import service
-from app.modules.procurement.models import Vendor, VendorApprovedItem
-from app.modules.procurement.schemas import VendorApprovedItemCreate, VendorCreate
+from app.modules.procurement.constants import ApprovalDocumentType
+from app.modules.procurement.models import (
+    ApprovalRule,
+    PurchaseOrder,
+    PurchaseRequisition,
+    Rfq,
+    Vendor,
+    VendorApprovedItem,
+)
+from app.modules.procurement.schemas import (
+    ApprovalRuleCreate,
+    PurchaseOrderCreate,
+    PurchaseOrderLineCreate,
+    RequisitionCreate,
+    RequisitionLineCreate,
+    RfqCreate,
+    RfqLineCreate,
+    VendorApprovedItemCreate,
+    VendorCreate,
+)
 
 # EVERY registered procurement.* key (importing procurement.constants registers them), so a new
 # procurement permission is auto-granted to the full-rights principal (self-extending).
@@ -100,6 +119,7 @@ class ProcurementSetup:
     tenant_id: uuid.UUID
     currency_code: str
     item_id: uuid.UUID
+    uom_id: uuid.UUID
 
 
 async def build_procurement_setup(
@@ -120,7 +140,135 @@ async def build_procurement_setup(
         category_id=inv.category_id,
         base_uom_id=inv.ea_uom_id,
     )
-    return ProcurementSetup(tenant_id=tenant_id, currency_code=code, item_id=item.id)
+    return ProcurementSetup(
+        tenant_id=tenant_id, currency_code=code, item_id=item.id, uom_id=inv.ea_uom_id
+    )
+
+
+# --- P2P documents (PLAN 6.2) -------------------------------------------------
+
+
+async def build_requisition(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    item_id: uuid.UUID,
+    uom_id: uuid.UUID,
+    currency_code: str = "USD",
+    quantity: str = "10",
+    estimated_unit_cost: str | None = "5",
+    requested_by: uuid.UUID | None = None,
+) -> PurchaseRequisition:
+    """Create a DRAFT requisition with one line through the real service (D-025)."""
+    with tenant_context(tenant_id):
+        req = await service.create_requisition(
+            session,
+            tenant_id,
+            RequisitionCreate(
+                requested_by=requested_by,
+                lines=[
+                    RequisitionLineCreate(
+                        item_id=item_id,
+                        quantity=Decimal(quantity),
+                        uom_id=uom_id,
+                        estimated_unit_cost=(
+                            None if estimated_unit_cost is None else Decimal(estimated_unit_cost)
+                        ),
+                        currency_code=currency_code,
+                    )
+                ],
+            ),
+        )
+        await session.commit()
+    return req
+
+
+async def build_rfq(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    vendor_id: uuid.UUID,
+    item_id: uuid.UUID,
+    uom_id: uuid.UUID,
+    currency_code: str = "USD",
+    quantity: str = "10",
+) -> Rfq:
+    """Create a DRAFT RFQ with one line through the real service (D-025)."""
+    with tenant_context(tenant_id):
+        rfq = await service.create_rfq(
+            session,
+            tenant_id,
+            RfqCreate(
+                vendor_id=vendor_id,
+                currency_code=currency_code,
+                lines=[
+                    RfqLineCreate(
+                        item_id=item_id, quantity=Decimal(quantity), uom_id=uom_id
+                    )
+                ],
+            ),
+        )
+        await session.commit()
+    return rfq
+
+
+async def build_po(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    vendor_id: uuid.UUID,
+    item_id: uuid.UUID,
+    uom_id: uuid.UUID,
+    quantity: str = "10",
+    unit_cost: str = "5",
+    currency_code: str | None = None,
+) -> PurchaseOrder:
+    """Create a DRAFT PO with one line through the real service (D-025). The vendor must be ACTIVE
+    and the item approved for it (the caller seeds that)."""
+    with tenant_context(tenant_id):
+        po = await service.create_purchase_order(
+            session,
+            tenant_id,
+            PurchaseOrderCreate(
+                vendor_id=vendor_id,
+                currency_code=currency_code,
+                lines=[
+                    PurchaseOrderLineCreate(
+                        item_id=item_id,
+                        quantity=Decimal(quantity),
+                        uom_id=uom_id,
+                        unit_cost=Decimal(unit_cost),
+                    )
+                ],
+            ),
+        )
+        await session.commit()
+    return po
+
+
+async def build_approval_rule(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    document_type: ApprovalDocumentType,
+    threshold_amount: str,
+    currency_code: str = "USD",
+    is_active: bool = True,
+) -> ApprovalRule:
+    """Create an approval-threshold rule through the real service (D-025)."""
+    with tenant_context(tenant_id):
+        rule = await service.create_approval_rule(
+            session,
+            tenant_id,
+            ApprovalRuleCreate(
+                document_type=document_type,
+                threshold_amount=Decimal(threshold_amount),
+                currency_code=currency_code,
+                is_active=is_active,
+            ),
+        )
+        await session.commit()
+    return rule
 
 
 # --- Principals ---------------------------------------------------------------

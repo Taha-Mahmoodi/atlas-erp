@@ -1,8 +1,10 @@
 """Procurement vendor master (PLAN 6.1): the ``Vendor`` entity and the v1 "approved items"
 info-record-lite (``VendorApprovedItem``).
 
-ONE file (STRUCTURE §8.4: split into a models/ package only at the 400-line cap, the inventory
-precedent); two tables fit well under it.
+First file in the procurement ``models/`` package (STRUCTURE §3: split into a models/ package at the
+400-line cap when PLAN 6.2's requisition/RFQ/PO/approval-rule tables landed, the finance/inventory
+precedent). Re-exported from ``models/__init__`` so ``from app.modules.procurement.models import
+Vendor`` keeps working from one surface.
 
 Design decisions baked in here:
 

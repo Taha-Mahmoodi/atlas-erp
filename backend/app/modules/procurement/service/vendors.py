@@ -13,9 +13,12 @@ The service layer owns every rule (CLAUDE.md rule 7); the router stays thin. Rul
   ``inventory/queries.item_exists``); a vendor cannot approve the same item twice (friendly
   ConflictError before the UNIQUE backstop).
 
-ONE file (STRUCTURE §8.4: split into a service/ package only at the 400-line cap, the finance /
-inventory precedent); both aggregates fit well under it. ``from __future__ import annotations``
-keeps ``Page[Vendor]`` (the ORM model) a string at import; the router re-validates page items.
+First file in the procurement ``service/`` package (STRUCTURE §3: split at the 400-line cap when
+PLAN
+6.2's requisition/RFQ/PO/approval/conversion logic landed, the finance/inventory precedent).
+Re-exported from ``service/__init__`` so ``service.create_vendor(...)`` keeps working from one
+surface. ``from __future__ import annotations`` keeps ``Page[Vendor]`` (the ORM model) a string at
+import; the router re-validates page items.
 """
 
 from __future__ import annotations

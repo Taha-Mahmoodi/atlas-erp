@@ -1,4 +1,9 @@
-"""Procurement request/response schemas (Pydantic v2, ApiModel base) for PLAN 6.1.
+"""Vendor-master request/response schemas (Pydantic v2, ApiModel base) for PLAN 6.1.
+
+First file in the procurement ``schemas/`` package (STRUCTURE §3: split at the 400-line cap when
+PLAN 6.2's requisition/RFQ/PO/approval-rule schemas landed). Re-exported from ``schemas/__init__``
+so
+``from app.modules.procurement.schemas import VendorCreate`` keeps working from one surface.
 
 Read schemas mirror the models field-for-field in snake_case; ``status`` is typed with the
 ``VendorStatus`` constant (ApiModel's ``use_enum_values`` serializes it as its UPPER_SNAKE string,
