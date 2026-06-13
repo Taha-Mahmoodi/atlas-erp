@@ -144,3 +144,27 @@ async def finance_client(
     access_token = await _login(client, principal)
     client.headers["Authorization"] = f"Bearer {access_token}"
     yield client
+
+
+@pytest.fixture
+async def finance_principal_b(
+    finance_user_factory: Callable[..., AsyncIterator[FinancePrincipal]],
+) -> FinancePrincipal:
+    """A SECOND finance principal in its own tenant — used by the cross-tenant ETag tests to prove
+    one tenant's writes can't invalidate (or satisfy) another tenant's conditional request."""
+    return await finance_user_factory(
+        slug="fin-beta", email="cfo@fin-beta.test"
+    )
+
+
+@pytest.fixture
+async def finance_client_b(
+    client: AsyncClient, finance_principal_b: FinancePrincipal
+) -> AsyncIterator[AsyncClient]:
+    """A bearer-token client for the second finance tenant. Built on a SEPARATE httpx client so its
+    Authorization header never clobbers the primary ``finance_client`` in cross-tenant tests."""
+    transport = client._transport  # the per-test ASGI transport bound to this test's app
+    async with AsyncClient(transport=transport, base_url="https://test") as client_b:
+        access_token = await _login(client_b, finance_principal_b)
+        client_b.headers["Authorization"] = f"Bearer {access_token}"
+        yield client_b

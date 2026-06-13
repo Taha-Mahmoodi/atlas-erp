@@ -13,8 +13,13 @@ documents). Writes commit through ``run_in_uow`` (D-011) so audit + events ride 
 import uuid
 from collections.abc import Awaitable, Callable
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request, Response
 
+from app.core.conditional import (
+    collection_etag,
+    conditional_response,
+    request_fingerprint,
+)
 from app.core.deps import CurrentUserDep, SessionDep, SessionFactoryDep
 from app.core.events import run_in_uow
 from app.core.idempotency import Idempotent, IdempotentDep
@@ -29,6 +34,7 @@ from app.modules.finance.constants import (
     FX_REVALUATION_JOB,
     RateKind,
 )
+from app.modules.finance.models import Currency, PostingDefault
 from app.modules.finance.schemas import (
     CurrencyCreate,
     CurrencyRead,
@@ -70,12 +76,23 @@ async def _commit[T](session: SessionDep, work: Callable[[], Awaitable[T]]) -> T
     dependencies=[Depends(require_permission(FINANCE_FX_MANAGE))],
 )
 async def list_currencies(
-    current: CurrentUserDep, session: SessionDep, params: CursorParams = CursorParamsDep
-) -> Page[CurrencyRead]:
-    page = await service.list_currencies(
-        session, current.tenant_id, cursor=params.cursor, limit=params.limit
-    )
-    return map_page(page, CurrencyRead)
+    request: Request,
+    response: Response,
+    current: CurrentUserDep,
+    session: SessionDep,
+    params: CursorParams = CursorParamsDep,
+) -> Page[CurrencyRead] | Response:
+    """Conditional-GET supported (D-035): collection ETag over the tenant's currencies."""
+    fingerprint = request_fingerprint(params.cursor, params.limit)
+    etag = await collection_etag(session, Currency, request_fingerprint=fingerprint)
+
+    async def builder() -> Page[CurrencyRead]:
+        page = await service.list_currencies(
+            session, current.tenant_id, cursor=params.cursor, limit=params.limit
+        )
+        return map_page(page, CurrencyRead)
+
+    return await conditional_response(request, response, etag, builder)
 
 
 @fx_router.post(
@@ -162,12 +179,23 @@ async def create_exchange_rate(
     dependencies=[Depends(require_permission(FINANCE_FX_MANAGE))],
 )
 async def list_posting_defaults(
-    current: CurrentUserDep, session: SessionDep, params: CursorParams = CursorParamsDep
-) -> Page[PostingDefaultRead]:
-    page = await service.list_posting_defaults(
-        session, current.tenant_id, cursor=params.cursor, limit=params.limit
-    )
-    return map_page(page, PostingDefaultRead)
+    request: Request,
+    response: Response,
+    current: CurrentUserDep,
+    session: SessionDep,
+    params: CursorParams = CursorParamsDep,
+) -> Page[PostingDefaultRead] | Response:
+    """Conditional-GET supported (D-035): collection ETag over the posting-default settings."""
+    fingerprint = request_fingerprint(params.cursor, params.limit)
+    etag = await collection_etag(session, PostingDefault, request_fingerprint=fingerprint)
+
+    async def builder() -> Page[PostingDefaultRead]:
+        page = await service.list_posting_defaults(
+            session, current.tenant_id, cursor=params.cursor, limit=params.limit
+        )
+        return map_page(page, PostingDefaultRead)
+
+    return await conditional_response(request, response, etag, builder)
 
 
 @fx_router.put(

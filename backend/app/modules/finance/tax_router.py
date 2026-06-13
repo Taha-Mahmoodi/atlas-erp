@@ -10,8 +10,13 @@ mounted via ``router.include_router(tax_router)`` so the module stays ONE surfac
 import uuid
 from collections.abc import Awaitable, Callable
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request, Response
 
+from app.core.conditional import (
+    collection_etag,
+    conditional_response,
+    request_fingerprint,
+)
 from app.core.deps import CurrentUserDep, SessionDep
 from app.core.events import run_in_uow
 from app.core.pagination import CursorParams, cursor_params
@@ -19,6 +24,7 @@ from app.core.rbac import require_permission
 from app.core.schemas import Page
 from app.modules.finance import service
 from app.modules.finance.constants import FINANCE_TAX_MANAGE, FINANCE_TAX_READ
+from app.modules.finance.models import TaxCode
 from app.modules.finance.schemas import TaxCodeCreate, TaxCodeRead, TaxCodeUpdate
 
 tax_router = APIRouter(tags=["finance-tax"])
@@ -47,23 +53,33 @@ async def _commit[T](session: SessionDep, work: Callable[[], Awaitable[T]]) -> T
     dependencies=[Depends(require_permission(FINANCE_TAX_READ))],
 )
 async def list_tax_codes(
+    request: Request,
+    response: Response,
     current: CurrentUserDep,
     session: SessionDep,
     params: CursorParams = CursorParamsDep,
     is_active: bool | None = None,
-) -> Page[TaxCodeRead]:
-    page = await service.list_tax_codes(
-        session,
-        current.tenant_id,
-        cursor=params.cursor,
-        limit=params.limit,
-        is_active=is_active,
-    )
-    return Page(
-        items=[TaxCodeRead.model_validate(item) for item in page.items],
-        next_cursor=page.next_cursor,
-        limit=page.limit,
-    )
+) -> Page[TaxCodeRead] | Response:
+    """Conditional-GET supported (D-035): collection ETag over the tenant's tax codes; the
+    is_active filter is folded into the request fingerprint so a filtered 304 is correct."""
+    fingerprint = request_fingerprint(params.cursor, params.limit, is_active)
+    etag = await collection_etag(session, TaxCode, request_fingerprint=fingerprint)
+
+    async def builder() -> Page[TaxCodeRead]:
+        page = await service.list_tax_codes(
+            session,
+            current.tenant_id,
+            cursor=params.cursor,
+            limit=params.limit,
+            is_active=is_active,
+        )
+        return Page(
+            items=[TaxCodeRead.model_validate(item) for item in page.items],
+            next_cursor=page.next_cursor,
+            limit=page.limit,
+        )
+
+    return await conditional_response(request, response, etag, builder)
 
 
 @tax_router.post(
