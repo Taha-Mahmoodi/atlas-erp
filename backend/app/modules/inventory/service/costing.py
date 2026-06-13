@@ -109,6 +109,8 @@ async def apply_costing(
     tenant_id: uuid.UUID,
     item: Item,
     move: StockMove,
+    *,
+    valuation_offset_account_id: uuid.UUID | None = None,
 ) -> CostingResult:
     """Run costing for a just-created move IN THE SAME TRANSACTION (D-020), after the quant update.
 
@@ -117,7 +119,12 @@ async def apply_costing(
     publish (None for a value-neutral within-warehouse transfer). RECEIPT/positive-ADJUSTMENT use
     the
     move's passed ``unit_cost`` (the entry cost); ISSUE/negative-ADJUSTMENT IGNORE it and
-    compute."""
+    compute.
+
+    ``valuation_offset_account_id`` (PLAN 6.3, D-041) OVERRIDES the standard receipt offset
+    (price-difference) when the caller — the procurement goods-receipt path — supplies the GR/IR
+    clearing account. Applied only on the inbound (RECEIPT / positive-ADJUSTMENT) side; the
+    outbound/transfer paths ignore it (they offset to COGS / their own account)."""
     move_type = MoveType(move.move_type)
     qty = Decimal(move.quantity)
     method = CostingMethod(item.costing_method)
@@ -145,7 +152,8 @@ async def apply_costing(
     # populated from_bin warehouse is outbound (ISSUE / decrease). ADJUSTMENT sets exactly one side.
     if to_warehouse_id is not None:
         return await _apply_inbound(
-            session, tenant_id, item, move, qty, method, to_warehouse_id, accounts
+            session, tenant_id, item, move, qty, method, to_warehouse_id, accounts,
+            valuation_offset_account_id=valuation_offset_account_id,
         )
     if from_warehouse_id is not None:
         return await _apply_outbound(
@@ -168,6 +176,8 @@ async def _apply_inbound(
     method: CostingMethod,
     warehouse_id: uuid.UUID,
     accounts: tuple[uuid.UUID, uuid.UUID, uuid.UUID],
+    *,
+    valuation_offset_account_id: uuid.UUID | None = None,
 ) -> CostingResult:
     """RECEIPT / positive ADJUSTMENT: stock enters at the move's REQUIRED ``unit_cost`` (the entry
     cost). Updates the moving-average row or creates a FIFO layer, and emits a value-increasing
@@ -189,11 +199,14 @@ async def _apply_inbound(
         )
     move.unit_cost = unit_cost
     inventory_account_id, _cogs_account_id, price_diff_account_id = accounts
-    # A receipt / stock-increase offsets to the price-difference (inventory-adjustment) account: a
-    # STANDALONE receipt has no procurement GR clearing yet (procurement overrides this later, 6.x).
+    # A receipt / stock-increase offsets to the price-difference (inventory-adjustment) account by
+    # default — a STANDALONE receipt (opening balance, manual stock-in) has no procurement GR/IR
+    # clearing. The procurement goods-receipt path (6.3, D-041) OVERRIDES the offset to its GR/IR
+    # clearing account via ``valuation_offset_account_id`` so the handler credits GR/IR.
+    offset_account_id = valuation_offset_account_id or price_diff_account_id
     event = _build_event(
         move, warehouse_id, qty, total_cost, Decimal(0),
-        inventory_account_id, price_diff_account_id, price_diff_account_id,
+        inventory_account_id, offset_account_id, price_diff_account_id,
         is_inbound=True,
     )
     return CostingResult(unit_cost=unit_cost, event=event)

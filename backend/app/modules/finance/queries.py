@@ -20,6 +20,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.finance.constants import (
+    GR_IR_CLEARING,
     BillStatus,
     InvoiceStatus,
     PeriodStatus,
@@ -38,6 +39,7 @@ from app.modules.finance.models import (
     VendorBill,
 )
 from app.modules.finance.service import fx as _fx
+from app.modules.finance.service import posting_defaults as _posting_defaults
 from app.modules.finance.service import tax as _tax
 from app.modules.finance.service.tax import TaxCalculation
 
@@ -140,6 +142,19 @@ async def functional_currency_or_none(
     default — D-019). Exposed so other modules (inventory costing, 5.3) can pick the currency the
     valuation journal posts in without raising when no currency is set up."""
     return await _fx.functional_currency_or_none(session, tenant_id)
+
+
+async def gr_ir_clearing_account(
+    session: AsyncSession, tenant_id: uuid.UUID
+) -> uuid.UUID:
+    """The tenant's GR/IR (goods-received / invoice-received) clearing account id (PLAN 6.3,
+    D-041). A goods receipt credits this account (the inventory costing valuation-offset override),
+    and the matched vendor bill (6.4) debits it. Resolves the ``gr_ir_clearing`` posting default and
+    RAISES a clear 422 (``finance.posting_default_unmapped``) when the tenant has not mapped it — a
+    goods receipt cannot post without it, so failing loud here keeps the whole GR transaction from
+    committing a half-formed posting. Exposed on finance/queries so procurement reads it downward
+    (STRUCTURE §5) without importing finance/service."""
+    return await _posting_defaults.get_posting_default(session, tenant_id, GR_IR_CLEARING)
 
 
 async def get_tax_code(

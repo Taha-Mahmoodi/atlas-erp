@@ -1,10 +1,19 @@
-"""Procurement HTTP layer (thin): parse -> call service -> return schema (PLAN 6.1).
+"""Procurement HTTP layer (thin): parse -> call service -> return schema (PLAN 6.1+6.2).
 
-REST under ``/api/v1/procurement``: vendors (CRUD + filtered paginated list) and the per-vendor
-approved-items nested resource (GET/POST the collection, DELETE one by item id). Every route is
-guarded by a procurement permission key (D-009). Writes commit through ``run_in_uow`` (D-011) so
-audit rows ride the same transaction; results are validated into their Read schema AFTER the uow
-commits.
+REST under ``/api/v1/procurement``. This file owns the vendor master (CRUD + filtered paginated list
++ the per-vendor approved-items nested resource) and MOUNTS the P2P-document sub-routers (the
+finance ap_router/ar_router precedent — split at the 400-line cap, kept ONE surface via
+``router.include_router``, no second mount in main.py):
+
+- requisition_router: purchase requisitions + submit/approve/cancel/convert actions.
+- rfq_router: RFQs + send/record-quote/close actions.
+- po_router: purchase orders + send/approve/cancel actions and the RFQ→PO conversion.
+- goods_receipt_router: goods receipts + post (move stock + GR/IR journal) / cancel actions.
+- approval_rule_router: the value-threshold approval-rule CRUD.
+
+Every route is guarded by a procurement permission key (D-009; manage vs approve distinct). Writes
+commit through ``run_in_uow`` (D-011) so audit rows ride the same transaction; document-creating +
+convert + approve endpoints are idempotent (D-013).
 
 The vendor list is slow-changing reference data, so it supports conditional GETs via a tenant-scoped
 collection ETag (PERFORMANCE §3 / D-035): an If-None-Match hit returns 304 without running the page
@@ -23,11 +32,16 @@ from app.core.pagination import CursorParams, cursor_params, map_page
 from app.core.rbac import require_permission
 from app.core.schemas import Page
 from app.modules.procurement import service
+from app.modules.procurement.approval_rule_router import approval_rule_router
 from app.modules.procurement.constants import (
     PROCUREMENT_VENDOR_MANAGE,
     PROCUREMENT_VENDOR_READ,
 )
+from app.modules.procurement.goods_receipt_router import goods_receipt_router
 from app.modules.procurement.models import Vendor
+from app.modules.procurement.po_router import po_router
+from app.modules.procurement.requisition_router import requisition_router
+from app.modules.procurement.rfq_router import rfq_router
 from app.modules.procurement.schemas import (
     VendorApprovedItemCreate,
     VendorApprovedItemRead,
@@ -39,6 +53,14 @@ from app.modules.procurement.schemas import (
 
 router = APIRouter(prefix="/api/v1/procurement", tags=["procurement"])
 CursorParamsDep = Depends(cursor_params)
+
+# Mount the P2P-document sub-routers under the same /api/v1/procurement prefix (the finance
+# ap_router/ar_router precedent — one module surface, included here so main.py mounts once).
+router.include_router(requisition_router)
+router.include_router(rfq_router)
+router.include_router(po_router)
+router.include_router(goods_receipt_router)
+router.include_router(approval_rule_router)
 
 
 async def _commit[T](session: SessionDep, work: Callable[[], Awaitable[T]]) -> T:

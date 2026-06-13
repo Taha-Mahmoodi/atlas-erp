@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.inventory.constants import CostingMethod
 from app.modules.inventory.models import (
+    Bin,
     CostLayer,
     Item,
     ItemCategory,
@@ -92,6 +93,17 @@ async def get_category_accounts(
     )
     row = (await session.execute(stmt)).first()
     return (row[0], row[1], row[2]) if row is not None else None
+
+
+async def bin_exists(
+    session: AsyncSession, tenant_id: uuid.UUID, bin_id: uuid.UUID
+) -> bool:
+    """Whether a bin with ``bin_id`` exists in the tenant (PLAN 6.3). A goods receipt validates the
+    target bin its stock lands in through this contract (D-029) rather than importing inventory
+    models. Existence only — the move engine re-checks the bin is in an ACTIVE warehouse when it
+    posts, so a receipt against an inactive-warehouse bin still fails (at post), loud."""
+    stmt = select(Bin.id).where(Bin.tenant_id == tenant_id, Bin.id == bin_id)
+    return (await session.execute(stmt)).first() is not None
 
 
 # --- On-hand projection reads (PLAN 5.2) --------------------------------------

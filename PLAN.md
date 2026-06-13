@@ -71,8 +71,8 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 ## Phase 6 — Procurement
 
 - [x] 6.1 Vendor master: payment terms, currencies, approved items; vendor queries interface
-- [ ] 6.2 Requisition → RFQ → PO flow with configurable approval threshold rules stored as data
-- [ ] 6.3 Goods receipt: stock move + GR/IR journal via events, docflow links, optional inspection hook (flag only until Phase 9)
+- [x] 6.2 Requisition → RFQ → PO flow with configurable approval threshold rules stored as data
+- [x] 6.3 Goods receipt: stock move + GR/IR journal via events, docflow links, optional inspection hook (flag only until Phase 9)
 - [ ] 6.4 3-way match (PO/receipt/bill with tolerances) → AP bill; reorder points → auto-draft requisitions
 
 ## Phase 7 — Sales & Distribution
