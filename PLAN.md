@@ -57,7 +57,7 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 - [x] 4P.4 Retrofit: gzip response middleware (PERFORMANCE §3); assert pagination is mandatory on every collection endpoint (cursor, default 50, max 200) — closes #27
 - [x] 4P.5 Background-job core (PERFORMANCE §3): in-process job runner + `core_jobs` table + job-id/polling endpoint pattern for long operations (bank-statement imports >1k lines, MRP, big payment runs); required before 4.9 import and Phase 8 MRP — closes #26 (FX revaluation + payment runs backgrounded, D-032)
 - [ ] 4P.6 ETag/If-None-Match on slow-changing reference data (COA, item master, settings) (PERFORMANCE §3)
-- [ ] 4P.7 tests/perf/ suite (@pytest.mark.perf): journal list w/ filters, trial balance, P&L, AR aging — wall-clock budgets per PERFORMANCE §5 (SQLite CI smoke at 2× budget, non-blocking CI job; Postgres locally before each promotion)
+- [x] 4P.7 tests/perf/ suite (@pytest.mark.perf): journal list w/ filters, trial balance, P&L, AR aging — wall-clock budgets per PERFORMANCE §5 (SQLite CI smoke at 2× budget, non-blocking CI job; Postgres locally before each promotion)
 
 **Promotion → `main` as v0.2.0 (finance complete) — requires 4P.2–4P.4 done and the 4P.7 perf smoke green.**
 
