@@ -25,6 +25,7 @@ from app.core.schemas import ErrorBody, ErrorEnvelope
 from app.core.security_router import router as security_router
 from app.core.tenancy import current_tenant_id
 from app.modules.finance.router import router as finance_router
+from app.modules.inventory.router import router as inventory_router
 
 logger = logging.getLogger("atlas")
 
@@ -228,6 +229,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # First business module mounted; the fixed import order here is also the D-011 handler
     # registration order (finance, then inventory, ...) once modules publish/subscribe events.
     app.include_router(finance_router)
+    # Inventory module (PLAN 5): item masters at /api/v1/inventory. Mounted after finance, the
+    # D-011 handler-registration order; inventory reads finance/queries downward (STRUCTURE §5).
+    app.include_router(inventory_router)
 
     return app
 
