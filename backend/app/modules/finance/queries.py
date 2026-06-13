@@ -29,6 +29,7 @@ from app.modules.finance.constants import (
 from app.modules.finance.models import (
     Account,
     CostCenter,
+    Currency,
     CustomerInvoice,
     FiscalPeriod,
     JournalLine,
@@ -92,6 +93,22 @@ async def account_exists_by_id(
     predicate (an ordinary tenant read, not a bypass)."""
     stmt = select(Account.id).where(
         Account.tenant_id == tenant_id, Account.id == account_id
+    )
+    return (await session.execute(stmt)).first() is not None
+
+
+async def currency_exists(
+    session: AsyncSession, tenant_id: uuid.UUID, code: str
+) -> bool:
+    """Whether a currency with ISO ``code`` exists in the tenant's currency catalog.
+
+    Sanctioned cross-module read (STRUCTURE §5 / D-029): the procurement vendor master defaults a
+    ``default_currency_code`` onto each vendor and validates it exists in finance through THIS
+    contract before storing it — never a cross-module FK (finance is below procurement in the
+    dependency order). Tenant-scoped, so the D-007 filter applies on top of the explicit predicate
+    (an ordinary tenant read, not a bypass). Mirrors ``account_exists`` for the currency table."""
+    stmt = select(Currency.id).where(
+        Currency.tenant_id == tenant_id, Currency.code == code
     )
     return (await session.execute(stmt)).first() is not None
 

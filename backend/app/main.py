@@ -26,6 +26,7 @@ from app.core.security_router import router as security_router
 from app.core.tenancy import current_tenant_id
 from app.modules.finance.router import router as finance_router
 from app.modules.inventory.router import router as inventory_router
+from app.modules.procurement.router import router as procurement_router
 
 logger = logging.getLogger("atlas")
 
@@ -232,6 +233,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Inventory module (PLAN 5): item masters at /api/v1/inventory. Mounted after finance, the
     # D-011 handler-registration order; inventory reads finance/queries downward (STRUCTURE §5).
     app.include_router(inventory_router)
+    # Procurement module (PLAN 6): vendor master at /api/v1/procurement. Mounted after inventory,
+    # the D-011 handler-registration order; procurement OWNS the vendor entity and reads
+    # finance/queries + inventory/queries downward (STRUCTURE §5 / D-029).
+    app.include_router(procurement_router)
 
     # Cross-module event handlers (D-011): registered here, at the app factory, so registration
     # order

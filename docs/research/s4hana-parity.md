@@ -85,8 +85,8 @@ In current S/4HANA (2025/2026), Sourcing and Procurement covers the full procure
 
 | S/4HANA capability | Atlas v1 | Atlas module | Notes |
 |---|---|---|---|
-| **Supplier/vendor master (Business Partner)** | Full | procurement | Later: Later add partner functions (ordering address vs. invoicing party) and granular block levels. |
-| **Purchasing info records (vendor-material data)** | Partial | procurement | Atlas v1 "approved items" on the vendor master captures the vendor-item link but not time-dependent pricing conditions or lead-time data that S/4HANA info records default into POs. Later: Extend the vendor approved-items table with price, valid-from/to, and lead-time fields and use them to default PO lines. |
+| **Supplier/vendor master (Business Partner)** | Full | procurement | **Done (PLAN 6.1):** `proc_vendors` (vendor_code unique per tenant, status ACTIVE/BLOCKED/INACTIVE, default currency validated against finance, payment_terms_days net-days driving AP due dates, contact/tax fields); the vendor `id` IS finance AP's opaque `partner_id` (D-029). Later: add partner functions (ordering address vs. invoicing party) and granular block levels. |
+| **Purchasing info records (vendor-material data)** | Partial | procurement | **Done (PLAN 6.1, info-record-lite):** `proc_vendor_approved_items` captures the vendor↔item link (opaque item id validated via inventory/queries, plus the vendor's own SKU) but **no** time-dependent pricing/lead-time conditions. Later: Extend the vendor approved-items table with price, valid-from/to, and lead-time fields and use them to default PO lines. |
 | **Purchase requisitions** | Full | procurement | Later: MRP-generated requisitions arrive when the manufacturing/planning module lands. |
 | **RFQs and supplier quotation comparison** | Full | procurement | Later: Multi-bidder price-comparison views and rejection letters can be layered onto the v1 RFQ document. |
 | **Purchase orders** | Full | procurement | — |
