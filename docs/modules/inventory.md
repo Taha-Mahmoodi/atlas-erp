@@ -156,6 +156,9 @@ the same pattern the journal stores finance dimension ids without an FK on a cro
 `inventory/queries.py` is the **only inventory file other modules import**. For 5.1 it exposes:
 
 - `get_item(session, tenant_id, item_id)` / `item_exists(...)`
+- `uom_exists(...)` — the UoM analogue of `item_exists` (added in PLAN 8.1 for the manufacturing BOM
+  header/component, which reference the parent/component UoM by opaque id, D-029); a UoM is a
+  distinct inventory entity, so it has its own existence check
 - `get_costing_method(...)` — MOVING_AVERAGE | FIFO
 - `get_base_uom(...)` — the unit a document line in another UoM converts to
 - `get_category_accounts(...)` — `(inventory_acct, cogs_acct, price_diff_acct)` so the COGS handler

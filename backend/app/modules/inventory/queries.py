@@ -32,6 +32,7 @@ from app.modules.inventory.models import (
     Lot,
     SerialNumber,
     StockQuant,
+    Uom,
 )
 
 
@@ -51,6 +52,17 @@ async def item_exists(
     procurement line uses to validate its item_id dimension (the inventory analogue of finance's
     ``account_exists_by_id``)."""
     stmt = select(Item.id).where(Item.tenant_id == tenant_id, Item.id == item_id)
+    return (await session.execute(stmt)).first() is not None
+
+
+async def uom_exists(
+    session: AsyncSession, tenant_id: uuid.UUID, uom_id: uuid.UUID
+) -> bool:
+    """Whether a unit of measure with ``uom_id`` exists in the tenant. The UoM analogue of
+    ``item_exists``: a manufacturing BOM header/component references the parent/component UoM by
+    opaque id (D-029) and validates it through this contract before writing — UoMs and items are
+    distinct inventory entities, so this cannot be folded into ``item_exists``."""
+    stmt = select(Uom.id).where(Uom.tenant_id == tenant_id, Uom.id == uom_id)
     return (await session.execute(stmt)).first() is not None
 
 
