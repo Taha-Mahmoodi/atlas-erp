@@ -20,17 +20,29 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.events import run_in_uow
 from app.core.rbac import catalog_keys, sync_permission_catalog
 from app.core.tenancy import system_context, tenant_context
 from app.modules.admin.service import assign_role, create_role, provision_tenant, provision_user
 from app.modules.finance import service as finance_service
 from app.modules.sales import service
-from app.modules.sales.models import Customer, CustomerGroup, PriceList, PriceListItem
+from app.modules.sales.models import (
+    Customer,
+    CustomerGroup,
+    PriceList,
+    PriceListItem,
+    Quote,
+    SalesOrder,
+)
 from app.modules.sales.schemas import (
     CustomerCreate,
     CustomerGroupCreate,
     PriceListCreate,
     PriceListItemCreate,
+    QuoteCreate,
+    QuoteLineCreate,
+    SalesOrderCreate,
+    SalesOrderLineCreate,
 )
 
 # EVERY registered sales.* key (importing sales.constants registers them), so a new sales permission
@@ -156,11 +168,13 @@ class SalesSetup:
     tenant_id: uuid.UUID
     currency_code: str
     item_id: uuid.UUID
+    uom_id: uuid.UUID
 
 
 async def build_sales_setup(session: AsyncSession, tenant_id: uuid.UUID) -> SalesSetup:
     """Seed a USD currency (finance) and an inventory item (inventory), so customer creation and
-    price-list-item validation both have real cross-module data to validate against (D-029)."""
+    price-list-item validation both have real cross-module data to validate against (D-029). The
+    item's EA base UoM id is exposed for 7.2 quote/order lines."""
     # Imported lazily so the sales factories do not hard-depend on the inventory test package at
     # import time (it is only needed when a real item is required).
     from tests.modules.inventory.factories import build_inventory_setup, build_item
@@ -174,7 +188,270 @@ async def build_sales_setup(session: AsyncSession, tenant_id: uuid.UUID) -> Sale
         category_id=inv.category_id,
         base_uom_id=inv.ea_uom_id,
     )
-    return SalesSetup(tenant_id=tenant_id, currency_code=code, item_id=item.id)
+    return SalesSetup(
+        tenant_id=tenant_id, currency_code=code, item_id=item.id, uom_id=inv.ea_uom_id
+    )
+
+
+# --- Quotes + orders (PLAN 7.2) -----------------------------------------------
+
+
+async def build_quote(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    customer_id: uuid.UUID,
+    item_id: uuid.UUID,
+    uom_id: uuid.UUID,
+    quantity: str = "5",
+    unit_price: str = "10",
+    valid_until: date | None = None,
+    **line_kwargs: object,
+) -> Quote:
+    """Create a DRAFT quote with one line through the real service inside a uow (D-025), so
+    numbering + docflow fire as in production. ``line_kwargs`` overrides the line (discount_type,
+    discount_value, ...)."""
+    holder: dict[str, uuid.UUID] = {}
+    line_fields: dict[str, object] = {
+        "item_id": item_id,
+        "quantity": Decimal(quantity),
+        "uom_id": uom_id,
+        "unit_price": Decimal(unit_price),
+    }
+    line_fields.update(line_kwargs)
+
+    async def work() -> None:
+        with tenant_context(tenant_id):
+            quote = await service.create_quote(
+                session,
+                tenant_id,
+                QuoteCreate(
+                    customer_id=customer_id,
+                    valid_until=valid_until,
+                    lines=[QuoteLineCreate(**line_fields)],  # type: ignore[arg-type]
+                ),
+            )
+            holder["id"] = quote.id
+
+    with tenant_context(tenant_id):
+        await run_in_uow(session, work)
+        return await service.get_quote(session, tenant_id, holder["id"])
+
+
+async def build_sales_order(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    customer_id: uuid.UUID,
+    item_id: uuid.UUID,
+    uom_id: uuid.UUID,
+    quantity: str = "5",
+    unit_price: str = "10",
+    **line_kwargs: object,
+) -> SalesOrder:
+    """Create a DRAFT sales order with one line through the real service inside a uow (D-025). The
+    customer must be ACTIVE. ``line_kwargs`` overrides the line (discount, tax_code_id, ...)."""
+    holder: dict[str, uuid.UUID] = {}
+    line_fields: dict[str, object] = {
+        "item_id": item_id,
+        "quantity": Decimal(quantity),
+        "uom_id": uom_id,
+        "unit_price": Decimal(unit_price),
+    }
+    line_fields.update(line_kwargs)
+
+    async def work() -> None:
+        with tenant_context(tenant_id):
+            order = await service.create_sales_order(
+                session,
+                tenant_id,
+                SalesOrderCreate(
+                    customer_id=customer_id,
+                    lines=[SalesOrderLineCreate(**line_fields)],  # type: ignore[arg-type]
+                ),
+            )
+            holder["id"] = order.id
+
+    with tenant_context(tenant_id):
+        await run_in_uow(session, work)
+        return await service.get_sales_order(session, tenant_id, holder["id"])
+
+
+async def confirm_sales_order(
+    session: AsyncSession, tenant_id: uuid.UUID, order_id: uuid.UUID
+) -> SalesOrder:
+    """Run the confirm gate (ATP + credit) on an order through the real service inside a uow (D-025)
+    and return the (possibly CREDIT_BLOCKED) order re-read."""
+    async def work() -> None:
+        with tenant_context(tenant_id):
+            await service.confirm_order(session, tenant_id, order_id)
+
+    with tenant_context(tenant_id):
+        await run_in_uow(session, work)
+        return await service.get_sales_order(session, tenant_id, order_id)
+
+
+@dataclass(frozen=True)
+class OrderSetup:
+    """A tenant ready to create + confirm sales orders against real ATP + credit data (PLAN 7.2): a
+    customer, a STOCKED item with a warehouse + bin (so on-hand can be seeded), the base UoM, and
+    the
+    open 2026 year. Plain ids so a rollback (expiring loaded ORM objects) cannot break a follow-up
+    payload."""
+
+    tenant_id: uuid.UUID
+    currency_code: str
+    customer_id: uuid.UUID
+    item_id: uuid.UUID
+    uom_id: uuid.UUID
+    warehouse_id: uuid.UUID
+    bin_id: uuid.UUID
+
+
+async def build_order_setup(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    credit_limit: str = "1000000",
+) -> OrderSetup:
+    """A stocked item (warehouse + bin + open year, via inventory's build_stock_setup) and an ACTIVE
+    customer with a generous default credit limit (PLAN 7.2). on-hand / on-order / open-AR are
+    seeded
+    by the dedicated helpers below. ``credit_limit`` defaults high so ATP tests are not blocked by
+    credit; credit tests pass a small limit."""
+    from tests.modules.inventory.factories import build_stock_setup
+
+    stock = await build_stock_setup(session, tenant_id)
+    await seed_currency(session, tenant_id)  # USD in finance, for the customer's default currency
+    customer = await build_customer(
+        session, tenant_id, customer_code="ORD-CUST", credit_limit=Decimal(credit_limit)
+    )
+    return OrderSetup(
+        tenant_id=tenant_id,
+        currency_code="USD",
+        customer_id=customer.id,
+        item_id=stock.item_id,
+        uom_id=stock.base_uom_id,
+        warehouse_id=stock.warehouse_id,
+        bin_id=stock.bin_a_id,
+    )
+
+
+async def seed_on_hand(
+    session: AsyncSession,
+    setup: OrderSetup,
+    quantity: str,
+) -> None:
+    """Seed on-hand stock for the setup's item by posting a RECEIPT move (D-025) — the maintained
+    quant projection is what sales ATP reads."""
+    from tests.modules.inventory.factories import build_stock
+
+    await build_stock(
+        session,
+        setup.tenant_id,
+        setup.item_id,
+        setup.bin_id,
+        Decimal(quantity),
+    )
+
+
+async def seed_on_order(
+    session: AsyncSession,
+    setup: OrderSetup,
+    quantity: str,
+    *,
+    unit_cost: str = "5",
+) -> None:
+    """Seed open-incoming (on-order) stock for the setup's item by raising + SENDING a PO for it
+    (D-025) — procurement's open_incoming_quantity (the ATP on-order side) counts SENT PO lines.
+    Builds a vendor + approves the item for it, creates the PO, then sends it (auto-approves below
+    threshold)."""
+    from tests.modules.procurement.factories import (
+        build_approved_item,
+        build_po,
+        build_vendor,
+    )
+
+    vendor = await build_vendor(session, setup.tenant_id, vendor_code="ATP-VEND")
+    await build_approved_item(session, setup.tenant_id, vendor.id, setup.item_id)
+    po = await build_po(
+        session,
+        setup.tenant_id,
+        vendor_id=vendor.id,
+        item_id=setup.item_id,
+        uom_id=setup.uom_id,
+        quantity=quantity,
+        unit_cost=unit_cost,
+    )
+
+    async def work() -> None:
+        with tenant_context(setup.tenant_id):
+            from app.modules.procurement import service as proc_service
+
+            await proc_service.send_purchase_order(session, setup.tenant_id, po.id)
+
+    with tenant_context(setup.tenant_id):
+        await run_in_uow(session, work)
+
+
+async def seed_open_ar(
+    session: AsyncSession,
+    setup: OrderSetup,
+    amount: str,
+) -> None:
+    """Seed open AR for the setup's customer by creating + POSTING a customer invoice for ``amount``
+    (D-025) — finance's customer_open_balance (the credit-exposure AR side) sums open_amount on
+    POSTED customer invoices keyed by the opaque partner_id (= Customer.id, D-029). Creates only the
+    two accounts the invoice needs (AR control + revenue), reusing the OPEN year build_order_setup's
+    stock setup already created, then posts a one-line invoice."""
+    from app.modules.finance import service as finance_svc
+    from app.modules.finance.constants import AccountType
+    from app.modules.finance.receivables_schemas import (
+        CustomerInvoiceCreate,
+        CustomerInvoiceLineCreate,
+    )
+    from app.modules.finance.schemas import AccountCreate
+
+    with tenant_context(setup.tenant_id):
+        ar_account = await finance_svc.create_account(
+            session,
+            setup.tenant_id,
+            AccountCreate(code="1200", name="Accounts Receivable", account_type=AccountType.ASSET),
+        )
+        revenue_account = await finance_svc.create_account(
+            session,
+            setup.tenant_id,
+            AccountCreate(code="4000", name="Sales Revenue", account_type=AccountType.REVENUE),
+        )
+        await session.commit()
+    holder: dict[str, uuid.UUID] = {}
+
+    async def work() -> None:
+        with tenant_context(setup.tenant_id):
+            invoice = await finance_svc.create_customer_invoice(
+                session,
+                setup.tenant_id,
+                CustomerInvoiceCreate(
+                    partner_id=setup.customer_id,
+                    partner_name="ORD-CUST",
+                    invoice_date=date(2026, 6, 1),
+                    due_date=date(2026, 7, 1),
+                    currency_code="USD",
+                    ar_account_id=ar_account.id,
+                    lines=[
+                        CustomerInvoiceLineCreate(
+                            account_id=revenue_account.id, net_amount=Decimal(amount)
+                        )
+                    ],
+                ),
+            )
+            await finance_svc.post_customer_invoice(
+                session, setup.tenant_id, invoice.id, posting_date=date(2026, 6, 1)
+            )
+            holder["id"] = invoice.id
+
+    with tenant_context(setup.tenant_id):
+        await run_in_uow(session, work)
 
 
 # --- Principals ---------------------------------------------------------------

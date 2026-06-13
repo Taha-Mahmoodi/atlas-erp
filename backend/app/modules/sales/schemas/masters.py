@@ -1,8 +1,10 @@
-"""Sales request/response schemas (Pydantic v2, ApiModel base) for PLAN 7.1.
+"""Sales master + pricing schemas (Pydantic v2, ApiModel base) for PLAN 7.1.
 
-A SINGLE file (STRUCTURE §8.4: split into a schemas/ package only at the 400-line cap, the finance
-precedent); the customer master + customer groups + price lists + the price-quote response sit under
-that. The order/delivery/invoice chain (7.2–7.4) will split this when it lands.
+The masters slice of the sales ``schemas/`` package (STRUCTURE §8.4: split into a package at the
+400-line cap when PLAN 7.2's quote → order schemas landed — this file holds the customer master +
+customer groups + price lists + the price-quote response; ``orders.py`` holds the O2C documents).
+Re-exported from ``schemas/__init__`` so ``from app.modules.sales.schemas import CustomerCreate`` is
+unchanged.
 
 Read schemas mirror the models field-for-field in snake_case; status/enum fields are typed with the
 constants enums (ApiModel's ``use_enum_values`` serializes them as their UPPER_SNAKE string,
