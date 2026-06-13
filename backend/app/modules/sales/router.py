@@ -1,9 +1,15 @@
 """Sales HTTP layer (thin): parse -> call service -> return schema (PLAN 7.1).
 
 REST under ``/api/v1/sales``. This file owns the customer master (CRUD + filtered paginated list)
-and the customer-group master (CRUD + list), and MOUNTS the pricing sub-router (price lists + items
-+ the price-quote resolver — the procurement sub-router precedent: split at the 400-line cap, kept
-ONE surface via ``router.include_router``, no second mount in main.py).
+and the customer-group master (CRUD + list), and MOUNTS the sub-routers (the procurement sub-router
+precedent: split at the 400-line cap, kept ONE surface via ``router.include_router``, no second
+mount
+in main.py):
+
+- pricing_router: price lists + items + the price-quote resolver (7.1).
+- quote_router: sales quotations + send/accept/reject/cancel/convert actions (7.2).
+- order_router: sales orders + confirm (ATP + credit gate) / credit-release / cancel actions and the
+  ATP-check endpoint (7.2).
 
 Every route is guarded by a sales permission key (D-009; manage vs read distinct). Writes commit
 through ``run_in_uow`` (D-011) so audit rows ride the same transaction.
@@ -31,7 +37,9 @@ from app.modules.sales.constants import (
     SALES_CUSTOMER_READ,
 )
 from app.modules.sales.models import Customer, CustomerGroup
+from app.modules.sales.order_router import order_router
 from app.modules.sales.pricing_router import pricing_router
+from app.modules.sales.quote_router import quote_router
 from app.modules.sales.schemas import (
     CustomerCreate,
     CustomerFilter,
@@ -45,9 +53,11 @@ from app.modules.sales.schemas import (
 router = APIRouter(prefix="/api/v1/sales", tags=["sales"])
 CursorParamsDep = Depends(cursor_params)
 
-# Mount the pricing sub-router under the same /api/v1/sales prefix (the procurement sub-router
-# precedent — one module surface, included here so main.py mounts once).
+# Mount the sub-routers under the same /api/v1/sales prefix (the procurement sub-router precedent —
+# one module surface, included here so main.py mounts once).
 router.include_router(pricing_router)
+router.include_router(quote_router)
+router.include_router(order_router)
 
 
 async def _commit[T](session: SessionDep, work: Callable[[], Awaitable[T]]) -> T:

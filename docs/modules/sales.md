@@ -11,18 +11,20 @@ sales data, not the multi-role business-partner model) and pricing is **PARTIAL*
 price lists by currency / customer group / date range + discounts, NOT the generalized
 access-sequence engine). What 7.1 deliberately omits is listed under *Deferred* below.
 
-## Tables (migration 0028)
+## Tables (migrations 0028 + 0029)
 
-| Table | Purpose |
-|---|---|
-| `sales_customer_groups` | Lean grouping master (tenant, `code`, `name`) that pricing keys on. |
-| `sales_customers` | The customer master. Its `id` **IS** finance AR's opaque `partner_id`. |
-| `sales_price_lists` | Condition headers: currency + optional group + date window + priority + status. |
-| `sales_price_list_items` | One base `unit_price` per (list, item), with an optional `min_quantity` floor. |
+| Table | Migration | Purpose |
+|---|---|---|
+| `sales_customer_groups` | 0028 | Lean grouping master (tenant, `code`, `name`) that pricing keys on. |
+| `sales_customers` | 0028 | The customer master. Its `id` **IS** finance AR's opaque `partner_id`. |
+| `sales_price_lists` | 0028 | Condition headers: currency + optional group + date window + priority + status. |
+| `sales_price_list_items` | 0028 | One base `unit_price` per (list, item), with an optional `min_quantity` floor. |
+| `sales_quotes` / `sales_quote_lines` | 0029 | The pre-sales quotation (DocumentMixin, `QUO-` number) + its lines (opaque item/uom, discount). |
+| `sales_orders` / `sales_order_lines` | 0029 | The committing order (DocumentMixin, `SO-` number, `source_quote_id`, `credit_check_status`) + its lines (ordered/delivered/invoiced quantities). |
 
-All four carry the D-007 composite-tenant-FK backstop (`tenant_unique()` + `tenant_fk()`); money/
-quantity columns use `MoneyType`/`QuantityType` (D-015, exact on both engines). The migration creates
-tables and indexes only — no triggers, no alters.
+All carry the D-007 composite-tenant-FK backstop (`tenant_unique()` + `tenant_fk()`); money/quantity
+columns use `MoneyType`/`QuantityType` (D-015, exact on both engines). Both migrations create tables
+and indexes only — no triggers, no alters.
 
 ## The customer ↔ AR `partner_id` relationship (D-029)
 
@@ -106,6 +108,14 @@ floor; the winner is picked in Python over that small set — no per-list N+1.
 | `GET /price-lists/{id}/items` | `sales.pricelist.read` | The nested price rows. |
 | `POST /price-lists/{id}/items`, `DELETE …/items/{item_id}` | manage | Item validated via inventory. |
 | `GET /price-quote?item_id=&customer_id=&quantity=&date=` | `sales.pricelist.read` | Resolved price (D-043); `date` defaults to today; currency = the customer's default. |
+| `POST /quotes`, `GET /quotes`, `GET/PATCH /quotes/{id}` | `sales.quote.read` / `.manage` | Quote CRUD; create idempotent; list paginated, `?status=&customer_id=`. |
+| `POST /quotes/{id}/send,/accept,/reject,/cancel` | `sales.quote.manage` | Lifecycle actions; send/accept/reject idempotent. |
+| `POST /quotes/{id}/convert-to-order` | `sales.order.manage` | Raise an order from an ACCEPTED quote (idempotent). |
+| `POST /orders`, `GET /orders`, `GET/PATCH /orders/{id}` | `sales.order.read` / `.manage` | Order CRUD; create idempotent; list paginated, `?status=&customer_id=`. |
+| `POST /orders/{id}/confirm` | `sales.order.confirm` | The ATP + credit gate (idempotent). Returns CONFIRMED or CREDIT_BLOCKED (not an error). |
+| `POST /orders/{id}/credit-release` | `sales.order.credit_release` | Release a CREDIT_BLOCKED order past the limit, then confirm (idempotent). |
+| `POST /orders/{id}/cancel` | `sales.order.manage` | Cancel before any delivery/invoice. |
+| `POST /orders/atp` `{lines:[{item_id,quantity}]}` / `GET /orders/atp?item_id=&quantity=&date=` | `sales.order.read` | The availability preview (D-044). |
 
 Reference lists (customers, customer groups, price lists) support conditional GETs via a tenant-scoped
 collection ETag (PERFORMANCE §3 / D-035): an `If-None-Match` hit returns 304 without running the page
@@ -120,17 +130,71 @@ query. Every list runs within the ≤3-query budget (auth load + page select).
   `customer_payment_terms_days`, `customer_default_currency`, and `resolve_price`. 7.2–7.4 and finance
   AR reporting read these.
 
-7.1 publishes **no domain events** (masters + pricing drive no cross-module effects); the order flow
-in 7.2 will.
+7.1 publishes **no domain events** (masters + pricing drive no cross-module effects). **7.2 still
+publishes none:** a confirmed order is a COMMITMENT (like a PO) with no finance/inventory posting —
+7.3's delivery is the first sales event (stock issue → COGS). So there is no `events.py`/`handlers.py`
+under sales yet (the no-empty-file rule).
 
-## What 7.2–7.4 add
+## Quote → Order (7.2, D-044)
 
-- **7.2** Quote → Order with a simple ATP check (on-hand + on-order) and the **credit-limit block** at
-  confirmation (reads `customer_credit_limit` + outstanding AR), plus per-line discounts
-  (`DiscountType`) on top of the resolved base price. Order entry prices each line through
-  `sales/queries.resolve_price`.
-- **7.3** Delivery with partial shipments + backorders → stock issue + COGS via the event bus.
-- **7.4** Billing: customer invoice from delivery (revenue journals), RMA returns with credit notes.
+The O2C spine mirrors the procurement requisition/PO chain. Both documents are numbered at creation
+(D-012/D-040): `QUO-2026-NNNNN` and `SO-2026-NNNNN`.
+
+**Quote lifecycle** (`QuoteStatus`): DRAFT → SENT → ACCEPTED/REJECTED; DRAFT/SENT → EXPIRED on
+`valid_until` lapse (a lazy check the read paths run, no background sweep); ACCEPTED → CONVERTED when
+an order is raised; CANCELLED before conversion. Lines default `unit_price` from
+`sales/queries.resolve_price` (overridable) and apply an optional per-line discount (`DiscountType`
+PERCENT/AMOUNT); `line_amount` = qty × unit_price − discount, `total_amount` is the maintained sum.
+
+**Order lifecycle** (`SalesOrderStatus`): DRAFT → (confirm) CONFIRMED or CREDIT_BLOCKED, + CANCELLED
+(set in 7.2); PARTIALLY_DELIVERED/DELIVERED (7.3), INVOICED (7.4), CLOSED (the full lifecycle declared
+now). An order is created from scratch OR by converting an ACCEPTED quote (copy lines + frozen prices,
+link docflow `converted_to`, set `source_quote_id`, advance the quote to CONVERTED). The customer must
+be ACTIVE at create (422 `sales.customer_not_active` — the soft block, distinct from the credit
+block). `payment_terms_days` is snapshot from the customer.
+
+### ATP — availability check, backorder flag, NOT a block (D-044)
+
+`atp_check(item_id, qty, date)` computes **availability = on-hand − committed + on-order**:
+
+- **on-hand** = `inventory/queries.total_on_hand` (the maintained quant projection);
+- **committed** = `committed_quantity` — the undelivered demand (ordered − delivered) of
+  CONFIRMED/PARTIALLY_DELIVERED sales orders for the item (a set-based scan, no N+1). This is the
+  **reservation**: confirming an order commits its undelivered quantity against ATP for the next
+  order. Confirm excludes the order's own demand so it is checked net of *other* commitments.
+- **on-order** = `procurement/queries.open_incoming_quantity` — ordered − received summed over
+  APPROVED/SENT/PARTIALLY_RECEIVED POs (a sanctioned cross-module read added in 7.2).
+
+A line whose requested quantity exceeds availability is a **backorder** — but ATP is **informational**:
+parity scopes v1 to "simple ATP = an availability check with manual backorders", so confirm records
+which lines are backordered (the ATP snapshot) and **proceeds** (the order still CONFIRMS). The hard
+block is credit.
+
+### Credit — the HARD block at confirmation (D-044)
+
+Exposure = the customer's **open AR** (`customer_open_ar` → finance's `customer_open_balance`, the
+sum of `open_amount` on POSTED customer invoices keyed by the opaque partner_id) + the value of the
+customer's **other open confirmed orders** (`open_confirmed_order_value`) + **this order's total**. If
+exposure > the customer's `credit_limit` (0 = cash-only) the order is set **CREDIT_BLOCKED** /
+`credit_check_status` BLOCKED and is **NOT confirmed** — the static credit-limit block parity scopes
+to v1. Within the limit → **CONFIRMED** / PASSED. A user with `sales.order.credit_release` calls
+**release_credit**, which sets `credit_check_status` RELEASED and re-confirms (a RELEASED order skips
+the credit gate). `confirm` distinct from `manage` because it runs the gates; `credit_release` distinct
+because it is an approval-like override. Confirm is idempotent (re-confirming a CONFIRMED order is a
+no-op).
+
+### Reservation model (committed quantity)
+
+A CONFIRMED order's undelivered quantity (ordered − delivered) is "committed" — there is no separate
+reservation table; `committed_quantity` is a query over confirmed-but-undelivered order lines (D-044).
+When 7.3 delivers, `delivered_quantity` rises and the commitment shrinks automatically.
+
+## What 7.3–7.4 add
+
+- **7.3** Delivery with partial shipments + backorders → stock issue + COGS via the event bus (the
+  first sales event). `delivered_quantity` rises; the order advances PARTIALLY_DELIVERED/DELIVERED.
+- **7.4** Billing: customer invoice from delivery (revenue journals, `tax_code_id` per line), RMA
+  returns with credit notes. `invoiced_quantity` rises; the order advances INVOICED/CLOSED.
 
 ## Deferred (per parity)
 

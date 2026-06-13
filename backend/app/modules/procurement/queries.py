@@ -14,6 +14,8 @@ so it is a thin alias over ``get_vendor`` named for the reporting intent.
 PLAN 6.2 adds the PURCHASE-ORDER reads 6.3 (goods receipts) and 6.4 (the 3-way match) call:
 ``get_purchase_order``, ``po_line_open_quantity`` (ordered − received), ``get_po_for_receipt`` (the
 header + lines a receipt needs) and ``open_po_lines_for_vendor`` (the awaiting-receipt worklist).
+PLAN 7.2 adds ``open_incoming_quantity`` (ordered − received summed per item over live POs) — the
+on-order side of sales ATP (D-044), a SANCTIONED cross-module read sales calls.
 
 Every function takes an explicit ``tenant_id`` and runs under the caller's tenant context, so the
 D-007 filter applies on top of the explicit predicate — ordinary tenant-scoped reads, not a bypass.
@@ -249,6 +251,48 @@ async def matches_for_po(
         .order_by(InvoiceMatch.created_at.desc())
     )
     return list((await session.execute(stmt)).scalars().all())
+
+
+async def open_incoming_quantity(
+    session: AsyncSession, tenant_id: uuid.UUID, item_id: uuid.UUID
+) -> Decimal:
+    """The total OPEN-INCOMING (on-order) quantity of an item across all live POs (PLAN 7.2, D-044)
+    — the on-order side of sales ATP. Sums ``ordered − received`` over PO lines for ``item_id`` on
+    SENT / APPROVED / PARTIALLY_RECEIVED orders (orders that are committed to the vendor and still
+    expect goods). A DRAFT / PENDING / CANCELLED / fully-RECEIVED / CLOSED order contributes
+    nothing.
+
+    SET-BASED (no per-PO N+1, PERFORMANCE §2): one join over PO lines filtered by the PO's status
+    and
+    a positive open quantity, summed in PYTHON over the (small) open set so the exact-decimal
+    QuantityType round-trips identically on both engines (D-015: SQL never subtracts two scaled
+    quantity columns for the result value). Exposed so sales reads the on-order figure without
+    importing procurement models — the bottom-up cross-module read (STRUCTURE §5)."""
+    stmt = (
+        select(PurchaseOrderLine.quantity, PurchaseOrderLine.received_quantity)
+        .join(
+            PurchaseOrder,
+            (PurchaseOrderLine.tenant_id == PurchaseOrder.tenant_id)
+            & (PurchaseOrderLine.po_id == PurchaseOrder.id),
+        )
+        .where(
+            PurchaseOrderLine.tenant_id == tenant_id,
+            PurchaseOrderLine.item_id == item_id,
+            PurchaseOrder.status.in_(
+                [
+                    PurchaseOrderStatus.APPROVED.value,
+                    PurchaseOrderStatus.SENT.value,
+                    PurchaseOrderStatus.PARTIALLY_RECEIVED.value,
+                ]
+            ),
+            PurchaseOrderLine.received_quantity < PurchaseOrderLine.quantity,
+        )
+    )
+    rows = (await session.execute(stmt)).all()
+    return sum(
+        (Decimal(str(ordered)) - Decimal(str(received)) for ordered, received in rows),
+        Decimal(0),
+    )
 
 
 async def open_po_lines_for_vendor(
