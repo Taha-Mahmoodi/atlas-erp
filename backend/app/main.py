@@ -27,6 +27,7 @@ from app.core.tenancy import current_tenant_id
 from app.modules.finance.router import router as finance_router
 from app.modules.inventory.router import router as inventory_router
 from app.modules.procurement.router import router as procurement_router
+from app.modules.sales.router import router as sales_router
 
 logger = logging.getLogger("atlas")
 
@@ -237,6 +238,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # the D-011 handler-registration order; procurement OWNS the vendor entity and reads
     # finance/queries + inventory/queries downward (STRUCTURE §5 / D-029).
     app.include_router(procurement_router)
+    # Sales module (PLAN 7): customer master + condition-style pricing at /api/v1/sales. Mounted
+    # after procurement, the D-011 handler-registration order; sales OWNS the customer entity and
+    # reads finance/queries + inventory/queries downward (STRUCTURE §5 / D-029). 7.1 publishes no
+    # cross-module events (masters + pricing drive no effects; orders in 7.2 will).
+    app.include_router(sales_router)
 
     # Cross-module event handlers (D-011): registered here, at the app factory, so registration
     # order
