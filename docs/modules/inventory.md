@@ -8,26 +8,25 @@ ids); this guide is the operator/contributor map and grows with each inventory t
 
 ## Status
 
-**PLAN 5.1 (this task) lays the master-data foundation:** item categories, units of measure,
-per-item UoM conversions, the item master (typed STOCKED/NON_STOCKED/SERVICE with per-item base
-UoM, costing method and lot/serial tracking), and the lot/serial instance tables (defined now,
-populated by receipts later). Stock moves as the single source of truth, on-hand/availability
-projections, moving-average + FIFO costing with same-transaction COGS posting, and physical counts
-arrive in PLAN 5.2–5.4 — this package grows in place.
+**PLAN 5.1 laid the master-data foundation;** PLAN 5.2 adds **warehouses, bins, the stock-move
+ledger as the quantity single source of truth, and the on-hand projection.** Moving-average + FIFO
+costing with same-transaction COGS posting and physical counts arrive in PLAN 5.3–5.4 — this package
+grows in place.
 
 | File | Concern | Key decision |
 |---|---|---|
-| `constants.py` | `ItemType`, `CostingMethod`, `TrackingMode`, `LotStatus`, `SerialStatus` enums + the six permission keys (registered at import) | D-020, D-009 |
-| `models.py` | `ItemCategory`, `Uom`, `Item`, `UomConversion`, `Lot`, `SerialNumber` | D-020, D-029, D-015 |
-| `schemas.py` | Create/Update/Read/Filter for categories, UoMs, items, conversions | D-015 |
-| `service/` (`categories.py`, `uoms.py`, `items.py`, `conversions.py`) | CRUD + validation for all four masters + the pure `convert_quantity` helper — split into a package at the 400-line cap (STRUCTURE §8.4), fully re-exported from `__init__` | D-020, D-029 |
-| `queries.py` | the cross-module read interface (item existence, base UoM, costing method, category accounts) | STRUCTURE §5 |
-| `router.py` | REST under `/api/v1/inventory` — categories, UoMs, items, nested uom-conversions | D-009, D-014, D-035 |
+| `constants.py` | `ItemType`, `CostingMethod`, `TrackingMode`, `LotStatus`, `SerialStatus`, **`MoveType`, `MoveStatus`** enums + the **`MOVE_BIN_SIDES`** rule table + the stock-move sequence + permission keys (registered at import) | D-020, D-012, D-009 |
+| `models/masters.py` | `ItemCategory`, `Uom`, `Item`, `UomConversion`, `Lot`, `SerialNumber` (5.1) | D-020, D-029, D-015 |
+| `models/stock.py` | **`Warehouse`, `Bin`, `StockMove`, `StockQuant`** (5.2) — split into a `models/` package when the stock tables would have passed the 400-line cap (STRUCTURE §3) | D-020, D-036, D-012 |
+| `schemas.py` | Create/Update/Read/Filter for masters + warehouses, bins, stock moves, on-hand | D-015 |
+| `service/` | masters CRUD (5.1) + **`warehouses.py`, `bins.py`, `stock_moves.py`, `stock_quants.py`** (5.2) — fully re-exported from `__init__` | D-020, D-036, D-029 |
+| `queries.py` | the cross-module read interface — item reads (5.1) + **`total_on_hand` / `on_hand` / `on_hand_by_bin` / `on_hand_by_lot`** (5.2) | STRUCTURE §5 |
+| `router.py` + `stock_router.py` | REST under `/api/v1/inventory` — masters (5.1) + warehouses, bins, stock-moves, stock-on-hand (5.2, a mounted sibling sub-router, the finance `journal_router` precedent) | D-009, D-013, D-014, D-035 |
 
-Migration `0020_inventory_items` creates the six `inv_` tables. There is **no `events.py` /
-`handlers.py` yet**: masters drive no cross-module effects, and the no-stub rule forbids empty
-files — those files arrive with stock moves in 5.2, when `inventory.stock.issued` is published and
-`finance/handlers.py` posts COGS (D-020).
+Migrations: `0020_inventory_items` (six master tables) + `0021_inventory_stock` (the four stock
+tables). There is still **no `events.py` / `handlers.py`**: a 5.2 move publishes nothing
+cross-module (on-hand is intra-module; D-020 computes costing *inside* the move transaction). Those
+files arrive in 5.3, when `inventory.stock.issued` is published and `finance/handlers.py` posts COGS.
 
 ## Entities
 
@@ -96,6 +95,57 @@ LOT-tracked item gets one `inv_lots` row per received batch, a SERIAL-tracked it
 `inv_serials` row per unit. `UNIQUE(tenant_id, item_id, lot_code)` /
 `UNIQUE(tenant_id, item_id, serial_code)` keep codes unique within an item.
 
+## Warehouses, bins, stock moves & on-hand (PLAN 5.2)
+
+**Topology.** `inv_warehouses` group `inv_bins`; on-hand is tracked **per bin**. Both are reference
+data (codes, not gapless numbers) and are **deactivated, never deleted** (`is_active=False`) because
+moves and quants reference them. A bin's `code` is unique per `(tenant, warehouse)`.
+
+**The move ledger is the quantity single source of truth (D-020).** `inv_stock_moves` is an
+**append-only** ledger: each row is **POSTED at creation and IMMUTABLE** — there is no draft phase,
+no edit, no delete. A move carries `DocumentMixin` (registered in `core_documents`) and a **gapless
+`STK-` number claimed at creation** (D-012 claim-at-permanence — a move is permanent the moment it
+exists). `quantity` is **always positive**; the **`move_type` decides direction** (which bins
+participate), the universal-journal one-sided-amount philosophy applied to stock.
+
+**Move types & required bin sides** (`constants.MOVE_BIN_SIDES`, validated in one place):
+
+| move_type | from_bin | to_bin | effect |
+|---|---|---|---|
+| `RECEIPT` | — | required | stock enters a bin (purchase receipt, opening balance) |
+| `ISSUE` | required | — | stock leaves a bin (goods issue, scrap) |
+| `TRANSFER` | required | required (≠ from) | stock moves between bins, total conserved |
+| `ADJUSTMENT` | exactly one side | exactly one side | a one-sided correction (decrease = from-only, increase = to-only) |
+
+**The quant is a maintained projection (D-036), not a second source of truth.** `inv_stock_quants`
+holds current on-hand per `(item, bin, lot)` and is updated **in the same transaction as every
+move** (decrement from_bin, increment to_bin) — so on-hand is an **indexed point lookup**, not an
+unbounded SUM over move history (PERFORMANCE §1), the moving-average `inv_item_valuations` precedent.
+The move ledger stays the SSOT/audit trail; the quant is **reconcilable from it**. A quant reaching
+exactly 0 is **deleted**, so the projection holds only live stock. Concurrency: the move engine
+locks quant rows `with_for_update` (PG takes the row lock; SQLite omits the clause as a no-op,
+D-020) in deterministic bin-id order (deadlock avoidance).
+
+**Negative stock is forbidden outright (D-020), on both engines.** The service raises
+`InsufficientStockError` → **422 `inventory.insufficient_stock`** *pre-flight*; the DB
+**`CHECK (on_hand_qty >= 0)`** on `inv_stock_quants` is the bypass-proof backstop (a portable
+single-column CHECK, proven on SQLite and Postgres by the `-m pg` guard tests).
+
+**Lot / serial.** On a `RECEIPT` of a tracked item, a new `lot_code`/`serial_code` **creates** the
+`inv_lots`/`inv_serials` master instance (5.1 deferred instance creation to receipts); an
+`ISSUE`/`TRANSFER` must reference an existing one (its stock is then checked by the quant delta). A
+**serial moves wholesale** — the service requires `quantity == 1` for a serial-tracked move.
+
+**Corrections are reversals, not edits.** `POST /stock-moves/{id}/reverse` posts the **opposite
+move** (from/to swapped, a `RECEIPT` reverses as an `ISSUE` and vice versa), linked to the original
+via docflow `reverses`. The ledger stays append-only; a move may be reversed once.
+
+**On-hand reads** (`inventory/queries.py`, what sales ATP / procurement call): `total_on_hand(item)`,
+`on_hand(item, bin?, lot?)`, `on_hand_by_bin(item)`, `on_hand_by_lot(item)`. The HTTP projection is
+`GET /stock-on-hand` (paginated, by item/bin). The move ledger is `GET /stock-moves` (paginated,
+filtered by item/bin/type/date). `POST /stock-moves` and the reverse endpoint are **idempotent**
+(D-013) — a move changes on-hand, so a retried request must not double-move.
+
 ## Cross-module reads (D-029 / STRUCTURE §5)
 
 The category's GL-account ids are **opaque finance uuids**, never a cross-module FK: finance owns
@@ -114,7 +164,10 @@ the same pattern the journal stores finance dimension ids without an FK on a cro
 ## Permissions (D-009)
 
 `inventory.item.read` / `inventory.item.manage`, `inventory.category.read` /
-`inventory.category.manage`, `inventory.uom.read` / `inventory.uom.manage` — registered into the
-core RBAC catalog at import. Every endpoint is permission-guarded; the reference lists
-(item-categories, uoms, items) support conditional GETs via a tenant-scoped collection ETag
-(PERFORMANCE §3 / D-035) and stay within the ≤3-query list budget (PERFORMANCE §2).
+`inventory.category.manage`, `inventory.uom.read` / `inventory.uom.manage`, **`inventory.warehouse.read`
+/ `inventory.warehouse.manage`, `inventory.bin.read` / `inventory.bin.manage`, `inventory.move.read`,
+`inventory.move.create`** — registered into the core RBAC catalog at import. Every endpoint is
+permission-guarded; the reference lists (item-categories, uoms, items, warehouses, bins) support
+conditional GETs via a tenant-scoped collection ETag (PERFORMANCE §3 / D-035), while the
+transactional lists (stock-moves, stock-on-hand) carry none. All list endpoints stay within the
+≤3-query budget (PERFORMANCE §2), and `create_move` runs a bounded number of statements (no N+1).

@@ -1,21 +1,26 @@
-"""Inventory request/response schemas (Pydantic v2, ApiModel base) for PLAN 5.1.
+"""Inventory request/response schemas (Pydantic v2, ApiModel base) for PLAN 5.1 + 5.2.
 
 Read schemas mirror the models field-for-field in snake_case; enums are typed with the constants
 classes (ApiModel's ``use_enum_values`` serializes them as their UPPER_SNAKE string, matching the
-columns). Quantities (reorder point/quantity, the UoM conversion factor) are ``Decimal`` in Python,
-serialized as strings (D-015); the frontend types them as string and formats in lib/format.ts.
-Create/Update carry only client-settable fields; ids, timestamps and tenant_id are server-owned.
+columns). Quantities (reorder point/quantity, the UoM conversion factor, move quantity, on-hand)
+are ``Decimal`` in Python, serialized as strings (D-015); the frontend types them as string and
+formats in lib/format.ts. Create/Update carry only client-settable fields; ids, timestamps and
+tenant_id are server-owned.
 
 ``costing_method`` is OPTIONAL on ItemCreate — the service defaults it from the item's category
 (D-020) when omitted, and STORES it on the item.
+
+PLAN 5.2 adds warehouses, bins, the stock-move ledger (create + read) and the on-hand projection.
+A stock move has NO Update schema: a move is POSTED-at-creation and IMMUTABLE; corrections are
+reversing moves (a dedicated endpoint), never edits.
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from app.core.schemas import ApiModel
-from app.modules.inventory.constants import CostingMethod, ItemType, TrackingMode
+from app.modules.inventory.constants import CostingMethod, ItemType, MoveType, TrackingMode
 
 # --- Item categories ----------------------------------------------------------
 
@@ -160,3 +165,132 @@ class UomConversionRead(ApiModel):
     alt_uom_id: uuid.UUID
     factor_to_base: Decimal
     created_at: datetime
+
+
+# --- Warehouses (PLAN 5.2) ----------------------------------------------------
+
+
+class WarehouseCreate(ApiModel):
+    code: str
+    name: str
+    is_active: bool = True
+
+
+class WarehouseUpdate(ApiModel):
+    """Partial update — ``code`` is immutable (bins/moves reference the warehouse) and absent."""
+
+    name: str | None = None
+    is_active: bool | None = None
+
+
+class WarehouseRead(ApiModel):
+    id: uuid.UUID
+    code: str
+    name: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+# --- Bins (PLAN 5.2) ----------------------------------------------------------
+
+
+class BinCreate(ApiModel):
+    """Create a bin in a warehouse. ``warehouse_id`` comes from the body (the bin endpoint is a
+    flat collection, filtered by warehouse on list). ``code`` is unique per (warehouse)."""
+
+    warehouse_id: uuid.UUID
+    code: str
+    name: str
+    is_default: bool = False
+    is_active: bool = True
+
+
+class BinUpdate(ApiModel):
+    """Partial update — ``code`` and ``warehouse_id`` are immutable (moves/quants reference the
+    bin) and absent."""
+
+    name: str | None = None
+    is_default: bool | None = None
+    is_active: bool | None = None
+
+
+class BinRead(ApiModel):
+    id: uuid.UUID
+    warehouse_id: uuid.UUID
+    code: str
+    name: str
+    is_default: bool
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+# --- Stock moves (PLAN 5.2) ---------------------------------------------------
+
+
+class StockMoveCreate(ApiModel):
+    """Create (and immediately POST) a stock move (PLAN 5.2). ``quantity`` is ALWAYS positive and
+    is in the item's BASE UoM (the service resolves and freezes ``base_uom_id``). The ``move_type``
+    decides which bins are required (constants.MOVE_BIN_SIDES): RECEIPT → ``to_bin_id`` only;
+    ISSUE → ``from_bin_id`` only; TRANSFER → both (different bins); ADJUSTMENT → exactly one side.
+    ``lot_id``/``serial_id`` are required iff the item's tracking mode demands them; on a RECEIPT a
+    NEW ``lot_code``/``serial_code`` may be supplied to create the master instance on the fly.
+    ``move_date`` defaults to today when omitted."""
+
+    move_type: MoveType
+    item_id: uuid.UUID
+    quantity: Decimal
+    from_bin_id: uuid.UUID | None = None
+    to_bin_id: uuid.UUID | None = None
+    lot_id: uuid.UUID | None = None
+    serial_id: uuid.UUID | None = None
+    # On a RECEIPT of a tracked item, the caller may name a NEW lot/serial code to create the master
+    # instance (5.1 deferred instance creation to receipts). For ISSUE/TRANSFER the lot/serial must
+    # already exist (by id above).
+    lot_code: str | None = None
+    serial_code: str | None = None
+    move_date: date | None = None
+    reference: str | None = None
+
+
+class StockMoveRead(ApiModel):
+    id: uuid.UUID
+    move_number: str
+    move_type: MoveType
+    item_id: uuid.UUID
+    quantity: Decimal
+    base_uom_id: uuid.UUID
+    from_bin_id: uuid.UUID | None
+    to_bin_id: uuid.UUID | None
+    lot_id: uuid.UUID | None
+    serial_id: uuid.UUID | None
+    move_date: date
+    reference: str | None
+    posted: bool
+    document_id: uuid.UUID
+    created_at: datetime
+
+
+class StockMoveFilter(ApiModel):
+    """List filters for the move ledger. None means "no constraint"; folded into the cursor's
+    filter fingerprint so a cursor cannot cross filtered views."""
+
+    item_id: uuid.UUID | None = None
+    bin_id: uuid.UUID | None = None
+    move_type: MoveType | None = None
+    date_from: date | None = None
+    date_to: date | None = None
+
+
+# --- On-hand projection (PLAN 5.2) --------------------------------------------
+
+
+class StockOnHandRead(ApiModel):
+    """One on-hand quant row: current quantity of an item in a bin (optionally a lot). The
+    projection endpoint returns these; sales ATP / procurement read the same shape via queries."""
+
+    item_id: uuid.UUID
+    bin_id: uuid.UUID
+    lot_id: uuid.UUID | None
+    on_hand_qty: Decimal

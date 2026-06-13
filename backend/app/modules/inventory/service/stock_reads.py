@@ -1,0 +1,111 @@
+"""Stock-move + on-hand read paths (PLAN 5.2), split from stock_moves.py at the 400-line cap.
+
+``get_move`` (single move), ``list_moves`` (the keyset-paginated move ledger) and ``list_on_hand``
+(the keyset-paginated quant projection) back the router's read endpoints. The write engine
+(stock_moves.py) imports ``get_move`` from here, so the read/write split is one-directional.
+"""
+
+from __future__ import annotations
+
+import uuid
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.exceptions import NotFoundError
+from app.core.pagination import (
+    DEFAULT_LIMIT,
+    OrderKey,
+    SortDirection,
+    filter_fingerprint,
+    paginate,
+)
+from app.core.schemas import Page
+from app.modules.inventory.constants import MoveType
+from app.modules.inventory.models import StockMove, StockQuant
+from app.modules.inventory.schemas import StockMoveFilter
+
+
+async def get_move(
+    session: AsyncSession, tenant_id: uuid.UUID, move_id: uuid.UUID
+) -> StockMove:
+    move = await session.get(StockMove, move_id)
+    if move is None or move.tenant_id != tenant_id:
+        raise NotFoundError(message="Stock move not found", code="inventory.move_not_found")
+    return move
+
+
+async def list_moves(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    filters: StockMoveFilter,
+    cursor: str | None = None,
+    limit: int = DEFAULT_LIMIT,
+) -> Page[StockMove]:
+    """Keyset-paginated move ledger (D-014), newest first by (move_date DESC, id). Filters narrow by
+    item, bin (either side), type and date range and fold into the cursor fingerprint so a cursor
+    cannot bleed across filtered views. The append-only ledger view procurement/sales audit from."""
+    stmt = select(StockMove).where(StockMove.tenant_id == tenant_id)
+    if filters.item_id is not None:
+        stmt = stmt.where(StockMove.item_id == filters.item_id)
+    if filters.bin_id is not None:
+        stmt = stmt.where(
+            (StockMove.from_bin_id == filters.bin_id)
+            | (StockMove.to_bin_id == filters.bin_id)
+        )
+    if filters.move_type is not None:
+        stmt = stmt.where(StockMove.move_type == MoveType(filters.move_type).value)
+    if filters.date_from is not None:
+        stmt = stmt.where(StockMove.move_date >= filters.date_from)
+    if filters.date_to is not None:
+        stmt = stmt.where(StockMove.move_date <= filters.date_to)
+
+    fingerprint = filter_fingerprint(
+        filters.item_id,
+        filters.bin_id,
+        filters.move_type,
+        filters.date_from,
+        filters.date_to,
+    )
+    return await paginate(
+        session,
+        stmt,
+        # Newest move_date first; ``paginate`` appends the id PK as the unique tiebreaker, so
+        # same-date moves order deterministically. move_date is an immutable Date (no SQLite
+        # fractional-seconds keyset hazard, unlike created_at — D-033).
+        order_by=[OrderKey(StockMove.move_date, SortDirection.DESC)],
+        pk=StockMove.id,
+        cursor=cursor,
+        limit=limit,
+        filters=fingerprint,
+    )
+
+
+async def list_on_hand(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    item_id: uuid.UUID | None = None,
+    bin_id: uuid.UUID | None = None,
+    cursor: str | None = None,
+    limit: int = DEFAULT_LIMIT,
+) -> Page[StockQuant]:
+    """Keyset-paginated on-hand projection (PLAN 5.2): the maintained quant rows (D-036), optionally
+    filtered to one item and/or one bin. Ordered by item_id for stability (the natural key has no
+    business sort). Filters fold into the cursor fingerprint. The on-hand view a stock-overview
+    screen reads; sales ATP / procurement use the queries.on_hand* helpers instead."""
+    stmt = select(StockQuant).where(StockQuant.tenant_id == tenant_id)
+    if item_id is not None:
+        stmt = stmt.where(StockQuant.item_id == item_id)
+    if bin_id is not None:
+        stmt = stmt.where(StockQuant.bin_id == bin_id)
+    return await paginate(
+        session,
+        stmt,
+        order_by=[OrderKey(StockQuant.item_id, SortDirection.ASC)],
+        pk=StockQuant.id,
+        cursor=cursor,
+        limit=limit,
+        filters=filter_fingerprint(item_id, bin_id),
+    )
