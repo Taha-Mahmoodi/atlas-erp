@@ -262,9 +262,17 @@ def register_event_handlers() -> None:
     from app.core.events import handlers_for, subscribe
     from app.modules.finance.handlers import post_stock_valuation_journal
     from app.modules.inventory.events import StockValued
+    from app.modules.inventory.handlers import receive_goods_receipt_moves
+    from app.modules.procurement.events import GoodsReceiptPosted
 
     if post_stock_valuation_journal not in handlers_for(StockValued.key):
         subscribe(StockValued.key, post_stock_valuation_journal)
+    # Procurement goods-receipt → inventory stock-move bridge (PLAN 6.3, D-041): inventory's
+    # handler creates the RECEIPT moves (Cr GR-IR) when a GR posts, which in turn publish
+    # StockValued for the finance handler above — a two-hop same-transaction chain
+    # (procurement → inventory → finance).
+    if receive_goods_receipt_moves not in handlers_for(GoodsReceiptPosted.key):
+        subscribe(GoodsReceiptPosted.key, receive_goods_receipt_moves)
 
 
 app = create_app()

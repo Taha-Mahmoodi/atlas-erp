@@ -17,14 +17,18 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.events import run_in_uow
 from app.core.rbac import catalog_keys, sync_permission_catalog
 from app.core.tenancy import system_context, tenant_context
 from app.modules.admin.service import assign_role, create_role, provision_tenant, provision_user
 from app.modules.finance import service as finance_service
+from app.modules.finance.constants import GR_IR_CLEARING, AccountType
+from app.modules.finance.schemas import AccountCreate
 from app.modules.procurement import service
 from app.modules.procurement.constants import ApprovalDocumentType
 from app.modules.procurement.models import (
     ApprovalRule,
+    GoodsReceipt,
     PurchaseOrder,
     PurchaseRequisition,
     Rfq,
@@ -33,6 +37,8 @@ from app.modules.procurement.models import (
 )
 from app.modules.procurement.schemas import (
     ApprovalRuleCreate,
+    GoodsReceiptCreate,
+    GoodsReceiptLineCreate,
     PurchaseOrderCreate,
     PurchaseOrderLineCreate,
     RequisitionCreate,
@@ -271,15 +277,181 @@ async def build_approval_rule(
     return rule
 
 
+# --- Goods receipts (PLAN 6.3) ------------------------------------------------
+
+
+@dataclass(frozen=True)
+class GoodsReceiptSetup:
+    """A tenant fully wired to create + POST a goods receipt against a SENT PO (PLAN 6.3): a STOCKED
+    item whose category wires the GL accounts, an OPEN fiscal year, a warehouse + bin, the GR/IR
+    clearing account mapped as a posting default, an ACTIVE vendor with the item approved, and a
+    SENT PO for ``po_quantity`` @ ``po_unit_cost``. Plain ids so a rollback (expiring loaded ORM
+    objects) cannot break a follow-up payload."""
+
+    tenant_id: uuid.UUID
+    item_id: uuid.UUID
+    warehouse_id: uuid.UUID
+    bin_id: uuid.UUID
+    inventory_account_id: uuid.UUID
+    cogs_account_id: uuid.UUID
+    price_difference_account_id: uuid.UUID
+    gr_ir_account_id: uuid.UUID
+    fiscal_year_id: uuid.UUID
+    vendor_id: uuid.UUID
+    po_id: uuid.UUID
+    po_line_id: uuid.UUID
+    po_quantity: Decimal
+    po_unit_cost: Decimal
+
+
+async def _map_gr_ir_clearing(
+    session: AsyncSession, tenant_id: uuid.UUID
+) -> uuid.UUID:
+    """Create a GR/IR clearing LIABILITY account and map it as the ``gr_ir_clearing`` posting
+    default (D-041) so a goods receipt can credit it. Returns the account id."""
+    with tenant_context(tenant_id):
+        account = await finance_service.create_account(
+            session,
+            tenant_id,
+            AccountCreate(
+                code="2150", name="GR/IR clearing", account_type=AccountType.LIABILITY
+            ),
+        )
+        await session.commit()
+        await finance_service.set_posting_default(
+            session, tenant_id, GR_IR_CLEARING, account.id
+        )
+        await session.commit()
+    return account.id
+
+
+async def build_goods_receipt_setup(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    po_quantity: str = "10",
+    po_unit_cost: str = "5",
+    tracking_mode: str = "NONE",
+    map_gr_ir: bool = True,
+) -> GoodsReceiptSetup:
+    """Wire a SENT PO + the GR/IR clearing default so a goods receipt can be created and posted
+    (PLAN 6.3). Builds the inventory stock setup (item + GL accounts + open period + warehouse/bin),
+    maps GR/IR clearing (unless ``map_gr_ir`` is False — the unmapped-error test), seeds a USD
+    currency + an ACTIVE vendor with the item approved, then creates and SENDS a PO."""
+    from tests.modules.inventory.factories import build_stock_setup
+
+    stock = await build_stock_setup(session, tenant_id, tracking_mode=tracking_mode)
+    gr_ir_account_id = (
+        await _map_gr_ir_clearing(session, tenant_id)
+        if map_gr_ir
+        else uuid.uuid4()  # a placeholder id never mapped (the unmapped-error path)
+    )
+    await seed_currency(session, tenant_id)
+    vendor = await build_vendor(session, tenant_id)
+    await build_approved_item(session, tenant_id, vendor.id, stock.item_id)
+
+    with tenant_context(tenant_id):
+        po = await service.create_purchase_order(
+            session,
+            tenant_id,
+            PurchaseOrderCreate(
+                vendor_id=vendor.id,
+                lines=[
+                    PurchaseOrderLineCreate(
+                        item_id=stock.item_id,
+                        quantity=Decimal(po_quantity),
+                        uom_id=stock.base_uom_id,
+                        unit_cost=Decimal(po_unit_cost),
+                    )
+                ],
+            ),
+        )
+        await session.commit()
+        await service.send_purchase_order(session, tenant_id, po.id)
+        await session.commit()
+        po_lines = await service.get_purchase_order_lines(session, tenant_id, po.id)
+
+    return GoodsReceiptSetup(
+        tenant_id=tenant_id,
+        item_id=stock.item_id,
+        warehouse_id=stock.warehouse_id,
+        bin_id=stock.bin_a_id,
+        inventory_account_id=stock.inventory_account_id,
+        cogs_account_id=stock.cogs_account_id,
+        price_difference_account_id=stock.price_difference_account_id,
+        gr_ir_account_id=gr_ir_account_id,
+        fiscal_year_id=stock.fiscal_year_id,
+        vendor_id=vendor.id,
+        po_id=po.id,
+        po_line_id=po_lines[0].id,
+        po_quantity=Decimal(po_quantity),
+        po_unit_cost=Decimal(po_unit_cost),
+    )
+
+
+async def build_goods_receipt(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    po_id: uuid.UUID,
+    warehouse_id: uuid.UUID,
+    lines: list[GoodsReceiptLineCreate],
+    receipt_date=None,
+) -> GoodsReceipt:
+    """Create a DRAFT goods receipt through the real service inside a uow (D-025). Returns the
+    persisted GR re-read after the uow commit."""
+    holder: dict[str, uuid.UUID] = {}
+
+    async def work() -> None:
+        with tenant_context(tenant_id):
+            gr = await service.create_goods_receipt(
+                session,
+                tenant_id,
+                GoodsReceiptCreate(
+                    purchase_order_id=po_id,
+                    warehouse_id=warehouse_id,
+                    receipt_date=receipt_date,
+                    lines=lines,
+                ),
+            )
+            holder["id"] = gr.id
+
+    with tenant_context(tenant_id):
+        await run_in_uow(session, work)
+        return await service.get_goods_receipt(session, tenant_id, holder["id"])
+
+
+async def post_goods_receipt(
+    session: AsyncSession, tenant_id: uuid.UUID, gr_id: uuid.UUID
+) -> GoodsReceipt:
+    """Post a DRAFT goods receipt through the real service inside a uow (D-025) — the full chain (GR
+    + stock moves + GR/IR journals + PO update). Returns the GR re-read after commit."""
+    async def work() -> None:
+        with tenant_context(tenant_id):
+            await service.post_goods_receipt(session, tenant_id, gr_id)
+
+    with tenant_context(tenant_id):
+        await run_in_uow(session, work)
+        return await service.get_goods_receipt(session, tenant_id, gr_id)
+
+
 # --- Principals ---------------------------------------------------------------
 
 # Finance + inventory setup keys the API tests need to scaffold cross-module data through the wire
-# (a vendor's currency lives in finance; an approved item points at a real inventory item).
-_FINANCE_SETUP_KEYS = ("finance.fx.manage",)
+# (a vendor's currency lives in finance; an approved item points at a real inventory item; a goods
+# receipt needs GL accounts, an open period, a GR/IR posting default, and a warehouse + bin — 6.3).
+_FINANCE_SETUP_KEYS = (
+    "finance.fx.manage",
+    "finance.account.manage",
+    "finance.period.manage",
+)
 _INVENTORY_SETUP_KEYS = (
     "inventory.uom.manage",
     "inventory.category.manage",
     "inventory.item.manage",
+    "inventory.warehouse.manage",
+    "inventory.bin.manage",
+    "inventory.move.read",
 )
 _FULL_KEYS = (*_PROCUREMENT_KEYS, *_FINANCE_SETUP_KEYS, *_INVENTORY_SETUP_KEYS)
 

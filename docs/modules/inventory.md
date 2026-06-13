@@ -308,3 +308,22 @@ same `post_count` engine, so the re-validation and one-transaction guarantee hol
 
 Permissions: `inventory.count.read` (the GETs), `inventory.count.manage` (create / record-count /
 cancel), `inventory.count.post` (the privileged post — it changes on-hand AND posts GL journals).
+
+## Valuation-offset override on a RECEIPT (PLAN 6.3 / D-041)
+
+A standalone RECEIPT (opening balance, manual stock-in) posts **Dr Inventory / Cr price-difference**
+— the costing engine's default offset. `create_move` accepts an optional
+`valuation_offset_account_id` that, when provided for a RECEIPT, **OVERRIDES** that offset: the
+`StockValued` event carries it as `offset_account_id` and finance's handler credits it instead. This
+is the sanctioned override path for procurement's goods receipt (6.3): the inventory handler that
+reacts to `procurement.goods_receipt.posted` creates each RECEIPT move with the GR/IR clearing
+account as the offset, yielding **Dr Inventory / Cr GR-IR** (the three-way-match clearing leg) rather
+than price-difference. The override is ignored on non-receipt move types (an ISSUE charges COGS, an
+ADJUSTMENT/TRANSFER its own offset) and on reversals; default `None` ⇒ behaviour unchanged. It
+threads end-to-end `create_move → costing.apply_costing → StockValued.offset_account_id →
+finance/handlers` and changes only the Cr leg, never the costing math.
+
+The cross-module bridge lives in `inventory/handlers.py` (new): it subscribes to procurement's
+`GoodsReceiptPosted` event and creates the moves in the same transaction — the mirror of the
+inventory→finance COGS handler (inventory publishes, finance handles), here procurement publishes and
+inventory handles. The GR↔move linkage is recorded via docflow (`moved_by`), not a cross-module FK.

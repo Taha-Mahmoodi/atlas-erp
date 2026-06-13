@@ -126,6 +126,29 @@ class PurchaseOrderStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class GoodsReceiptStatus(StrEnum):
+    """Lifecycle of a goods receipt — the document recording physical receipt of PO goods (6.3).
+
+    DRAFT → POSTED (chosen over post-at-create), because a GR is a document a receiving clerk
+    BUILDS line-by-line (which PO lines, into which bins, how much, lot/serials) and THEN posts: at
+    POST the stock RECEIPT moves are created (Dr Inventory / Cr GR-IR), the PO's received_quantity
+    rises and its status advances. Unlike a stock move (permanent at creation), a GR has a genuine
+    editable build phase, so DRAFT→POSTED is the right shape.
+
+    - DRAFT: created, editable; the GR number is already claimed (D-040 claim-at-creation). No stock
+      has moved, the PO is untouched. Can be CANCELLED.
+    - POSTED: the receipt is committed — N stock RECEIPT moves exist, the inventory-debit / GR-IR
+      journals are posted, the PO lines' received_quantity is raised and the PO status advanced. The
+      whole post is ONE transaction (GR + moves + journals + PO update) — all-or-nothing (a closed
+      period or insufficient handler rolls it ALL back). TERMINAL: a POSTED GR is corrected by a
+      reversing GR / a return (Phase 7 RMA), never cancelled (v1 has no reverse-GR; documented).
+    - CANCELLED: a DRAFT abandoned before posting; terminal. No stock ever moved."""
+
+    DRAFT = "DRAFT"
+    POSTED = "POSTED"
+    CANCELLED = "CANCELLED"
+
+
 class ApprovalDecision(StrEnum):
     """An approver's verdict on a submitted requisition / pending PO (the approve/reject action)."""
 
@@ -161,6 +184,13 @@ PURCHASE_ORDER_SEQUENCE_NAME = "procurement.po"
 PURCHASE_ORDER_NUMBER_PREFIX = "PO"
 PURCHASE_ORDER_NUMBER_PADDING = 5
 
+# Goods receipt (PLAN 6.3): registers in core_documents + claims a gapless GR number AT CREATION
+# (D-040, claim-at-creation; year-resetting GR-2026-00001), the orders/receipts branch.
+GOODS_RECEIPT_DOC_TYPE = "procurement.goods_receipt"
+GOODS_RECEIPT_SEQUENCE_NAME = "procurement.goods_receipt"
+GOODS_RECEIPT_NUMBER_PREFIX = "GR"
+GOODS_RECEIPT_NUMBER_PADDING = 5
+
 # docflow link types joining the chain (D-012 vocabulary). The edge is predecessor → successor, so
 # the link_type names the edge from the predecessor's point of view:
 #   requisition → rfq : the requisition is "sourced_by" the RFQ.
@@ -169,6 +199,15 @@ PURCHASE_ORDER_NUMBER_PADDING = 5
 REQUISITION_SOURCED_BY_RFQ_LINK = "sourced_by"
 RFQ_ORDERED_BY_PO_LINK = "ordered_by"
 REQUISITION_ORDERED_BY_PO_LINK = "ordered_by"
+# Goods-receipt edges (PLAN 6.3, D-041): the PO is "received_by" the GR; the GR "moved_by" each
+# stock move it generated (the GR↔move linkage lives in docflow, NOT a cross-module FK — D-041).
+PO_RECEIVED_BY_GR_LINK = "received_by"
+GR_MOVED_BY_STOCK_MOVE_LINK = "moved_by"
+
+# The procurement domain event the goods-receipt POST publishes (D-011/D-041): inventory's
+# handlers.py subscribes and creates the stock RECEIPT moves with the GR/IR offset in the SAME
+# transaction (the sanctioned cross-module mechanism — procurement never imports inventory/service).
+GOODS_RECEIPT_POSTED_EVENT_KEY = "procurement.goods_receipt.posted"
 
 
 # --- Permissions (D-009): one key per guarded endpoint action -----------------
@@ -193,6 +232,12 @@ PROCUREMENT_PO_MANAGE = "procurement.po.manage"
 PROCUREMENT_PO_APPROVE = "procurement.po.approve"
 # Approval rules (PLAN 6.2): managing the value thresholds is a single config authority.
 PROCUREMENT_APPROVAL_RULE_MANAGE = "procurement.approval_rule.manage"
+# Goods receipts (PLAN 6.3): read vs create/edit/cancel the draft document vs the privileged POST
+# action (posting a GR creates stock + posts the GR/IR journal — its own authority, the journal.post
+# precedent: building a document and committing it are distinct rights).
+PROCUREMENT_GOODS_RECEIPT_READ = "procurement.goods_receipt.read"
+PROCUREMENT_GOODS_RECEIPT_MANAGE = "procurement.goods_receipt.manage"
+PROCUREMENT_GOODS_RECEIPT_POST = "procurement.goods_receipt.post"
 
 register_permissions(
     PROCUREMENT_VENDOR_READ,
@@ -206,6 +251,9 @@ register_permissions(
     PROCUREMENT_PO_MANAGE,
     PROCUREMENT_PO_APPROVE,
     PROCUREMENT_APPROVAL_RULE_MANAGE,
+    PROCUREMENT_GOODS_RECEIPT_READ,
+    PROCUREMENT_GOODS_RECEIPT_MANAGE,
+    PROCUREMENT_GOODS_RECEIPT_POST,
     descriptions={
         PROCUREMENT_VENDOR_READ: "Read vendors and their approved items",
         PROCUREMENT_VENDOR_MANAGE: "Create and edit vendors and their approved items",
@@ -218,5 +266,8 @@ register_permissions(
         PROCUREMENT_PO_MANAGE: "Create, edit, convert and send purchase orders",
         PROCUREMENT_PO_APPROVE: "Approve or reject purchase orders pending approval",
         PROCUREMENT_APPROVAL_RULE_MANAGE: "Manage procurement approval-threshold rules",
+        PROCUREMENT_GOODS_RECEIPT_READ: "Read goods receipts",
+        PROCUREMENT_GOODS_RECEIPT_MANAGE: "Create, edit and cancel draft goods receipts",
+        PROCUREMENT_GOODS_RECEIPT_POST: "Post goods receipts (move stock and post the GR/IR entry)",
     },
 )

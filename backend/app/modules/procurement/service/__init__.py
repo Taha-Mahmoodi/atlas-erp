@@ -27,6 +27,17 @@ from app.modules.procurement.service.conversions import (
     convert_requisition_to_rfq,
     convert_rfq_to_po,
 )
+from app.modules.procurement.service.goods_receipt_reads import (
+    get_goods_receipt,
+    get_goods_receipt_lines,
+    goods_receipts_for_po,
+    list_goods_receipts,
+)
+from app.modules.procurement.service.goods_receipts import (
+    cancel_goods_receipt,
+    create_goods_receipt,
+    post_goods_receipt,
+)
 from app.modules.procurement.service.orders import (
     cancel_purchase_order,
     create_purchase_order,
@@ -67,6 +78,7 @@ from app.modules.procurement.service.vendors import (
 
 __all__ = [
     "add_approved_item",
+    "cancel_goods_receipt",
     "cancel_purchase_order",
     "cancel_requisition",
     "close_rfq",
@@ -74,6 +86,7 @@ __all__ = [
     "convert_requisition_to_rfq",
     "convert_rfq_to_po",
     "create_approval_rule",
+    "create_goods_receipt",
     "create_purchase_order",
     "create_requisition",
     "create_rfq",
@@ -81,6 +94,8 @@ __all__ = [
     "decide_purchase_order",
     "decide_requisition",
     "get_approval_rule",
+    "get_goods_receipt",
+    "get_goods_receipt_lines",
     "get_purchase_order",
     "get_purchase_order_lines",
     "get_requisition",
@@ -88,12 +103,15 @@ __all__ = [
     "get_rfq",
     "get_rfq_lines",
     "get_vendor",
+    "goods_receipts_for_po",
     "list_approval_rules",
     "list_approved_items",
+    "list_goods_receipts",
     "list_purchase_orders",
     "list_requisitions",
     "list_rfqs",
     "list_vendors",
+    "post_goods_receipt",
     "record_quote",
     "remove_approved_item",
     "requires_approval",
