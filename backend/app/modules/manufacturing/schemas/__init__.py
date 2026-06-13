@@ -5,6 +5,8 @@ precedent) — split by aggregate so each file stays small and the router import
 - ``boms``: the BOM header Create/Update/Read/Filter + the BomComponent Create/Read sub-resource.
 - ``routings``: the routing header Create/Update/Read/Filter + the RoutingOperation Create/Read
   sub-resource.
+- ``production``: the production-order Create/Read/Detail/Filter + the exploded component/operation
+  reads + the issue/finish action request bodies (PLAN 8.2).
 """
 
 from app.modules.manufacturing.schemas.boms import (
@@ -14,6 +16,17 @@ from app.modules.manufacturing.schemas.boms import (
     BomFilter,
     BomRead,
     BomUpdate,
+)
+from app.modules.manufacturing.schemas.production import (
+    ComponentIssueLine,
+    FinishOrderRequest,
+    IssueComponentsRequest,
+    ProductionOrderComponentRead,
+    ProductionOrderCreate,
+    ProductionOrderDetail,
+    ProductionOrderFilter,
+    ProductionOrderOperationRead,
+    ProductionOrderRead,
 )
 from app.modules.manufacturing.schemas.routings import (
     RoutingCreate,
@@ -37,6 +50,15 @@ __all__ = [
     "BomFilter",
     "BomRead",
     "BomUpdate",
+    "ComponentIssueLine",
+    "FinishOrderRequest",
+    "IssueComponentsRequest",
+    "ProductionOrderComponentRead",
+    "ProductionOrderCreate",
+    "ProductionOrderDetail",
+    "ProductionOrderFilter",
+    "ProductionOrderOperationRead",
+    "ProductionOrderRead",
     "RoutingCreate",
     "RoutingFilter",
     "RoutingOperationCreate",

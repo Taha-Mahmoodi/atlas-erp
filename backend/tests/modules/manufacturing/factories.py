@@ -37,7 +37,10 @@ from app.modules.manufacturing.schemas import (
     RoutingOperationCreate,
     WorkCenterCreate,
 )
-from tests.modules.inventory.factories import build_inventory_setup, build_item
+from tests.modules.inventory.factories import (
+    build_inventory_setup,
+    build_item,
+)
 
 # EVERY registered manufacturing.* key (importing manufacturing.constants registers them), so a new
 # permission is auto-granted to the full-rights principal (self-extending). Plus the finance +

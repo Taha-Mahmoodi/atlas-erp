@@ -177,8 +177,28 @@ AP_CONTROL = "ap_control"
 AR_CONTROL = "ar_control"
 SALES_REVENUE = "sales_revenue"
 
+# --- WIP clearing + production variance (PLAN 8.2, manufacturing production orders, D-048) -----
+# The WIP (work-in-process) clearing account is a per-tenant posting default (an ASSET/clearing
+# account). A production order's component ISSUE posts Dr WIP / Cr Inventory and its finished
+# RECEIPT posts Dr Inventory / Cr WIP, both via the inventory costing event's valuation-offset
+# OVERRIDE to this account (the GR/IR-override pattern, 6.3). WIP nets to ZERO per fully-issued +
+# finished order — the issue debits equal the finished credit plus any variance flush. A tenant
+# MUST map this purpose before a production order can issue/finish (it has nowhere to clear WIP);
+# resolved via finance/queries.wip_clearing_account.
+WIP_CLEARING = "wip_clearing"
+
+# The production-variance account (an EXPENSE/income variance account) absorbs the residual when an
+# order's accumulated WIP debit (issued component cost) differs from its finished-goods credit (the
+# value entering stock at the WIP-per-unit cost × finished quantity) — over/under-absorption, the
+# MAV zero-quantity flush analogue — so WIP still nets to ZERO at completion. The finish flow posts
+# the variance as a separate entry (Dr/Cr WIP / Cr/Dr variance) AFTER the finished RECEIPT.
+# Resolved via finance/queries.production_variance_account; a tenant MUST map it before an order
+# whose finish carries a residual can complete.
+PRODUCTION_VARIANCE = "production_variance"
+
 # Every known posting-default purpose: FX + the CO/bank/asset clearing accounts + GR-IR + PPV + AP +
-# the AR control + sales-revenue defaults the 7.4 sales billing / credit-note flow resolves.
+# the AR control + sales-revenue defaults the 7.4 sales billing / credit-note flow resolves + the
+# WIP clearing + production-variance defaults the 8.2 production-order flow resolves.
 POSTING_PURPOSES: frozenset[str] = FX_POSTING_PURPOSES | frozenset(
     {
         CO_ALLOCATION_CLEARING,
@@ -189,6 +209,8 @@ POSTING_PURPOSES: frozenset[str] = FX_POSTING_PURPOSES | frozenset(
         AP_CONTROL,
         AR_CONTROL,
         SALES_REVENUE,
+        WIP_CLEARING,
+        PRODUCTION_VARIANCE,
     }
 )
 

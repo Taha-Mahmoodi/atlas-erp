@@ -45,6 +45,11 @@ from app.core import docflow
 from app.modules.inventory.constants import MoveType
 from app.modules.inventory.schemas import StockMoveCreate
 from app.modules.inventory.service.stock_moves import create_move
+from app.modules.manufacturing.constants import (
+    PRODUCTION_ORDER_FINISHED_TO_MOVE_LINK,
+    PRODUCTION_ORDER_ISSUED_TO_MOVE_LINK,
+)
+from app.modules.manufacturing.events import ComponentsIssued, OrderFinished
 from app.modules.procurement.constants import GR_MOVED_BY_STOCK_MOVE_LINK
 from app.modules.procurement.events import GoodsReceiptPosted
 from app.modules.sales.constants import (
@@ -169,8 +174,93 @@ async def receive_return_moves(session: AsyncSession, event: ReturnReceived) -> 
         )
 
 
+async def issue_production_components(
+    session: AsyncSession, event: ComponentsIssued
+) -> None:
+    """Create the stock ISSUE moves for a production order's component issue (D-048), in the issue's
+    transaction — a manufacturing twin of ``issue_delivery_moves`` but WITH a valuation-offset
+    override.
+
+    One move per component line, each issuing FROM the line's source bin, each passing
+    ``valuation_offset_account_id`` = the event's ``wip_account_id`` (the OVERRIDE, mirroring 6.3's
+    GR/IR override but on an ISSUE) so the costing engine posts Dr WIP / Cr Inventory at the
+    component's moving-average/FIFO cost — instead of the default Dr COGS / Cr Inventory. The
+    costing engine COMPUTES the cost of the stock that left, so no unit_cost is passed. Insufficient
+    stock at a bin raises InsufficientStockError, rolling the whole issue back (D-020). Links the
+    order document to each move document ('issued_to'). Registered via
+    ``app.main.register_event_handlers`` (not an import-time ``@on``), so the test harness
+    re-registers it after its per-test ``clear_subscriptions`` reset."""
+    move_date = date.fromisoformat(event.move_date)
+    for line in event.moves:
+        move = await create_move(
+            session,
+            event.tenant_id,
+            StockMoveCreate(
+                move_type=MoveType.ISSUE,
+                item_id=line.item_id,
+                quantity=line.quantity,
+                from_bin_id=line.bin_id,
+                lot_id=line.lot_id,
+                serial_id=line.serial_id,
+                move_date=move_date,
+                reference=event.order_number,
+            ),
+            valuation_offset_account_id=event.wip_account_id,
+        )
+        await docflow.link_documents(
+            session,
+            event.tenant_id,
+            predecessor=event.document_id,
+            successor=move.document_id,
+            link_type=PRODUCTION_ORDER_ISSUED_TO_MOVE_LINK,
+        )
+
+
+async def receive_finished_order_move(
+    session: AsyncSession, event: OrderFinished
+) -> None:
+    """Create the finished-goods RECEIPT move for a finished production order (D-048), in the
+    finish's transaction — the INBOUND counterpart of ``issue_production_components``.
+
+    One RECEIPT move for the parent item, receiving INTO the destination bin at the event's
+    ``unit_cost`` (= accumulated WIP / finished quantity), passing
+    ``valuation_offset_account_id`` = the event's ``wip_account_id`` (the OVERRIDE) so the costing
+    posts Dr Inventory / Cr WIP — REVERSING the component issues' WIP debit so WIP nets toward zero.
+    A tracked item's lot/serial CODE may create the master instance on the fly (a RECEIPT
+    allowance). Links the order document to the move document ('finished_to'). A closed period trips
+    the move's WIP journal trigger and rolls the whole finish back. Registered via
+    ``app.main.register_event_handlers`` (not an import-time ``@on``)."""
+    move_date = date.fromisoformat(event.move_date)
+    line = event.move
+    move = await create_move(
+        session,
+        event.tenant_id,
+        StockMoveCreate(
+            move_type=MoveType.RECEIPT,
+            item_id=line.item_id,
+            quantity=line.quantity,
+            to_bin_id=line.bin_id,
+            lot_code=line.lot_code,
+            serial_code=line.serial_code,
+            move_date=move_date,
+            unit_cost=line.unit_cost,
+            reference=event.order_number,
+        ),
+        valuation_offset_account_id=event.wip_account_id,
+    )
+    await docflow.link_documents(
+        session,
+        event.tenant_id,
+        predecessor=event.document_id,
+        successor=move.document_id,
+        link_type=PRODUCTION_ORDER_FINISHED_TO_MOVE_LINK,
+    )
+
+
 __all__ = [
     "issue_delivery_moves",
+    "issue_production_components",
+    "receive_finished_order_move",
     "receive_goods_receipt_moves",
     "receive_return_moves",
 ]

@@ -79,8 +79,10 @@ from app.modules.finance.constants.documents import (
     JOURNAL_NUMBER_PREFIX,
     JOURNAL_SEQUENCE_NAME,
     POSTING_PURPOSES,
+    PRODUCTION_VARIANCE,
     PURCHASE_PRICE_VARIANCE,
     SALES_REVENUE,
+    WIP_CLEARING,
     dunning_level_for,
 )
 from app.modules.finance.constants.enums import (
@@ -239,8 +241,10 @@ __all__ = [
     "JOURNAL_NUMBER_PREFIX",
     "JOURNAL_SEQUENCE_NAME",
     "POSTING_PURPOSES",
+    "PRODUCTION_VARIANCE",
     "PURCHASE_PRICE_VARIANCE",
     "SALES_REVENUE",
+    "WIP_CLEARING",
     "AccountType",
     "AllocationBasis",
     "AllocationRunStatus",

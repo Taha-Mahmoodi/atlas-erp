@@ -120,6 +120,24 @@ async def bin_exists(
     return (await session.execute(stmt)).first() is not None
 
 
+async def default_bin_for_warehouse(
+    session: AsyncSession, tenant_id: uuid.UUID, warehouse_id: uuid.UUID
+) -> uuid.UUID | None:
+    """The default ACTIVE bin of a warehouse (or the lowest-coded active bin, or None) — PLAN 8.2,
+    D-048. A production order pre-fills each exploded component row's source bin from this. Exposed
+    so MANUFACTURING reads it downward (STRUCTURE §5) without importing inventory models."""
+    stmt = (
+        select(Bin.id)
+        .where(
+            Bin.tenant_id == tenant_id,
+            Bin.warehouse_id == warehouse_id,
+            Bin.is_active.is_(True),
+        )
+        .order_by(Bin.is_default.desc(), Bin.code).limit(1)
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
 async def lot_id_for_code(
     session: AsyncSession, tenant_id: uuid.UUID, item_id: uuid.UUID, lot_code: str
 ) -> uuid.UUID | None:

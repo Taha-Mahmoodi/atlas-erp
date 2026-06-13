@@ -17,10 +17,16 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.manufacturing.constants import BomStatus, RoutingStatus
+from app.modules.manufacturing.constants import (
+    BomStatus,
+    ProductionOrderStatus,
+    RoutingStatus,
+)
 from app.modules.manufacturing.models import (
     Bom,
     BomComponent,
+    ProductionOrder,
+    ProductionOrderComponent,
     Routing,
     RoutingOperation,
     WorkCenter,
@@ -120,3 +126,68 @@ async def work_center_capacity(
         WorkCenter.tenant_id == tenant_id, WorkCenter.id == work_center_id
     )
     return (await session.execute(stmt)).scalar_one_or_none()
+
+
+# --- Production orders (PLAN 8.2, D-048) --------------------------------------
+
+
+async def get_production_order(
+    session: AsyncSession, tenant_id: uuid.UUID, order_id: uuid.UUID
+) -> ProductionOrder | None:
+    """The production-order header with ``order_id`` in the tenant, or None."""
+    stmt = select(ProductionOrder).where(
+        ProductionOrder.tenant_id == tenant_id, ProductionOrder.id == order_id
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def production_order_components(
+    session: AsyncSession, tenant_id: uuid.UUID, order_id: uuid.UUID
+) -> list[ProductionOrderComponent]:
+    """A production order's exploded component requirements, ordered by line_number (the issue input
+    + the nested list). One indexed read by (tenant, production_order_id)."""
+    stmt = (
+        select(ProductionOrderComponent)
+        .where(
+            ProductionOrderComponent.tenant_id == tenant_id,
+            ProductionOrderComponent.production_order_id == order_id,
+        )
+        .order_by(ProductionOrderComponent.line_number)
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def order_wip_balance(
+    session: AsyncSession, tenant_id: uuid.UUID, order_id: uuid.UUID
+) -> Decimal | None:
+    """A production order's ACCUMULATED WIP cost (D-048): the running WIP debit raised by each
+    component issue and consumed at finish. The maintained header figure (not a journal recompute)
+    so the finish flow derives the finished unit cost from it; the WIP-nets-to-zero SSOT. None if
+    the order does not exist."""
+    stmt = select(ProductionOrder.accumulated_wip_cost).where(
+        ProductionOrder.tenant_id == tenant_id, ProductionOrder.id == order_id
+    )
+    value = (await session.execute(stmt)).scalar_one_or_none()
+    return Decimal(value) if value is not None else None
+
+
+async def open_production_orders(
+    session: AsyncSession, tenant_id: uuid.UUID
+) -> list[ProductionOrder]:
+    """The OPEN production orders (DRAFT / RELEASED / IN_PROGRESS) — not yet FINISHED or CANCELLED
+    (PLAN 8.2). 8.3's capacity load + a shop-floor dashboard read these. Index-served by
+    (tenant, status); ordered by order_number for a stable scan."""
+    open_statuses = (
+        ProductionOrderStatus.DRAFT.value,
+        ProductionOrderStatus.RELEASED.value,
+        ProductionOrderStatus.IN_PROGRESS.value,
+    )
+    stmt = (
+        select(ProductionOrder)
+        .where(
+            ProductionOrder.tenant_id == tenant_id,
+            ProductionOrder.status.in_(open_statuses),
+        )
+        .order_by(ProductionOrder.order_number)
+    )
+    return list((await session.execute(stmt)).scalars().all())
