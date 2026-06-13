@@ -18,6 +18,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.main import register_event_handlers
 from tests.modules.sales.factories import (
     SalesPrincipal,
     SalesSetup,
@@ -26,6 +27,16 @@ from tests.modules.sales.factories import (
 )
 
 __all__ = ["SalesPrincipal", "SalesSetup"]
+
+
+@pytest.fixture(autouse=True)
+def _register_event_handlers(clear_event_subscriptions: Callable[[], None]) -> None:
+    """Re-subscribe the cross-module domain-event handlers for every sales test (PLAN 7.3, D-011/
+    D-025). The 7.3 delivery → inventory ISSUE-move → finance COGS chain rides the event bus, so a
+    posted delivery only moves stock + posts COGS when the handlers are registered. Depends on the
+    per-test ``clear_event_subscriptions`` reset so it runs AFTER it; idempotent
+    (``register_event_handlers`` de-duplicates), the procurement conftest precedent."""
+    register_event_handlers()
 
 
 @pytest.fixture

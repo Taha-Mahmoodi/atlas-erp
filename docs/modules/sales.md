@@ -116,6 +116,9 @@ floor; the winner is picked in Python over that small set — no per-list N+1.
 | `POST /orders/{id}/credit-release` | `sales.order.credit_release` | Release a CREDIT_BLOCKED order past the limit, then confirm (idempotent). |
 | `POST /orders/{id}/cancel` | `sales.order.manage` | Cancel before any delivery/invoice. |
 | `POST /orders/atp` `{lines:[{item_id,quantity}]}` / `GET /orders/atp?item_id=&quantity=&date=` | `sales.order.read` | The availability preview (D-044). |
+| `POST /deliveries`, `GET /deliveries`, `GET /deliveries/{id}` | `sales.delivery.manage` / `.read` | Delivery create (idempotent) + reads; list paginated, `?sales_order_id=&status=`. |
+| `POST /deliveries/{id}/post` | `sales.delivery.post` | Issue stock + post COGS via the event bus (idempotent); advances the order. |
+| `POST /deliveries/{id}/cancel` | `sales.delivery.manage` | Cancel a DRAFT delivery (a POSTED delivery is terminal). |
 
 Reference lists (customers, customer groups, price lists) support conditional GETs via a tenant-scoped
 collection ETag (PERFORMANCE §3 / D-035): an `If-None-Match` hit returns 304 without running the page
@@ -130,10 +133,11 @@ query. Every list runs within the ≤3-query budget (auth load + page select).
   `customer_payment_terms_days`, `customer_default_currency`, and `resolve_price`. 7.2–7.4 and finance
   AR reporting read these.
 
-7.1 publishes **no domain events** (masters + pricing drive no cross-module effects). **7.2 still
-publishes none:** a confirmed order is a COMMITMENT (like a PO) with no finance/inventory posting —
-7.3's delivery is the first sales event (stock issue → COGS). So there is no `events.py`/`handlers.py`
-under sales yet (the no-empty-file rule).
+7.1 publishes **no domain events** (masters + pricing drive no cross-module effects). **7.2 publishes
+none either:** a confirmed order is a COMMITMENT (like a PO) with no finance/inventory posting.
+**7.3's delivery is the first sales event** — `DeliveryShipped` (in `sales/events.py`) drives the
+stock issue → COGS chain; inventory's `handlers.py` (not sales') subscribes, so sales still ships no
+`handlers.py` (it publishes, the downstream module handles — STRUCTURE §5).
 
 ## Quote → Order (7.2, D-044)
 
@@ -188,6 +192,57 @@ no-op).
 A CONFIRMED order's undelivered quantity (ordered − delivered) is "committed" — there is no separate
 reservation table; `committed_quantity` is a query over confirmed-but-undelivered order lines (D-044).
 When 7.3 delivers, `delivered_quantity` rises and the commitment shrinks automatically.
+
+## Delivery (7.3, D-045) — the outbound twin of the goods receipt
+
+A **delivery** records the physical shipment of order goods — the **outbound mirror** of the
+procurement goods receipt (6.3): same DRAFT → POSTED shape, same event-bus stock seam, the inverse
+GL direction (a receipt brings stock IN at a cost; a delivery sends it OUT against COGS). A
+`Delivery` (`sales_deliveries`, `DocumentMixin` + gapless `DN-` number claimed at creation) is built
+DRAFT against a CONFIRMED (or already PARTIALLY_DELIVERED) order — `sales_order_id` composite FK,
+`customer_id` snapshot, `warehouse_id` opaque inventory id — with `DeliveryLine`s naming the order
+line shipped against, the **source** `bin_id`, the shipped quantity, and optional lot/serial codes;
+`item_id` is **snapshot from the order line** (the create payload names only the order line, so the
+client cannot rewrite the ordered item). No stock moves at create — that is POST.
+
+**Partial shipments + backorders.** A line ships at most its **open-to-deliver** quantity (ordered −
+delivered); over-delivery is **rejected 422 `sales.over_delivery`** in v1. A partial delivery leaves
+the rest as a **backorder** = the still-undelivered open order lines (there is no separate backorder
+table — a follow-up delivery against the same order, now PARTIALLY_DELIVERED, completes them). Create
+also pre-checks the source bin holds enough stock (422 `sales.insufficient_stock`); a non-deliverable
+order is 422 `sales.order_not_confirmed`.
+
+**Stock issue → COGS via the event bus (§5 / D-045).** Sales must NOT call inventory's service. So
+`post_delivery` publishes `DeliveryShipped` carrying the per-line issues; **inventory's `handlers.py`**
+subscribes and creates the stock **ISSUE** moves, which publish `StockValued` so finance posts the
+**Dr COGS / Cr Inventory** journals at the moving-average issue cost — a two-hop, same-transaction
+chain (sales → inventory → finance). Unlike 6.3's GR/IR **valuation-offset override**, a delivery
+sets **no offset account** on the event: an ISSUE move's **default** offset is the item-category COGS
+account, so **COGS *is* the issue offset** (D-045/D-020) — there is no GR/IR-style intermediary on
+the outbound side.
+
+**Atomic + closed-period rollback.** The whole post — delivery + N issue moves + N COGS journals +
+the order `delivered_quantity` raise + the order status advance + the docflow link — commits
+**atomically** or rolls back together (D-011): a **closed-period `delivery_date`** trips a move's
+journal period trigger, and **insufficient stock** at a bin trips the move's no-negative guard; either
+rolls the entire post back (no move, no journal, the delivery stays DRAFT).
+
+**Delivery↔move linkage = docflow, not a cross-module FK (D-045).** Inventory owns the move, so the
+delivery line carries no `stock_move_id`; the chain records order →`delivered_by`→ delivery
+→`moved_by`→ each stock move, and the DocFlow endpoint renders the full order → delivery → move chain.
+
+**Order status + the ATP shrink.** A post raises each order line's `delivered_quantity` and advances
+the order to **PARTIALLY_DELIVERED** (any line still open) or **DELIVERED** (every line fully
+delivered). Because `committed_quantity` is confirmed-undelivered demand, the delivered quantity is no
+longer committed — the **ATP committed-quantity shrinks** by exactly the delivered amount after the
+post (the 7.2 reservation drains as goods ship).
+
+**Lifecycle: DRAFT → POSTED (POSTED terminal).** A DRAFT delivery can be CANCELLED; a **POSTED
+delivery is terminal** — it has issued stock and posted COGS, so it is corrected by a return / RMA
+(7.4), never cancelled (v1 ships no reverse-delivery). Post is idempotent (D-013); re-posting a POSTED
+delivery is rejected. RBAC splits three authorities (D-009): read by `sales.delivery.read`,
+create/cancel the DRAFT by `sales.delivery.manage`, and the POST action (issue stock + post COGS) by
+the distinct `sales.delivery.post` (building a delivery note and shipping it are separate rights).
 
 ## What 7.3–7.4 add
 

@@ -8,8 +8,17 @@ that surface, so the split is an internal detail.
 - ``masters``: customer master + customer groups + price lists + the price-quote response (7.1).
 - ``orders``: quote + order create/update/read/filter (+ lines), the action payloads, and the
   ATP-check schemas (7.2).
+- ``deliveries``: delivery create/read/filter (+ lines) — the outbound fulfilment document (7.3).
 """
 
+from app.modules.sales.schemas.deliveries import (
+    DeliveryCreate,
+    DeliveryDetail,
+    DeliveryFilter,
+    DeliveryLineCreate,
+    DeliveryLineRead,
+    DeliveryRead,
+)
 from app.modules.sales.schemas.masters import (
     CustomerCreate,
     CustomerFilter,
@@ -61,6 +70,12 @@ __all__ = [
     "CustomerGroupUpdate",
     "CustomerRead",
     "CustomerUpdate",
+    "DeliveryCreate",
+    "DeliveryDetail",
+    "DeliveryFilter",
+    "DeliveryLineCreate",
+    "DeliveryLineRead",
+    "DeliveryRead",
     "PriceListCreate",
     "PriceListFilter",
     "PriceListItemCreate",

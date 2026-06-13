@@ -29,6 +29,7 @@ from app.modules.sales import service
 from app.modules.sales.models import (
     Customer,
     CustomerGroup,
+    Delivery,
     PriceList,
     PriceListItem,
     Quote,
@@ -37,6 +38,7 @@ from app.modules.sales.models import (
 from app.modules.sales.schemas import (
     CustomerCreate,
     CustomerGroupCreate,
+    DeliveryCreate,
     PriceListCreate,
     PriceListItemCreate,
     QuoteCreate,
@@ -295,9 +297,10 @@ async def confirm_sales_order(
 class OrderSetup:
     """A tenant ready to create + confirm sales orders against real ATP + credit data (PLAN 7.2): a
     customer, a STOCKED item with a warehouse + bin (so on-hand can be seeded), the base UoM, and
-    the
-    open 2026 year. Plain ids so a rollback (expiring loaded ORM objects) cannot break a follow-up
-    payload."""
+    the open 2026 year. The category's inventory + COGS account ids are exposed so 7.3 delivery
+    tests
+    can assert the posted COGS journal (Dr COGS / Cr Inventory). Plain ids so a rollback (expiring
+    loaded ORM objects) cannot break a follow-up payload."""
 
     tenant_id: uuid.UUID
     currency_code: str
@@ -306,6 +309,9 @@ class OrderSetup:
     uom_id: uuid.UUID
     warehouse_id: uuid.UUID
     bin_id: uuid.UUID
+    bin_b_id: uuid.UUID
+    inventory_account_id: uuid.UUID
+    cogs_account_id: uuid.UUID
 
 
 async def build_order_setup(
@@ -313,15 +319,18 @@ async def build_order_setup(
     tenant_id: uuid.UUID,
     *,
     credit_limit: str = "1000000",
+    tracking_mode: str = "NONE",
 ) -> OrderSetup:
     """A stocked item (warehouse + bin + open year, via inventory's build_stock_setup) and an ACTIVE
     customer with a generous default credit limit (PLAN 7.2). on-hand / on-order / open-AR are
     seeded
     by the dedicated helpers below. ``credit_limit`` defaults high so ATP tests are not blocked by
-    credit; credit tests pass a small limit."""
+    credit; credit tests pass a small limit. ``tracking_mode`` makes the item
+    lot-/serial-tracked for
+    the 7.3 lot/serial delivery tests."""
     from tests.modules.inventory.factories import build_stock_setup
 
-    stock = await build_stock_setup(session, tenant_id)
+    stock = await build_stock_setup(session, tenant_id, tracking_mode=tracking_mode)
     await seed_currency(session, tenant_id)  # USD in finance, for the customer's default currency
     customer = await build_customer(
         session, tenant_id, customer_code="ORD-CUST", credit_limit=Decimal(credit_limit)
@@ -334,6 +343,9 @@ async def build_order_setup(
         uom_id=stock.base_uom_id,
         warehouse_id=stock.warehouse_id,
         bin_id=stock.bin_a_id,
+        bin_b_id=stock.bin_b_id,
+        inventory_account_id=stock.inventory_account_id,
+        cogs_account_id=stock.cogs_account_id,
     )
 
 
@@ -452,6 +464,101 @@ async def seed_open_ar(
 
     with tenant_context(setup.tenant_id):
         await run_in_uow(session, work)
+
+
+# --- Deliveries (PLAN 7.3) ----------------------------------------------------
+
+
+async def seed_on_hand_lot(
+    session: AsyncSession,
+    setup: OrderSetup,
+    quantity: str,
+    *,
+    lot_code: str | None = None,
+    serial_code: str | None = None,
+) -> None:
+    """Seed on-hand stock for a tracked item by posting a RECEIPT move that CREATES the lot/serial
+    master on the bin (D-025) — a delivery then issues against that existing lot/serial id."""
+    from tests.modules.inventory.factories import build_stock
+
+    await build_stock(
+        session,
+        setup.tenant_id,
+        setup.item_id,
+        setup.bin_id,
+        Decimal(quantity),
+        lot_code=lot_code,
+        serial_code=serial_code,
+    )
+
+
+async def build_confirmed_order(
+    session: AsyncSession,
+    setup: OrderSetup,
+    *,
+    quantity: str = "5",
+    unit_price: str = "10",
+) -> SalesOrder:
+    """Create + CONFIRM a one-line sales order for the setup's item (PLAN 7.3 precondition): a
+    confirmed order is the state a delivery picks from. Returns the confirmed order re-read."""
+    order = await build_sales_order(
+        session,
+        setup.tenant_id,
+        customer_id=setup.customer_id,
+        item_id=setup.item_id,
+        uom_id=setup.uom_id,
+        quantity=quantity,
+        unit_price=unit_price,
+    )
+    return await confirm_sales_order(session, setup.tenant_id, order.id)
+
+
+async def build_delivery(
+    session: AsyncSession,
+    setup: OrderSetup,
+    *,
+    order_id: uuid.UUID,
+    lines: list,
+    delivery_date: date | None = None,
+    warehouse_id: uuid.UUID | None = None,
+) -> Delivery:
+    """Create a DRAFT delivery against an order through the real service inside a uow (D-025), so
+    numbering + docflow fire as in production. ``lines`` is a list of DeliveryLineCreate.
+    Returns the
+    persisted delivery re-read after the uow commit."""
+    holder: dict[str, uuid.UUID] = {}
+
+    async def work() -> None:
+        with tenant_context(setup.tenant_id):
+            delivery = await service.create_delivery(
+                session,
+                setup.tenant_id,
+                DeliveryCreate(
+                    sales_order_id=order_id,
+                    warehouse_id=warehouse_id or setup.warehouse_id,
+                    delivery_date=delivery_date,
+                    lines=lines,
+                ),
+            )
+            holder["id"] = delivery.id
+
+    with tenant_context(setup.tenant_id):
+        await run_in_uow(session, work)
+        return await service.get_delivery(session, setup.tenant_id, holder["id"])
+
+
+async def post_delivery(
+    session: AsyncSession, tenant_id: uuid.UUID, delivery_id: uuid.UUID
+) -> Delivery:
+    """Post a DRAFT delivery through the real service inside a uow (D-025): issues stock + posts the
+    COGS journal via the event bus, advances the order. Returns the posted delivery re-read."""
+    async def work() -> None:
+        with tenant_context(tenant_id):
+            await service.post_delivery(session, tenant_id, delivery_id)
+
+    with tenant_context(tenant_id):
+        await run_in_uow(session, work)
+        return await service.get_delivery(session, tenant_id, delivery_id)
 
 
 # --- Principals ---------------------------------------------------------------

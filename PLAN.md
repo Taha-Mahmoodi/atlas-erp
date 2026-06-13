@@ -79,7 +79,7 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 
 - [x] 7.1 Customer master with credit limits; condition-style pricing (price lists per currency/customer group/date range, discounts)
 - [x] 7.2 Quote → Order with ATP check (on-hand + on-order) and credit-limit block at confirmation
-- [ ] 7.3 Delivery with partial shipments + backorders → stock issue + COGS via events
+- [x] 7.3 Delivery with partial shipments + backorders → stock issue + COGS via events
 - [ ] 7.4 Billing: invoice from delivery, revenue journals; RMA returns with credit notes
 
 ## Phase 8 — Manufacturing

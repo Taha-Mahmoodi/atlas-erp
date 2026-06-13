@@ -10,6 +10,7 @@ in main.py):
 - quote_router: sales quotations + send/accept/reject/cancel/convert actions (7.2).
 - order_router: sales orders + confirm (ATP + credit gate) / credit-release / cancel actions and the
   ATP-check endpoint (7.2).
+- delivery_router: outbound deliveries + post (issue stock + COGS) / cancel actions (7.3).
 
 Every route is guarded by a sales permission key (D-009; manage vs read distinct). Writes commit
 through ``run_in_uow`` (D-011) so audit rows ride the same transaction.
@@ -36,6 +37,7 @@ from app.modules.sales.constants import (
     SALES_CUSTOMER_MANAGE,
     SALES_CUSTOMER_READ,
 )
+from app.modules.sales.delivery_router import delivery_router
 from app.modules.sales.models import Customer, CustomerGroup
 from app.modules.sales.order_router import order_router
 from app.modules.sales.pricing_router import pricing_router
@@ -58,6 +60,7 @@ CursorParamsDep = Depends(cursor_params)
 router.include_router(pricing_router)
 router.include_router(quote_router)
 router.include_router(order_router)
+router.include_router(delivery_router)
 
 
 async def _commit[T](session: SessionDep, work: Callable[[], Awaitable[T]]) -> T:
