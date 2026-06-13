@@ -82,3 +82,61 @@ def create_abort_trigger(
             f"FOR EACH ROW {when_clause}"
             f"BEGIN SELECT RAISE(ABORT, '{token}'); END;"
         )
+
+
+def create_pg_function(op: Any, function_name: str, body: str) -> None:
+    """Create (OR REPLACE) a plpgsql trigger function whose ``body`` is the statements between
+    ``BEGIN`` and ``END`` (PostgreSQL only; no-op on SQLite). Used for the journal guards whose
+    check is a cross-table aggregate or a column-by-column OLD/NEW comparison that the simple
+    ``create_abort_trigger`` cannot express. The body must end with ``RETURN NEW;`` (or
+    ``RETURN OLD;`` for DELETE) on the allowed path and ``RAISE EXCEPTION 'ATLAS_...'`` on the
+    rejected path."""
+    if _dialect(op) == "postgresql":
+        op.execute(
+            f"CREATE OR REPLACE FUNCTION {function_name}() RETURNS trigger AS $$ "
+            f"BEGIN {body} END; $$ LANGUAGE plpgsql;"
+        )
+
+
+def create_pg_trigger(
+    op: Any,
+    *,
+    name: str,
+    table: str,
+    event: str,
+    function_name: str,
+    when: str | None = None,
+) -> None:
+    """Attach a BEFORE-``event`` trigger to ``table`` running ``function_name`` (PostgreSQL only).
+    ``event`` may be a multi-event clause like ``"UPDATE OR DELETE"``. ``when`` is an optional
+    WHEN guard (it cannot reference subqueries on PG, so subquery checks live in the function
+    body)."""
+    if _dialect(op) == "postgresql":
+        when_clause = f"WHEN ({when}) " if when else ""
+        op.execute(
+            f"CREATE TRIGGER {name} BEFORE {event} ON {table} "
+            f"FOR EACH ROW {when_clause}EXECUTE FUNCTION {function_name}();"
+        )
+
+
+def create_sqlite_trigger(
+    op: Any,
+    *,
+    name: str,
+    table: str,
+    event: TriggerEvent,
+    body: str,
+    when: str | None = None,
+) -> None:
+    """Create a SQLite BEFORE-``event`` trigger whose ``body`` is the statement(s) between
+    ``BEGIN`` and ``END`` (SQLite only; no-op on PostgreSQL). The body typically issues
+    ``SELECT RAISE(ABORT, 'ATLAS_...') WHERE <condition>;`` so the abort fires only when the
+    invariant is violated — SQLite's WHEN clause cannot reference subqueries, so the cross-table
+    check lives in the WHERE of the RAISE select inside the body instead. ``when`` is an optional
+    simple WHEN guard on NEW/OLD columns."""
+    if _dialect(op) != "postgresql":
+        when_clause = f"WHEN {when} " if when else ""
+        op.execute(
+            f"CREATE TRIGGER {name} BEFORE {event} ON {table} "
+            f"FOR EACH ROW {when_clause}BEGIN {body} END;"
+        )

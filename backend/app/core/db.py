@@ -81,9 +81,11 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
     return session_factory
 
 
-# Register the D-013 idempotency model on Base.metadata HERE rather than via core/models'
-# trailing import: core/idempotency imports THIS module for its session dependencies, and this
-# module imports core/audit -> core/models, so the registration must happen AFTER db/audit/tenancy
-# finish loading (the bottom of this file) to avoid the import cycle. Side-effect import only —
-# the name binds the model class so alembic env.py and the engine bootstrap see the table.
+# Register the D-013 idempotency model and the 4P.5 jobs model on Base.metadata HERE rather than
+# via core/models' trailing import: core/idempotency imports THIS module for its session
+# dependencies and core/jobs imports core/audit (the actor ContextVar), while this module imports
+# core/audit -> core/models — so the registration must happen AFTER db/audit/tenancy finish
+# loading (the bottom of this file) to avoid the import cycle. Side-effect imports only — the
+# names bind the model classes so alembic env.py and the engine bootstrap see the tables.
 from app.core import idempotency as _idempotency  # noqa: E402,F401
+from app.core import jobs as _jobs  # noqa: E402,F401

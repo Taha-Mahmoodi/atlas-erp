@@ -1,7 +1,7 @@
 """Declarative Base with the D-022 naming convention and shared model mixins."""
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import sqlalchemy as sa
@@ -54,19 +54,33 @@ class AuditMixin:
     __audit_exclude__: frozenset[str] = frozenset()
 
 
+def utcnow() -> datetime:
+    """Canonical timestamp source for every SQLAlchemy write (#34)."""
+    return datetime.now(UTC)
+
+
 class TimestampMixin:
-    """Timezone-aware UTC stamps with server-side defaults on both engines."""
+    """Timezone-aware UTC stamps, ALWAYS Python-written (#34).
+
+    The Python ``default``/``onupdate`` fire for ORM and Core inserts alike, so every
+    stored value uses SQLAlchemy's canonical SQLite string format (six-digit
+    microseconds). The DDL ``server_default`` remains only as a fallback for raw SQL
+    outside SQLAlchemy and must never be relied on: SQLite's CURRENT_TIMESTAMP writes
+    second-precision strings whose lexicographic comparison against bound datetimes
+    breaks keyset-pagination equality — the #34 infinite-page-loop bug."""
 
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=False,
+        default=utcnow,
         server_default=sa.func.now(),
     )
     updated_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=False,
+        default=utcnow,
         server_default=sa.func.now(),
-        onupdate=sa.func.now(),
+        onupdate=utcnow,
     )
 
 
@@ -282,7 +296,8 @@ class AuditLog(UuidPKMixin, TenantMixin, TimestampMixin, Base):
 from app.core import docflow as _docflow  # noqa: E402,F401
 from app.core import numbering as _numbering  # noqa: E402,F401
 
-# NOTE: the D-013 core_idempotency_keys model (core/idempotency.py) is NOT registered here. It
-# imports core/db (for its FastAPI session dependencies), and core/db imports core/audit ->
-# core/models, so a trailing import here would dead-lock the import cycle. It is registered from
-# the bottom of core/db.py instead, after db/audit/tenancy have finished loading.
+# NOTE: the D-013 core_idempotency_keys model (core/idempotency.py) and the 4P.5 core_jobs model
+# (core/jobs.py) are NOT registered here. Both import modules that import core/models mid-cycle
+# (idempotency imports core/db; jobs imports core/audit for the actor ContextVar), so a trailing
+# import here would dead-lock the import cycle. They are registered from the bottom of
+# core/db.py instead, after db/audit/tenancy have finished loading.

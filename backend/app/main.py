@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DBAPIError
 from starlette.datastructures import MutableHeaders
@@ -18,10 +19,12 @@ from app.core.config import Settings, get_settings
 from app.core.docflow_router import router as docflow_router
 from app.core.exceptions import AtlasError, translate_db_guard_error
 from app.core.idempotency import REPLAYED_HEADER, IdempotencyReplay
+from app.core.jobs_router import router as jobs_router
 from app.core.rbac import current_permissions
 from app.core.schemas import ErrorBody, ErrorEnvelope
 from app.core.security_router import router as security_router
 from app.core.tenancy import current_tenant_id
+from app.modules.finance.router import router as finance_router
 
 logger = logging.getLogger("atlas")
 
@@ -192,6 +195,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # Response compression (PERFORMANCE §3): bodies >= 500 bytes are gzipped when the client
+    # sends Accept-Encoding: gzip; tiny responses pass through uncompressed. Added between
+    # CORS and RequestIdMiddleware, so the request id header is stamped outside compression.
+    app.add_middleware(GZipMiddleware, minimum_size=500)
     # Added last == outermost user middleware: the request id exists for everything
     # below it, including CORS rejections.
     app.add_middleware(RequestIdMiddleware, trust_proxy=settings.trust_proxy)
@@ -215,6 +222,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(security_router)
     # Core platform document-flow read endpoint (D-012): GET /api/v1/documents/{id}/chain.
     app.include_router(docflow_router)
+    # Core platform background-job polling (PLAN 4P.5/D-032): GET /api/v1/jobs[/{id}].
+    app.include_router(jobs_router)
+    # Finance module (PLAN 4): chart of accounts + fiscal years/periods at /api/v1/finance.
+    # First business module mounted; the fixed import order here is also the D-011 handler
+    # registration order (finance, then inventory, ...) once modules publish/subscribe events.
+    app.include_router(finance_router)
 
     return app
 

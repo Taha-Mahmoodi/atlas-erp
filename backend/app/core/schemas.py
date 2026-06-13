@@ -6,6 +6,7 @@ modules/auth package — see core/security_router.py.
 """
 
 import uuid
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
@@ -106,6 +107,33 @@ class DocChainResponse(ApiModel):
     edges: list[DocChainEdge]
 
 
+# --- Background-job schemas (PLAN 4P.5) ----------------------------------------
+# Same precedent as the auth schemas: core platform response models live here, not in a
+# module. ``status`` is the JobStatus string value (core/jobs.py owns the enum; a plain str
+# here avoids importing the trailing-registered jobs module into this early-loading file).
+
+
+class JobSubmitted(ApiModel):
+    """The 202 body of an endpoint that backgrounds its work: poll /api/v1/jobs/{job_id}."""
+
+    job_id: uuid.UUID
+    status: str
+
+
+class JobRead(ApiModel):
+    """One background job as the polling endpoints expose it (status/result/error/timing)."""
+
+    id: uuid.UUID
+    job_type: str
+    status: str
+    result: dict[str, Any] | None = None
+    error: str | None = None
+    submitted_by_user_id: uuid.UUID | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    created_at: datetime
+
+
 # Field-level read masking (D-009) lives in core/rbac.py with the rest of the RBAC
 # engine; re-exported here so D-009's stated home (Masked in core/schemas.py) holds and
 # module schemas import it alongside ApiModel from one surface.
@@ -119,6 +147,8 @@ __all__ = [
     "DocumentRead",
     "ErrorBody",
     "ErrorEnvelope",
+    "JobRead",
+    "JobSubmitted",
     "LoginRequest",
     "Masked",
     "MeResponse",

@@ -17,17 +17,21 @@ The parity map itself lives at [docs/research/s4hana-parity.md](docs/research/s4
 
 🚧 **Pre-alpha, under active construction.** The build journal is public: see [PLAN.md](PLAN.md) for the phased plan, [PROGRESS.md](PROGRESS.md) for the running log, and [DECISIONS.md](DECISIONS.md) for the design-decision record.
 
-**Latest release: `v0.1.0` — core platform.** The cross-cutting foundation is complete and tested on both SQLite and PostgreSQL ([core module guide](docs/modules/core.md)):
+**Latest release: `v0.2.0` — Finance & Controlling.** The full FI/CO module is built on the v0.1.0 core platform and tested on both SQLite and PostgreSQL ([finance module guide](docs/modules/finance.md)):
 
-- Non-bypassable row-level multi-tenancy (session filter + composite-FK backstop)
-- JWT auth (argon2id, rotating refresh sessions with reuse detection)
-- RBAC as data (permission catalog, route guards, field-level read masking)
-- Append-only audit trail captured in the same transaction as each change
-- In-process domain-event bus dispatched inside the transaction
-- Document registry with predecessor/successor flow chains
-- Gapless per-tenant document numbering, idempotency keys, keyset pagination
+- **Universal journal** — hierarchical chart of accounts; strict double-entry posting with debit/credit and balance enforced in code *and* DB triggers; posted entries immutable, corrected only by reversal
+- **Fiscal periods** with open/closed states enforced at the service layer and by a per-dialect DB trigger (no posting into a closed period, even via raw SQL)
+- **Multi-currency** — transaction + functional amounts frozen at posting; realized FX at clearing; an auto-reversing unrealized-FX revaluation run
+- **Tax engine** — configurable inclusive/exclusive codes applied at line level
+- **Accounts Payable / Accounts Receivable** — bills, invoices, receipts, background payment runs, aging, dunning — all posting through the journal
+- **Cost & profit centers** with allocation rules and allocation runs
+- **Financial statements as pure projections** of the journal — trial balance, P&L, balance sheet, indirect cash flow, cost-center and margin reports; never stored totals
+- **Bank reconciliation** — CSV statement import (background job above 1k lines), set-based match suggestions, suspense clearing
+- **Asset accounting lite** — register plus straight-line and declining-balance depreciation runs that post grouped journals
 
-Business modules (Finance & Controlling first) are next on the plan.
+Built on the v0.1.0 core ([core module guide](docs/modules/core.md)): non-bypassable row-level multi-tenancy, JWT auth (argon2id, rotating refresh sessions), RBAC as data with field masking, in-transaction append-only audit, an in-process domain-event bus, document-flow chains, gapless numbering, idempotency keys, keyset pagination, an in-process background-job runner, gzip + conditional (ETag) reference reads, and a wall-clock performance budget suite.
+
+Inventory & Warehouse is next on the plan.
 
 ## Stack
 

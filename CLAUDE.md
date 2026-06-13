@@ -7,9 +7,10 @@ Atlas ERP is an open-source, industry-agnostic ERP platform. Its explicit functi
 1. **After any compaction or new session: read CLAUDE.md, PLAN.md, PROGRESS.md, and DECISIONS.md before writing any code.** Verify the last PROGRESS.md entry against the actual code and `git log`, then resume from the next unchecked PLAN.md task. Never guess at prior state.
 2. **All file creation, naming, and placement MUST follow STRUCTURE.md. Re-read it after any compaction.** Before creating any new file, run `git status` and inspect the tree to re-anchor on actual structure.
 3. **All git and GitHub operations MUST follow GITHUB-WORKFLOW.md. Re-read it after any compaction.** Branch model: `main` (production, promotion PRs only) ← `dev` (integration) ← short-lived feature branches. Issue-first for every discovered problem.
-4. Work in small units: implement one task → run its tests → commit → update PROGRESS.md → next task. **Definition of done: code written, tests passing, committed, logged in PROGRESS.md.** A task that isn't committed and logged does not exist.
-5. Append one line to PROGRESS.md after every completed task and tick the checkbox in PLAN.md. Record every consequential design decision in DECISIONS.md the moment it is made.
-6. No pseudocode, no placeholders, no stubs, no TODO comments. Every file must be complete and working. When scope forces a trade-off, choose a smaller surface that fully works, and record the cut in `docs/research/s4hana-parity.md`.
+4. **All code MUST comply with PERFORMANCE.md. Re-read it after any compaction.** Every endpoint's Definition of Done includes the PERFORMANCE.md §6 checklist: FK + filter columns indexed, query-count assertion passes (≤3 per list request), paginated, money is Decimal, heavy work bulk/background, perf-suite coverage for hot paths. Target: 50 concurrent users on a 4 vCPU / 8 GB VPS within the §5 latency budgets.
+5. Work in small units: implement one task → run its tests → commit → update PROGRESS.md → next task. **Definition of done: code written, tests passing, committed, logged in PROGRESS.md** — plus, for endpoints, the PERFORMANCE.md §6 checklist. A task that isn't committed and logged does not exist.
+6. Append one line to PROGRESS.md after every completed task and tick the checkbox in PLAN.md. Record every consequential design decision in DECISIONS.md the moment it is made.
+7. No pseudocode, no placeholders, no stubs, no TODO comments. Every file must be complete and working. When scope forces a trade-off, choose a smaller surface that fully works, and record the cut in `docs/research/s4hana-parity.md`.
 
 ## Tech stack (non-negotiable)
 

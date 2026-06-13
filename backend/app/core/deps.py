@@ -12,7 +12,7 @@ from typing import Annotated
 from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.audit import actor_user_id_ctx
 from app.core.auth import decode_token
@@ -29,6 +29,7 @@ __all__ = [
     "CurrentUser",
     "CurrentUserDep",
     "SessionDep",
+    "SessionFactoryDep",
     "get_current_user",
     "get_session",
     "get_session_factory",
@@ -42,6 +43,10 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 # Annotated dependency aliases: the modern FastAPI idiom that keeps Depends() out of
 # parameter defaults (ruff B008) and lets routers share one typed handle.
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+# The sessionmaker dependency (test-overridable like get_session). Job-submitting routers pass
+# it to schedule_job post-commit so the runner opens its sessions against the SAME database —
+# the app factory in production, the per-test engine's factory under the conftest override.
+SessionFactoryDep = Annotated[async_sessionmaker[AsyncSession], Depends(get_session_factory)]
 _CredentialsDep = Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)]
 
 

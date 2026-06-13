@@ -1,0 +1,364 @@
+"""The universal-journal posting engine (D-017): draft creation, two-flush posting, reversal.
+
+Every invariant lives at BOTH the service (here, for a clean 422) and the DB (migration 0009
+triggers, the bypass-proof backstop). Three load-bearing mechanisms (D-017): (1) TWO-FLUSH
+posting — the uow does not guarantee cross-table UPDATE order, so we flush the loaded lines'
+``is_posted`` while the entry is still DRAFT (the line trigger keys on OLD.is_posted=FALSE),
+THEN flush the header POSTED (balance + period triggers fire there); (2) LOADED-object mutation,
+never bulk ``update()``, so audit diffs are captured and the audit bulk-write assertion holds
+(D-010); (3) REVERSAL-only correction — a posted entry is never edited/deleted, only reversed.
+
+For v1 functional amounts EQUAL transaction amounts (single functional currency; FX in 4.3). The
+balance check sums functional amounts, exact on both engines (MoneyType stores NUMERIC / micro-unit
+ints, D-015).
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import UTC, date, datetime
+from decimal import Decimal
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core import docflow
+from app.core.events import publish
+from app.core.exceptions import ConflictError, ValidationFailedError
+from app.core.numbering import claim_number, ensure_sequence
+from app.modules.finance import queries
+from app.modules.finance.constants import (
+    JOURNAL_ENTRY_DOC_TYPE,
+    JOURNAL_NUMBER_PADDING,
+    JOURNAL_NUMBER_PREFIX,
+    JOURNAL_SEQUENCE_NAME,
+    DocumentType,
+    EntryStatus,
+    PeriodStatus,
+)
+from app.modules.finance.events import JournalEntryPosted, JournalEntryReversed
+from app.modules.finance.models import JournalEntry, JournalLine
+from app.modules.finance.schemas import JournalEntryCreate
+from app.modules.finance.service.fx_translation import translate_entry_lines
+from app.modules.finance.service.journal_read import (
+    entry_totals,
+    get_entry,
+    load_lines,
+)
+from app.modules.finance.service.journal_validate import (
+    assert_line_one_sided,
+    require_dimensions,
+    require_postable_accounts,
+)
+
+# core/docflow link type for the reverses-edge (D-012 vocabulary).
+_REVERSES_LINK = "reverses"
+
+
+async def create_draft_entry(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    payload: JournalEntryCreate,
+    *,
+    functional_amounts: list[tuple[Decimal, Decimal]] | None = None,
+) -> JournalEntry:
+    """Create a DRAFT entry + lines (D-017). Validates: >= 2 lines, each one-sided, all accounts
+    exist + postable + same tenant, and any cost-/profit-centre dimension exists in the tenant
+    (PLAN 4.7, the service-level integrity replacing the absent FK on the trigger-bearing
+    journal-lines table per D-022). Registers the document (no number; claimed at posting, D-012).
+    Does NOT claim a number / resolve the period — both at posting.
+
+    Default: functional == transaction, balanced in TRANSACTION terms (the posting protocol then
+    translates FX). With explicit ``functional_amounts`` ((debit, credit) per line; AP/AR clearing,
+    D-019) those become the functional amounts and the balance check is on the FUNCTIONAL sums — a
+    mixed-currency clearing entry balances only in functional, posted with skip_translation."""
+    if len(payload.lines) < 2:
+        raise ValidationFailedError(
+            message="A journal entry needs at least two lines",
+            code="finance.journal_too_few_lines",
+        )
+
+    for index, line in enumerate(payload.lines, start=1):
+        assert_line_one_sided(line, index)
+    # Balance on transaction sides by default, on explicit functional sides for a (mixed-currency)
+    # clearing entry where only functional must balance.
+    sides = functional_amounts or [
+        (ln.transaction_debit_amount, ln.transaction_credit_amount) for ln in payload.lines
+    ]
+    total_debit = sum((d for d, _c in sides), Decimal(0))
+    total_credit = sum((c for _d, c in sides), Decimal(0))
+    if total_debit != total_credit:
+        raise ValidationFailedError(
+            message="Journal entry debits and credits must balance",
+            code="finance.journal_unbalanced",
+            details={"total_debit": str(total_debit), "total_credit": str(total_credit)},
+        )
+
+    account_ids = {line.account_id for line in payload.lines}
+    await require_postable_accounts(session, tenant_id, account_ids)
+    await require_dimensions(session, tenant_id, payload)
+    entry_id = uuid.uuid4()
+    document = await docflow.register_document(
+        session,
+        tenant_id,
+        JOURNAL_ENTRY_DOC_TYPE,
+        entry_id,
+        doc_number=None,
+        status=EntryStatus.DRAFT.value,
+    )
+    entry = JournalEntry(
+        id=entry_id,
+        tenant_id=tenant_id,
+        document_id=document.id,
+        posting_date=payload.posting_date,
+        currency_code=payload.currency_code,
+        description=payload.description,
+        document_type=DocumentType(payload.document_type).value,
+        status=EntryStatus.DRAFT.value,
+    )
+    session.add(entry)
+    for index, line in enumerate(payload.lines, start=1):
+        # ``sides`` is functional == transaction by default (posting translates FX), or the explicit
+        # clearing functional amounts when supplied — either way one (debit, credit) per line.
+        func_debit, func_credit = sides[index - 1]
+        session.add(
+            JournalLine(
+                tenant_id=tenant_id,
+                journal_entry_id=entry_id,
+                line_number=index,
+                account_id=line.account_id,
+                description=line.description,
+                transaction_debit_amount=line.transaction_debit_amount,
+                transaction_credit_amount=line.transaction_credit_amount,
+                functional_debit_amount=func_debit,
+                functional_credit_amount=func_credit,
+                currency_code=payload.currency_code,
+                cost_center_id=line.cost_center_id,
+                profit_center_id=line.profit_center_id,
+                project_id=line.project_id,
+                item_id=line.item_id,
+                partner_type=line.partner_type,
+                partner_id=line.partner_id,
+            )
+        )
+    await session.flush()
+    return entry
+
+
+async def post_entry(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    entry_id: uuid.UUID,
+    *,
+    rate_override: Decimal | None = None,
+    skip_translation: bool = False,
+) -> JournalEntry:
+    """THE posting protocol (D-017 two-flush). Validates DRAFT + balanced, resolves + checks the
+    open period from posting_date (422 before touching the DB), translates foreign-currency
+    functional amounts (D-019; an explicit ``rate_override`` wins over the looked-up SPOT rate),
+    claims the gapless number in this transaction, then flushes the loaded lines (still DRAFT) and
+    finally the POSTED header (balance + period triggers fire there). Publishes JournalEntryPosted;
+
+    ``skip_translation`` (D-019, used by AP/AR clearing): the caller has ALREADY set each line's
+    functional amounts (e.g. a payment clears its open items at the bill's frozen rate while the
+    bank is at the payment rate, with a realized-FX line absorbing the difference). The engine then
+    only validates those pre-computed functional amounts balance, never re-rating them — the one
+    case where functional != transaction × a single entry rate.
+    the caller commits via uow."""
+    entry = await get_entry(session, tenant_id, entry_id)
+    if entry.status != EntryStatus.DRAFT.value:
+        raise ConflictError(
+            message="Only a draft journal entry can be posted",
+            code="finance.journal_not_draft",
+            details={"status": entry.status},
+        )
+
+    lines = await load_lines(session, tenant_id, entry_id)
+    if len(lines) < 2:
+        raise ValidationFailedError(
+            message="A journal entry needs at least two lines",
+            code="finance.journal_too_few_lines",
+        )
+
+    # FX translation (D-019): recompute functional amounts at the posting rate when the entry is in
+    # a foreign currency, balancing the functional residual into the largest line. After this the
+    # functional sums (which the balance trigger checks) are exact and equal. Skipped when the
+    # caller pre-computed functional amounts (AP/AR clearing realized FX) — the balance check below
+    # then validates those.
+    if not skip_translation:
+        await translate_entry_lines(session, tenant_id, entry, lines, rate_override)
+
+    debit, credit = entry_totals(lines)
+    if debit != credit or debit <= 0:
+        raise ValidationFailedError(
+            message="Journal entry debits and credits must balance and be positive",
+            code="finance.journal_unbalanced",
+            details={"total_debit": str(debit), "total_credit": str(credit)},
+        )
+
+    # Period resolution + open check FIRST (service-level half of D-018); the trigger backstops.
+    period = await queries.find_period_for_date(session, tenant_id, entry.posting_date)
+    if period is None or period.status != PeriodStatus.OPEN.value:
+        raise ValidationFailedError(
+            message="The posting date is not within an open fiscal period",
+            code="finance.period_closed",
+            details={"posting_date": entry.posting_date.isoformat()},
+        )
+
+    # Claim the gapless number in this transaction (D-012): gapless because the claim and the
+    # POSTED commit succeed or roll back together.
+    await ensure_sequence(
+        session,
+        tenant_id,
+        JOURNAL_SEQUENCE_NAME,
+        JOURNAL_NUMBER_PREFIX,
+        JOURNAL_NUMBER_PADDING,
+        year_reset=True,
+    )
+    entry_number = await claim_number(
+        session, tenant_id, JOURNAL_SEQUENCE_NAME, on_date=entry.posting_date
+    )
+
+    # Flush 1: denormalize onto the loaded lines while the entry is still DRAFT.
+    for line in lines:
+        line.is_posted = True
+        line.posting_date = entry.posting_date
+        line.fiscal_period_id = period.id
+    await session.flush()
+
+    # Flush 2: promote the header. The period + balance triggers fire on this DRAFT->POSTED UPDATE.
+    entry.entry_number = entry_number
+    entry.fiscal_period_id = period.id
+    entry.status = EntryStatus.POSTED.value
+    entry.posted_at = datetime.now(UTC)
+    await session.flush()
+
+    await docflow.set_document_status(
+        session,
+        tenant_id,
+        entry.document_id,
+        status=EntryStatus.POSTED.value,
+        doc_number=entry_number,
+    )
+
+    publish(
+        session,
+        JournalEntryPosted(
+            tenant_id=tenant_id,
+            entry_id=entry.id,
+            entry_number=entry_number,
+            document_type=entry.document_type,
+            posting_date=entry.posting_date.isoformat(),
+            currency_code=entry.currency_code,
+            total_functional_amount=debit,
+            account_ids=tuple(line.account_id for line in lines),
+        ),
+    )
+    return entry
+
+
+async def reverse_entry(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    entry_id: uuid.UUID,
+    reversal_date: date,
+    description: str | None = None,
+) -> JournalEntry:
+    """Reverse a POSTED entry (D-017). Creates a NEW same-document_type entry with each line's
+    debit/credit SWAPPED, posts it into ``reversal_date``'s open period (its own number), then
+    sets the original REVERSED + reversed_by_entry_id — the ONLY mutation the immutability trigger
+    permits. Links the two documents ('reverses'), publishes JournalEntryReversed, returns the
+    reversing entry."""
+    original = await get_entry(session, tenant_id, entry_id)
+    if original.status != EntryStatus.POSTED.value:
+        raise ConflictError(
+            message="Only a posted journal entry can be reversed",
+            code="finance.journal_not_posted",
+            details={"status": original.status},
+        )
+    if original.reversed_by_entry_id is not None:
+        raise ConflictError(
+            message="This journal entry has already been reversed",
+            code="finance.journal_already_reversed",
+        )
+
+    original_lines = await load_lines(session, tenant_id, entry_id)
+
+    reversal_id = uuid.uuid4()
+    reversal_document = await docflow.register_document(
+        session,
+        tenant_id,
+        JOURNAL_ENTRY_DOC_TYPE,
+        reversal_id,
+        doc_number=None,
+        status=EntryStatus.DRAFT.value,
+    )
+    reversal = JournalEntry(
+        id=reversal_id,
+        tenant_id=tenant_id,
+        document_id=reversal_document.id,
+        posting_date=reversal_date,
+        currency_code=original.currency_code,
+        description=description
+        or f"Reversal of {original.entry_number or original.id}",
+        document_type=original.document_type,
+        status=EntryStatus.DRAFT.value,
+        reverses_entry_id=original.id,
+    )
+    session.add(reversal)
+    for line in original_lines:
+        session.add(
+            JournalLine(
+                tenant_id=tenant_id,
+                journal_entry_id=reversal_id,
+                line_number=line.line_number,
+                account_id=line.account_id,
+                description=line.description,
+                # Swap debit <-> credit in both currency pairs (frozen functional amounts).
+                transaction_debit_amount=line.transaction_credit_amount,
+                transaction_credit_amount=line.transaction_debit_amount,
+                functional_debit_amount=line.functional_credit_amount,
+                functional_credit_amount=line.functional_debit_amount,
+                currency_code=line.currency_code,
+                cost_center_id=line.cost_center_id,
+                profit_center_id=line.profit_center_id,
+                project_id=line.project_id,
+                item_id=line.item_id,
+                partner_type=line.partner_type,
+                partner_id=line.partner_id,
+            )
+        )
+    await session.flush()
+
+    # Post the reversing entry (claims its own number, runs the same period/balance checks).
+    await post_entry(session, tenant_id, reversal_id)
+
+    # The single sanctioned mutation on a POSTED original (immutability trigger permits exactly
+    # this: status POSTED->REVERSED with reversed_by_entry_id set).
+    original.reversed_by_entry_id = reversal_id
+    original.status = EntryStatus.REVERSED.value
+    await session.flush()
+
+    await docflow.set_document_status(
+        session, tenant_id, original.document_id, status=EntryStatus.REVERSED.value
+    )
+    await docflow.link_documents(
+        session,
+        tenant_id,
+        predecessor=original.document_id,
+        successor=reversal.document_id,
+        link_type=_REVERSES_LINK,
+    )
+
+    await session.refresh(reversal)
+    publish(
+        session,
+        JournalEntryReversed(
+            tenant_id=tenant_id,
+            entry_id=original.id,
+            reversal_entry_id=reversal.id,
+            reversal_entry_number=reversal.entry_number or "",
+            document_type=original.document_type,
+            reversal_date=reversal_date.isoformat(),
+        ),
+    )
+    return reversal

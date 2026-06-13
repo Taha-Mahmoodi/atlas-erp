@@ -20,6 +20,7 @@ The core package is the cross-cutting foundation every business module builds on
 | `numbering.py` | gapless per-tenant document sequences | D-012 |
 | `idempotency.py` | reservation-based idempotency keys | D-013 |
 | `pagination.py` | keyset (cursor) pagination | D-014 |
+| `jobs.py` + `jobs_router.py` | background-job registry, in-process runner, `/api/v1/jobs` polling | D-032 |
 | `schemas.py` / `exceptions.py` / `deps.py` | shared Pydantic bases + error envelope, exception hierarchy, FastAPI dependencies | D-014 |
 
 ## The guarantees a module inherits for free
@@ -29,7 +30,8 @@ The core package is the cross-cutting foundation every business module builds on
 3. **Audit.** Inserts/updates/deletes on `AuditMixin` models are captured automatically in the same transaction as the change. Never use ORM bulk `update()/delete()` on an audited model — it's a hard error; mutate loaded objects.
 4. **Events.** Publish a `DomainEvent` with `publish(session, event)` and commit through `run_in_uow(session, work)`; subscribers in another module's `handlers.py` run in the same transaction, so cross-module effects are atomic with their trigger.
 5. **Documents.** Register a business document with `register_document(...)`, link predecessors with `link_documents(...)`, and claim its number with `claim_number(...)` inside the committing transaction.
-6. **Idempotency & pagination.** Guard document-creating endpoints with `Idempotent("endpoint")` + `idem.capture(...)`; return list endpoints through `paginate(...)`.
+6. **Idempotency & pagination.** Guard document-creating endpoints with `Idempotent("endpoint")` + `idem.capture(...)`; return EVERY collection endpoint through `paginate(...)` + `map_page(...)` into the `Page` envelope — no bare-list responses (PERFORMANCE §3; #27). Responses ≥500 bytes are gzip-compressed app-wide (`GZipMiddleware` in `app/main.py`).
+7. **Background jobs.** Long-running operations (PERFORMANCE §3: anything that can hit a proxy timeout — MRP, payment runs, statement imports >1k lines) never run in-request. Register a handler with `@register_job("module.operation")` (code-defined, like permissions), call `submit_job(session, ...)` inside the endpoint's `run_in_uow` work (the PENDING `core_jobs` row commits atomically with the idempotency capture, so a replayed key returns the same job id), then `schedule_job(job.id, factory)` strictly after the uow commit, and return `202 {job_id, status}`. Clients poll `GET /api/v1/jobs/{job_id}` (tenant-scoped; `GET /api/v1/jobs` lists with status/job_type filters). The runner re-establishes the submitting tenant context and audit actor and runs the handler inside `run_in_uow`, so events + audit behave exactly as in-request; failures roll the work back and surface as `FAILED` + error on the job row. Used today by `POST /finance/fx-revaluation-runs` and `POST /finance/payment-runs` (#26). Execution sits behind the `JobScheduler` Protocol (the event-bus seam pattern): the v1 in-process asyncio runner (capped at 4 concurrent) swaps for a real queue (arq/celery) by rebinding `jobs.scheduler`, with zero submitter changes. `core_jobs` is deliberately NOT audited (high-churn control rows, like refresh sessions).
 
 ## Database & migrations
 
@@ -40,3 +42,5 @@ The core package is the cross-cutting foundation every business module builds on
 ## Tests
 
 `backend/tests/core/` mirrors the source. The suite uses the template-copy isolation pattern (D-025): one migrated SQLite template per session, copied per test, so real commits behave as in production. PostgreSQL-only behaviour is covered by `-m pg` tests. Run with `make test` (SQLite) and `make test-pg` (Postgres).
+
+The perf smoke suite (`backend/tests/perf/`, `@pytest.mark.perf`, PERFORMANCE §5 / PLAN 4P.7) is excluded from the default run: it bulk-seeds ONE mid-volume tenant per session (~20k posted journal lines, ~1.5k customer invoices, Core executemany inserts per PERFORMANCE §2) onto its own database copy and asserts the median of 5 timed runs against the §5 wall-clock budgets — at 2× on the SQLite CI smoke (the non-blocking `perf-smoke` job, never a required status check) and at 1× against Postgres before each promotion. Run with `make perf` (SQLite) or `ATLAS_PERF_DATABASE_URL=postgresql+asyncpg://… make perf` (Postgres; each run seeds a fresh tenant). A budget failure before promotion is `severity:major`: fix or re-budget in DECISIONS.md — never delete the test.

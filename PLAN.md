@@ -38,18 +38,28 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 
 ## Phase 4 — Finance & Controlling (deepest module)
 
-- [ ] 4.1 Chart of accounts (hierarchical, account types driving statements) + fiscal years/periods with open/closed states enforced at service AND DB level (per-dialect triggers)
-- [ ] 4.2 Journal engine: entry header + line tables with dimension columns (cost center, profit center, project), exactly-one-of-debit/credit DB CHECK, debits==credits per currency enforced, posted-entry immutability (DB-level), reversal mechanics, posting service + router
-- [ ] 4.3 Multi-currency: currencies + rates table, transaction/functional translation at posting, realized FX on settlement, unrealized FX revaluation run
-- [ ] 4.4 Tax engine: configurable codes (rate, jurisdiction, inclusive/exclusive) applied at line level, tax account postings
-- [ ] 4.5 Accounts Payable: vendor bills, payment runs, AP aging — all posting through the journal
-- [ ] 4.6 Accounts Receivable: customer invoices, receipts, dunning levels, AR aging — all posting through the journal
-- [ ] 4.7 Cost centers + profit centers masters, allocation rules, allocation run posting journals
-- [ ] 4.8 Statements as pure projections: Trial Balance, P&L, Balance Sheet, Cash Flow (indirect), cost-center report, margin-by-product report
-- [ ] 4.9 Bank reconciliation: bank accounts, CSV statement import, match suggestions, clearing postings
-- [ ] 4.10 Asset accounting lite: asset register, straight-line + declining-balance depreciation runs posting journals
+- [x] 4.1 Chart of accounts (hierarchical, account types driving statements) + fiscal years/periods with open/closed states enforced at service AND DB level (per-dialect triggers)
+- [x] 4.2 Journal engine: entry header + line tables with dimension columns (cost center, profit center, project), exactly-one-of-debit/credit DB CHECK, debits==credits per currency enforced, posted-entry immutability (DB-level), reversal mechanics, posting service + router
+- [x] 4.3 Multi-currency: currencies + rates table, transaction/functional translation at posting, realized FX on settlement (deferred to AP/AR clearing — accounts wired), unrealized FX revaluation run
+- [x] 4.4 Tax engine: configurable codes (rate, jurisdiction, inclusive/exclusive) applied at line level, tax account postings
+- [x] 4.5 Accounts Payable: vendor bills, payment runs, AP aging — all posting through the journal
+- [x] 4.6 Accounts Receivable: customer invoices, receipts, dunning levels, AR aging — all posting through the journal
+- [x] 4.7 Cost centers + profit centers masters, allocation rules, allocation run posting journals
+- [x] 4.8 Statements as pure projections: Trial Balance, P&L, Balance Sheet, Cash Flow (indirect), cost-center report, margin-by-product report
+- [x] 4.9 Bank reconciliation: bank accounts, CSV statement import (background job per PERFORMANCE §3 when >1k lines), match suggestions, clearing postings
+- [x] 4.10 Asset accounting lite: asset register, straight-line + declining-balance depreciation runs posting journals (bulk/set-based writes per PERFORMANCE §2)
 
-**Promotion → `main` as v0.2.0 (finance complete).**
+## Phase 4P — PERFORMANCE.md integration & retrofits (mid-build addendum)
+
+- [x] 4P.1 Commit PERFORMANCE.md at repo root; bind it in CLAUDE.md; add these tasks; per-endpoint DoD now includes the §6 checklist
+- [x] 4P.2 Retrofit: SQL query-count fixture (SQLAlchemy event listener) in tests/conftest.py; every existing list-endpoint test asserts query_count ≤ 3 (PERFORMANCE §2); fix any N+1 found (issue-first)
+- [x] 4P.3 Retrofit: audit every FK + hot filter column across migrations 0002–0015 against PERFORMANCE §1; one migration adding all missing indexes (tenant_id leads composites); issue-first per finding
+- [x] 4P.4 Retrofit: gzip response middleware (PERFORMANCE §3); assert pagination is mandatory on every collection endpoint (cursor, default 50, max 200) — closes #27
+- [x] 4P.5 Background-job core (PERFORMANCE §3): in-process job runner + `core_jobs` table + job-id/polling endpoint pattern for long operations (bank-statement imports >1k lines, MRP, big payment runs); required before 4.9 import and Phase 8 MRP — closes #26 (FX revaluation + payment runs backgrounded, D-032)
+- [x] 4P.6 ETag/If-None-Match on slow-changing reference data (COA, item master, settings) (PERFORMANCE §3) — closes #28 (collection-level weak ETag in core/conditional.py, D-035)
+- [x] 4P.7 tests/perf/ suite (@pytest.mark.perf): journal list w/ filters, trial balance, P&L, AR aging — wall-clock budgets per PERFORMANCE §5 (SQLite CI smoke at 2× budget, non-blocking CI job; Postgres locally before each promotion)
+
+**Promotion → `main` as v0.2.0 (finance complete) — requires 4P.2–4P.4 done and the 4P.7 perf smoke green.**
 
 ## Phase 5 — Inventory & Warehouse
 
@@ -131,10 +141,12 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 ## Phase 16 — Seed data
 
 - [ ] 16.1 `backend/seed.py`: one demo tenant per industry template with ~3 months of interlinked transactions (procure-to-pay, order-to-cash, make-to-stock, HR/time/payroll, projects) so every report shows real data
+- [ ] 16.2 `seed.py --volume` high-volume tenant (PERFORMANCE §5): ≥100k journal lines, ≥50k stock moves, ≥10k orders, ≥5k items, 3 fiscal years — bulk inserts, finishes in minutes; drives the tests/perf/ budgets
 
 ## Phase 17 — Final assembly
 
 - [ ] 17.1 `docker-compose up` verified end-to-end (db + backend + frontend); README: <10-step quickstart, Mermaid architecture diagram, Mermaid ERD, "What v1 deliberately excludes and how to add it"
+- [ ] 17.1b `docs/deployment.md` (PERFORMANCE §7): single-VPS topology + docker-compose.prod.yml with resource limits/tuned Postgres, sizing table, backup/restore drill, "why it stays fast"; full perf suite green on Postgres volume tenant before v1
 - [ ] 17.2 Reconcile `docs/research/s4hana-parity.md` against what was actually built; update any capability whose status changed
 - [ ] 17.3 Final self-check loops (STRUCTURE.md §9 + GITHUB-WORKFLOW.md §9), close or document every open issue
 
