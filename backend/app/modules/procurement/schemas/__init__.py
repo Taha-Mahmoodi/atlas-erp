@@ -25,6 +25,16 @@ from app.modules.procurement.schemas.goods_receipts import (
     GoodsReceiptLineRead,
     GoodsReceiptRead,
 )
+from app.modules.procurement.schemas.invoice_matches import (
+    InvoiceMatchCreate,
+    InvoiceMatchDetail,
+    InvoiceMatchFilter,
+    InvoiceMatchLineCreate,
+    InvoiceMatchLineRead,
+    InvoiceMatchRead,
+    MatchToleranceRead,
+    MatchToleranceUpsert,
+)
 from app.modules.procurement.schemas.orders import (
     PurchaseOrderCreate,
     PurchaseOrderDetail,
@@ -77,6 +87,14 @@ __all__ = [
     "GoodsReceiptLineCreate",
     "GoodsReceiptLineRead",
     "GoodsReceiptRead",
+    "InvoiceMatchCreate",
+    "InvoiceMatchDetail",
+    "InvoiceMatchFilter",
+    "InvoiceMatchLineCreate",
+    "InvoiceMatchLineRead",
+    "InvoiceMatchRead",
+    "MatchToleranceRead",
+    "MatchToleranceUpsert",
     "PurchaseOrderCreate",
     "PurchaseOrderDetail",
     "PurchaseOrderFilter",

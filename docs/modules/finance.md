@@ -447,6 +447,18 @@ tax code's receivable account) + **Cr** the AP control account for the gross, wi
 bill→journal (docflow `posts`), sets `open_amount = gross` and status POSTED, and publishes
 `VendorBillPosted`. FX translation at posting is the journal engine's standard machinery (D-019).
 
+**The 3-way-match-triggered bill (PLAN 6.4, D-042).** When procurement posts an invoice match it
+PUBLISHES `InvoiceMatched`; `finance/handlers.create_bill_for_match` subscribes and builds + posts a
+vendor bill whose line accounts are the **GR/IR clearing** account (the received-goods portion at PO
+cost) and the **purchase-price-variance** account (any in-tolerance invoice-vs-PO price difference),
+crediting the **AP control** posting default — i.e. **Dr GR/IR + Dr/Cr PPV / Cr AP** (+ input tax).
+Because GR/IR is debited at *exactly* the PO cost the goods receipt credited it at receipt, the GR/IR
+clearing account nets to zero once a PO is fully received and billed — the procure-to-pay loop closes
+(the price difference lands in PPV). The bill is built through the SAME `create_vendor_bill` +
+`post_vendor_bill` service, so every AP/journal invariant fires; the handler runs in the match's
+transaction (a closed invoice period rolls the whole match post back). New posting defaults:
+`purchase_price_variance`, `ap_control`.
+
 **Open-item clearing.** A `VendorPayment` is created and posted in one step. It validates the cleared
 bills are open, same partner, same currency, none over-allocated; posts a journal entry
 (document_type `PAYMENT`): **Dr** AP control (Σ allocated) + **Cr** bank (the cash amount), reduces

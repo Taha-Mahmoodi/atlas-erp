@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.procurement.constants import PurchaseOrderStatus
 from app.modules.procurement.models import (
     GoodsReceipt,
+    InvoiceMatch,
     PurchaseOrder,
     PurchaseOrderLine,
     Vendor,
@@ -197,6 +198,55 @@ async def goods_receipts_for_po(
             GoodsReceipt.purchase_order_id == po_id,
         )
         .order_by(GoodsReceipt.created_at.desc())
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def po_line_open_to_bill(
+    session: AsyncSession, tenant_id: uuid.UUID, po_line_id: uuid.UUID
+) -> Decimal | None:
+    """The still-open-to-bill quantity on a PO line — RECEIVED minus BILLED — or None if the line
+    does not exist (PLAN 6.4, D-042). The 3-way over-billing constraint caps a match line at this:
+    you can never bill beyond what was physically received (received_quantity is raised by 6.3
+    goods receipts; billed_quantity by 6.4 matches). A point lookup on the maintained columns, not a
+    SUM over matches."""
+    line = (
+        await session.execute(
+            select(PurchaseOrderLine).where(
+                PurchaseOrderLine.tenant_id == tenant_id,
+                PurchaseOrderLine.id == po_line_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if line is None:
+        return None
+    return Decimal(str(line.received_quantity)) - Decimal(str(line.billed_quantity))
+
+
+async def get_invoice_match(
+    session: AsyncSession, tenant_id: uuid.UUID, match_id: uuid.UUID
+) -> InvoiceMatch | None:
+    """The invoice match with ``match_id`` in the tenant, or None (PLAN 6.4). A point lookup on the
+    PK; lets another module (or reporting) read a match header without importing procurement service
+    internals."""
+    stmt = select(InvoiceMatch).where(
+        InvoiceMatch.tenant_id == tenant_id, InvoiceMatch.id == match_id
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def matches_for_po(
+    session: AsyncSession, tenant_id: uuid.UUID, po_id: uuid.UUID
+) -> list[InvoiceMatch]:
+    """Every invoice match raised against a PO (PLAN 6.4), newest first — the per-PO match history.
+    Index-served by (tenant, purchase_order_id)."""
+    stmt = (
+        select(InvoiceMatch)
+        .where(
+            InvoiceMatch.tenant_id == tenant_id,
+            InvoiceMatch.purchase_order_id == po_id,
+        )
+        .order_by(InvoiceMatch.created_at.desc())
     )
     return list((await session.execute(stmt)).scalars().all())
 

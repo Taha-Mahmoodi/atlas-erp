@@ -22,13 +22,19 @@ from app.core.rbac import catalog_keys, sync_permission_catalog
 from app.core.tenancy import system_context, tenant_context
 from app.modules.admin.service import assign_role, create_role, provision_tenant, provision_user
 from app.modules.finance import service as finance_service
-from app.modules.finance.constants import GR_IR_CLEARING, AccountType
+from app.modules.finance.constants import (
+    AP_CONTROL,
+    GR_IR_CLEARING,
+    PURCHASE_PRICE_VARIANCE,
+    AccountType,
+)
 from app.modules.finance.schemas import AccountCreate
 from app.modules.procurement import service
 from app.modules.procurement.constants import ApprovalDocumentType
 from app.modules.procurement.models import (
     ApprovalRule,
     GoodsReceipt,
+    InvoiceMatch,
     PurchaseOrder,
     PurchaseRequisition,
     Rfq,
@@ -39,6 +45,8 @@ from app.modules.procurement.schemas import (
     ApprovalRuleCreate,
     GoodsReceiptCreate,
     GoodsReceiptLineCreate,
+    InvoiceMatchCreate,
+    InvoiceMatchLineCreate,
     PurchaseOrderCreate,
     PurchaseOrderLineCreate,
     RequisitionCreate,
@@ -433,6 +441,158 @@ async def post_goods_receipt(
     with tenant_context(tenant_id):
         await run_in_uow(session, work)
         return await service.get_goods_receipt(session, tenant_id, gr_id)
+
+
+# --- Invoice matches (PLAN 6.4) -----------------------------------------------
+
+
+@dataclass(frozen=True)
+class InvoiceMatchSetup:
+    """A tenant with a SENT PO that has been RECEIVED (a posted GR raised received_quantity), the
+    GR/IR + purchase-price-variance + AP-control posting defaults mapped, ready to create + post a
+    3-way match (PLAN 6.4). Plain ids so a rollback (expiring loaded ORM objects) cannot break a
+    follow-up payload."""
+
+    tenant_id: uuid.UUID
+    item_id: uuid.UUID
+    vendor_id: uuid.UUID
+    po_id: uuid.UUID
+    po_line_id: uuid.UUID
+    gr_id: uuid.UUID
+    gr_line_id: uuid.UUID
+    gr_ir_account_id: uuid.UUID
+    ppv_account_id: uuid.UUID
+    ap_account_id: uuid.UUID
+    po_quantity: Decimal
+    po_unit_cost: Decimal
+
+
+async def _map_posting_default(
+    session: AsyncSession, tenant_id: uuid.UUID, purpose: str, code: str, name: str, acct_type
+) -> uuid.UUID:
+    """Create an account + map it to a posting purpose through the real finance service (D-025)."""
+    with tenant_context(tenant_id):
+        account = await finance_service.create_account(
+            session, tenant_id, AccountCreate(code=code, name=name, account_type=acct_type)
+        )
+        await session.commit()
+        await finance_service.set_posting_default(session, tenant_id, purpose, account.id)
+        await session.commit()
+    return account.id
+
+
+async def build_invoice_match_setup(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    po_quantity: str = "10",
+    po_unit_cost: str = "5",
+    receive_quantity: str | None = None,
+    map_ppv: bool = True,
+    map_ap: bool = True,
+) -> InvoiceMatchSetup:
+    """Wire a received PO + the GR/IR, PPV and AP-control posting defaults so a 3-way match can be
+    created and posted (PLAN 6.4). Builds the goods-receipt setup (which maps GR/IR), receives
+    ``receive_quantity`` (defaults to the full PO quantity) by posting a GR, then maps the PPV and
+    AP-control defaults (unless suppressed — the unmapped-error tests)."""
+    gr_setup = await build_goods_receipt_setup(
+        session, tenant_id, po_quantity=po_quantity, po_unit_cost=po_unit_cost
+    )
+    recv = receive_quantity if receive_quantity is not None else po_quantity
+    gr = await build_goods_receipt(
+        session,
+        tenant_id,
+        po_id=gr_setup.po_id,
+        warehouse_id=gr_setup.warehouse_id,
+        lines=[
+            GoodsReceiptLineCreate(
+                purchase_order_line_id=gr_setup.po_line_id,
+                bin_id=gr_setup.bin_id,
+                received_quantity=Decimal(recv),
+            )
+        ],
+    )
+    await post_goods_receipt(session, tenant_id, gr.id)
+    with tenant_context(tenant_id):
+        gr_lines = await service.get_goods_receipt_lines(session, tenant_id, gr.id)
+
+    ppv_account_id = (
+        await _map_posting_default(
+            session, tenant_id, PURCHASE_PRICE_VARIANCE, "5910", "PPV", AccountType.EXPENSE
+        )
+        if map_ppv
+        else uuid.uuid4()
+    )
+    ap_account_id = (
+        await _map_posting_default(
+            session, tenant_id, AP_CONTROL, "2100", "AP control", AccountType.LIABILITY
+        )
+        if map_ap
+        else uuid.uuid4()
+    )
+    return InvoiceMatchSetup(
+        tenant_id=tenant_id,
+        item_id=gr_setup.item_id,
+        vendor_id=gr_setup.vendor_id,
+        po_id=gr_setup.po_id,
+        po_line_id=gr_setup.po_line_id,
+        gr_id=gr.id,
+        gr_line_id=gr_lines[0].id,
+        gr_ir_account_id=gr_setup.gr_ir_account_id,
+        ppv_account_id=ppv_account_id,
+        ap_account_id=ap_account_id,
+        po_quantity=Decimal(po_quantity),
+        po_unit_cost=Decimal(po_unit_cost),
+    )
+
+
+async def build_invoice_match(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    po_id: uuid.UUID,
+    lines: list[InvoiceMatchLineCreate],
+    vendor_invoice_ref: str | None = "VINV-1",
+    tax_code_id: uuid.UUID | None = None,
+    invoice_date=None,
+) -> InvoiceMatch:
+    """Create a DRAFT 3-way match through the real service inside a uow (D-025). Returns the match
+    re-read after commit."""
+    holder: dict[str, uuid.UUID] = {}
+
+    async def work() -> None:
+        with tenant_context(tenant_id):
+            match = await service.create_invoice_match(
+                session,
+                tenant_id,
+                InvoiceMatchCreate(
+                    purchase_order_id=po_id,
+                    vendor_invoice_ref=vendor_invoice_ref,
+                    tax_code_id=tax_code_id,
+                    invoice_date=invoice_date,
+                    lines=lines,
+                ),
+            )
+            holder["id"] = match.id
+
+    with tenant_context(tenant_id):
+        await run_in_uow(session, work)
+        return await service.get_invoice_match(session, tenant_id, holder["id"])
+
+
+async def post_invoice_match(
+    session: AsyncSession, tenant_id: uuid.UUID, match_id: uuid.UUID
+) -> InvoiceMatch:
+    """Post a match through the real service inside a uow (D-025) — the full chain (match + AP bill
+    + GR/IR clearing + PO update). Returns the match re-read after commit."""
+
+    async def work() -> None:
+        with tenant_context(tenant_id):
+            await service.post_invoice_match(session, tenant_id, match_id)
+
+    with tenant_context(tenant_id):
+        await run_in_uow(session, work)
+        return await service.get_invoice_match(session, tenant_id, match_id)
 
 
 # --- Principals ---------------------------------------------------------------

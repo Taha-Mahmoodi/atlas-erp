@@ -20,7 +20,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.finance.constants import (
+    AP_CONTROL,
     GR_IR_CLEARING,
+    PURCHASE_PRICE_VARIANCE,
     BillStatus,
     InvoiceStatus,
     PeriodStatus,
@@ -155,6 +157,32 @@ async def gr_ir_clearing_account(
     committing a half-formed posting. Exposed on finance/queries so procurement reads it downward
     (STRUCTURE §5) without importing finance/service."""
     return await _posting_defaults.get_posting_default(session, tenant_id, GR_IR_CLEARING)
+
+
+async def purchase_price_variance_account(
+    session: AsyncSession, tenant_id: uuid.UUID
+) -> uuid.UUID:
+    """The tenant's purchase-price-variance (PPV) account id (PLAN 6.4, D-042). When a 3-way-matched
+    vendor bill's invoiced unit price differs from the PO price (within tolerance), the difference
+    posts here so GR/IR clears at EXACTLY the PO cost it was credited at receipt and the price
+    variance is recognized separately. Resolves the ``purchase_price_variance`` posting default and
+    RAISES a clear 422 (``finance.posting_default_unmapped``) when unmapped — a match carrying a
+    price variance cannot post without it. Exposed on finance/queries so procurement reads it
+    downward (STRUCTURE §5) without importing finance/service."""
+    return await _posting_defaults.get_posting_default(
+        session, tenant_id, PURCHASE_PRICE_VARIANCE
+    )
+
+
+async def ap_control_account(session: AsyncSession, tenant_id: uuid.UUID) -> uuid.UUID:
+    """The tenant's AP control (trade-payables) account id (PLAN 6.4, D-042). The 3-way-match-
+    triggered vendor bill CREDITS this account at the vendor-invoiced total (the open item is
+    partner-keyed by the opaque vendor id on that line, D-029). Resolves the ``ap_control`` posting
+    default and RAISES a clear 422 (``finance.posting_default_unmapped``) when unmapped — a match
+    cannot post without somewhere to credit AP. Exposed on finance/queries so procurement reads it
+    downward (STRUCTURE §5) without importing finance/service (a bill created directly in finance
+    supplies its own ap_account_id; the match-triggered bill resolves this default)."""
+    return await _posting_defaults.get_posting_default(session, tenant_id, AP_CONTROL)
 
 
 async def get_tax_code(

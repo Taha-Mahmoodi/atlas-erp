@@ -20,14 +20,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.main import register_event_handlers
 from tests.modules.procurement.factories import (
     GoodsReceiptSetup,
+    InvoiceMatchSetup,
     ProcurementPrincipal,
     ProcurementSetup,
     build_goods_receipt_setup,
+    build_invoice_match_setup,
     build_procurement_setup,
     create_procurement_principal,
 )
 
-__all__ = ["GoodsReceiptSetup", "ProcurementPrincipal", "ProcurementSetup"]
+__all__ = [
+    "GoodsReceiptSetup",
+    "InvoiceMatchSetup",
+    "ProcurementPrincipal",
+    "ProcurementSetup",
+]
 
 
 @pytest.fixture(autouse=True)
@@ -57,6 +64,15 @@ async def goods_receipt_setup(
     + bin, and the GR/IR clearing posting default mapped — ready to create + post a goods receipt
     (PLAN 6.3)."""
     return await build_goods_receipt_setup(db_session, tenant_a)
+
+
+@pytest.fixture
+async def invoice_match_setup(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> InvoiceMatchSetup:
+    """A RECEIVED PO (10 @ 5 USD, a GR posted so received_quantity = 10), with the GR/IR + PPV +
+    AP-control posting defaults mapped — ready to create + post a 3-way match (PLAN 6.4)."""
+    return await build_invoice_match_setup(db_session, tenant_a)
 
 
 # --- Procurement-permissioned HTTP clients ------------------------------------
