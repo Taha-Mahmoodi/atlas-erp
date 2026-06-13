@@ -12,10 +12,12 @@ via the finance service first (the cross-module read those accounts validate aga
 
 import uuid
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.events import run_in_uow
 from app.core.rbac import catalog_keys, sync_permission_catalog
 from app.core.tenancy import system_context, tenant_context
 from app.modules.admin.service import assign_role, create_role, provision_tenant, provision_user
@@ -23,13 +25,16 @@ from app.modules.finance import service as finance_service
 from app.modules.finance.constants import AccountType
 from app.modules.finance.schemas import AccountCreate
 from app.modules.inventory import service
-from app.modules.inventory.constants import CostingMethod
-from app.modules.inventory.models import Item, ItemCategory, Uom
+from app.modules.inventory.constants import CostingMethod, MoveType
+from app.modules.inventory.models import Bin, Item, ItemCategory, StockMove, Uom, Warehouse
 from app.modules.inventory.schemas import (
+    BinCreate,
     ItemCategoryCreate,
     ItemCreate,
+    StockMoveCreate,
     UomConversionCreate,
     UomCreate,
+    WarehouseCreate,
 )
 
 # EVERY registered inventory.* key (importing inventory.constants registers them), so a new
@@ -171,6 +176,141 @@ async def build_inventory_setup(
         category_id=category.id,
         ea_uom_id=ea.id,
         box_uom_id=box.id,
+    )
+
+
+# --- Stock topology + moves (PLAN 5.2) ----------------------------------------
+
+
+async def build_warehouse(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    code: str = "WH-MAIN",
+    name: str = "Main warehouse",
+) -> Warehouse:
+    """Create a warehouse through the real service (D-025)."""
+    with tenant_context(tenant_id):
+        warehouse = await service.create_warehouse(
+            session, tenant_id, WarehouseCreate(code=code, name=name)
+        )
+        await session.commit()
+    return warehouse
+
+
+async def build_bin(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    warehouse_id: uuid.UUID,
+    *,
+    code: str = "A1",
+    name: str = "Bin A1",
+    is_default: bool = False,
+) -> Bin:
+    """Create a bin in a warehouse through the real service (D-025)."""
+    with tenant_context(tenant_id):
+        bin_row = await service.create_bin(
+            session,
+            tenant_id,
+            BinCreate(
+                warehouse_id=warehouse_id, code=code, name=name, is_default=is_default
+            ),
+        )
+        await session.commit()
+    return bin_row
+
+
+async def build_move(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    payload: StockMoveCreate,
+) -> StockMove:
+    """Post a stock move through the real service inside a uow (D-025), so numbering, docflow and
+    quant maintenance fire exactly as in production. Returns the persisted move by id (re-read after
+    the uow commit so the caller holds a live, refreshed row)."""
+    holder: dict[str, uuid.UUID] = {}
+
+    async def work() -> None:
+        with tenant_context(tenant_id):
+            move = await service.create_move(session, tenant_id, payload)
+            holder["id"] = move.id
+
+    with tenant_context(tenant_id):
+        await run_in_uow(session, work)
+        return await service.get_move(session, tenant_id, holder["id"])
+
+
+async def build_stock(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    item_id: uuid.UUID,
+    bin_id: uuid.UUID,
+    quantity: Decimal,
+    *,
+    lot_id: uuid.UUID | None = None,
+    lot_code: str | None = None,
+    serial_code: str | None = None,
+    move_date: date | None = None,
+) -> StockMove:
+    """Seed on-hand stock by posting a RECEIPT move into a bin (D-025) — the production path, so the
+    quant projection is maintained and the on-hand reads are real. Optional lot/serial create the
+    tracked-instance master on the receipt (5.1 deferred that to receipts)."""
+    return await build_move(
+        session,
+        tenant_id,
+        StockMoveCreate(
+            move_type=MoveType.RECEIPT,
+            item_id=item_id,
+            quantity=quantity,
+            to_bin_id=bin_id,
+            lot_id=lot_id,
+            lot_code=lot_code,
+            serial_code=serial_code,
+            move_date=move_date,
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class StockSetup:
+    """A tenant ready to post stock moves: a STOCKED item, a warehouse and two bins (A1, A2). Plain
+    ids so a rollback (expiring loaded ORM objects) cannot break a follow-up payload."""
+
+    tenant_id: uuid.UUID
+    item_id: uuid.UUID
+    base_uom_id: uuid.UUID
+    warehouse_id: uuid.UUID
+    bin_a_id: uuid.UUID
+    bin_b_id: uuid.UUID
+
+
+async def build_stock_setup(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    tracking_mode: str = "NONE",
+) -> StockSetup:
+    """A STOCKED item (EA base) plus a warehouse with two bins (PLAN 5.2). ``tracking_mode`` makes
+    the item lot- or serial-tracked for the tracked-move tests."""
+    setup = await build_inventory_setup(session, tenant_id)
+    item = await build_item(
+        session,
+        tenant_id,
+        item_code="STK-ITEM",
+        category_id=setup.category_id,
+        base_uom_id=setup.ea_uom_id,
+        tracking_mode=tracking_mode,
+    )
+    warehouse = await build_warehouse(session, tenant_id)
+    bin_a = await build_bin(session, tenant_id, warehouse.id, code="A1", name="Bin A1")
+    bin_b = await build_bin(session, tenant_id, warehouse.id, code="A2", name="Bin A2")
+    return StockSetup(
+        tenant_id=tenant_id,
+        item_id=item.id,
+        base_uom_id=setup.ea_uom_id,
+        warehouse_id=warehouse.id,
+        bin_a_id=bin_a.id,
+        bin_b_id=bin_b.id,
     )
 
 

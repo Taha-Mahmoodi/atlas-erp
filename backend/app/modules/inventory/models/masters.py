@@ -1,8 +1,10 @@
 """Inventory master data (PLAN 5.1): item categories, UoMs, per-item UoM conversions, the item
 master, and the lot/serial instance tables.
 
-Single ``models.py`` (STRUCTURE §3: split into a models/ package only at the 400-line cap, the
-finance precedent). Six tables, all under that for 5.1.
+One file in the ``models/`` package (STRUCTURE §3: the combined models.py was split into a
+models/ package when PLAN 5.2's warehouse/bin/move/quant tables would have pushed it over the
+400-line cap, the finance models/ precedent). This file owns the 5.1 MASTER tables; the 5.2
+warehouse/bin/move/quant STOCK tables live in ``models/stock.py``.
 
 Design decisions baked in here:
 

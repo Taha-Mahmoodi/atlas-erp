@@ -1,9 +1,10 @@
-"""Inventory HTTP layer (thin): parse -> call service -> return schema (PLAN 5.1).
+"""Inventory HTTP layer (thin): parse -> call service -> return schema (PLAN 5.1 + 5.2).
 
-REST under ``/api/v1/inventory``: item-categories, uoms, items (CRUD + filtered list), and the
-per-item uom-conversions nested resource. Every route is guarded by an inventory permission key
-(D-009). Writes commit through ``run_in_uow`` (D-011) so audit rows ride the same transaction;
-results are validated into their Read schema AFTER the uow commits.
+REST under ``/api/v1/inventory``: item-categories, uoms, items (CRUD + filtered list) and the
+per-item uom-conversions nested resource (5.1); the warehouse/bin/stock-move/on-hand surface (5.2)
+lives in the sibling ``stock_router`` mounted at the foot of this file. Every route is guarded by an
+inventory permission key (D-009). Writes commit through ``run_in_uow`` (D-011) so audit rows ride
+the same transaction; results are validated into their Read schema AFTER the uow commits.
 
 The slow-changing reference lists (item-categories, uoms, items) support conditional GETs via a
 tenant-scoped collection ETag (PERFORMANCE §3 / D-035): an If-None-Match hit returns 304 without
@@ -47,6 +48,7 @@ from app.modules.inventory.schemas import (
     UomRead,
     UomUpdate,
 )
+from app.modules.inventory.stock_router import stock_router
 
 router = APIRouter(prefix="/api/v1/inventory", tags=["inventory"])
 CursorParamsDep = Depends(cursor_params)
@@ -312,3 +314,9 @@ async def create_item_conversion(
         session, lambda: service.create_conversion(session, current.tenant_id, item_id, payload)
     )
     return UomConversionRead.model_validate(conversion)
+
+
+# PLAN 5.2 stock surface (warehouses, bins, moves, on-hand) is a sibling sub-router mounted here, so
+# the whole module stays ONE surface at /api/v1/inventory — the finance journal_router/ap_router
+# include precedent (no second mount in main.py).
+router.include_router(stock_router)

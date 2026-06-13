@@ -6,14 +6,17 @@ cap, the finance precedent); it sits well under that for PLAN 5.1.
 
 Item codes are USER-SUPPLIED and unique per tenant (the ``UNIQUE(tenant_id, item_code)`` on
 inv_items) — mirroring how chart-of-accounts codes work (Account.code is required on create, not
-auto-numbered). So inventory declares NO number sequence here: masters carry no gapless document
-number (those are for journal entries / orders / receipts in D-012). When stock *moves* land in
-PLAN 5.2 they register documents and claim numbers; the item master itself does not.
+auto-numbered). So item/warehouse/bin MASTERS carry no gapless document number (codes, not
+numbers). Stock MOVES (PLAN 5.2) DO register documents and claim a gapless number — the
+``inventory.stock_move`` sequence below — because a move is a posted document in the D-012 sense.
 """
 
 from enum import StrEnum
 
 from app.core.rbac import register_permissions
+
+# Quantity scale (D-015): QuantityType stores scale-6 micro-units. Stock moves and quants use the
+# same scale; the on-hand>=0 CHECK and the quant sums are exact on both engines.
 
 
 class ItemType(StrEnum):
@@ -79,6 +82,63 @@ class SerialStatus(StrEnum):
     BLOCKED = "BLOCKED"
 
 
+class MoveType(StrEnum):
+    """The kind of stock movement (PLAN 5.2). The move's QUANTITY is always positive; the TYPE
+    decides which of from_bin/to_bin participate (the direction), so a single signed-quantity
+    column is never needed (the journal one-side-CHECK philosophy applied to stock):
+
+    - RECEIPT: stock enters a bin from outside inventory (purchase receipt, opening balance,
+      positive count adjustment). to_bin REQUIRED, from_bin must be NULL.
+    - ISSUE: stock leaves a bin to outside inventory (goods issue, scrap, negative count).
+      from_bin REQUIRED, to_bin must be NULL.
+    - TRANSFER: stock moves between two bins, conserving total on-hand. BOTH bins REQUIRED and
+      they must differ.
+    - ADJUSTMENT: a one-sided correction not tied to a business document. EXACTLY ONE of
+      from_bin (a decrease) / to_bin (an increase) is set — the side carries the signed intent
+      while quantity stays positive (a decrease is from_bin-only, an increase is to_bin-only)."""
+
+    RECEIPT = "RECEIPT"
+    ISSUE = "ISSUE"
+    TRANSFER = "TRANSFER"
+    ADJUSTMENT = "ADJUSTMENT"
+
+
+class MoveStatus(StrEnum):
+    """Lifecycle of a stock move (PLAN 5.2). Unlike journal entries (DRAFT→POSTED), a stock move
+    is created already POSTED and is IMMUTABLE: the move ledger IS the single source of truth for
+    quantity, so a move never has a draft phase and is never edited or deleted — corrections are
+    REVERSING moves (an opposite move linked via docflow, the append-only ledger philosophy of
+    D-017 applied to stock). The column exists for symmetry with the rest of the platform and to
+    leave room for a future draft/scheduled-move lifecycle, but every move 5.2 creates is POSTED."""
+
+    POSTED = "POSTED"
+
+
+# Required bin sides per move type (PLAN 5.2): (from_bin_required, to_bin_required). ADJUSTMENT is
+# the special case — exactly one side, validated separately (the service checks the XOR). Used by
+# the create-move validator so the rule lives in ONE place, greppable and testable.
+MOVE_BIN_SIDES: dict[MoveType, tuple[bool, bool]] = {
+    MoveType.RECEIPT: (False, True),
+    MoveType.ISSUE: (True, False),
+    MoveType.TRANSFER: (True, True),
+    # ADJUSTMENT: not in the strict table — the service enforces "exactly one side set".
+}
+
+
+# Stock-move document type + number sequence (D-012): a move registers in core_documents and
+# claims its gapless number AT CREATION (a move is permanent at creation — POSTED immediately —
+# so it is numbered immediately, the orders/receipts claim-timing branch, not the draft branch).
+# The sequence year-resets (STK-2026-00001).
+STOCK_MOVE_DOC_TYPE = "inventory.stock_move"
+STOCK_MOVE_SEQUENCE_NAME = "inventory.stock_move"
+STOCK_MOVE_NUMBER_PREFIX = "STK"
+STOCK_MOVE_NUMBER_PADDING = 5
+
+# docflow link type joining a reversing move to the move it reverses (D-012 vocabulary): a
+# correction is a NEW move, never an edit, so the ledger stays append-only.
+STOCK_MOVE_REVERSES_LINK = "reverses"
+
+
 # --- Permissions (D-009): one key per guarded endpoint action -----------------
 INVENTORY_ITEM_READ = "inventory.item.read"
 INVENTORY_ITEM_MANAGE = "inventory.item.manage"
@@ -86,6 +146,15 @@ INVENTORY_CATEGORY_READ = "inventory.category.read"
 INVENTORY_CATEGORY_MANAGE = "inventory.category.manage"
 INVENTORY_UOM_READ = "inventory.uom.read"
 INVENTORY_UOM_MANAGE = "inventory.uom.manage"
+# Warehouses + bins (PLAN 5.2): reference data — read vs create/edit.
+INVENTORY_WAREHOUSE_READ = "inventory.warehouse.read"
+INVENTORY_WAREHOUSE_MANAGE = "inventory.warehouse.manage"
+INVENTORY_BIN_READ = "inventory.bin.read"
+INVENTORY_BIN_MANAGE = "inventory.bin.manage"
+# Stock moves (PLAN 5.2): read the move ledger + on-hand vs create a move (which is POSTED and
+# changes on-hand, so it is its own action — the journal.post precedent).
+INVENTORY_MOVE_READ = "inventory.move.read"
+INVENTORY_MOVE_CREATE = "inventory.move.create"
 
 register_permissions(
     INVENTORY_ITEM_READ,
@@ -94,6 +163,12 @@ register_permissions(
     INVENTORY_CATEGORY_MANAGE,
     INVENTORY_UOM_READ,
     INVENTORY_UOM_MANAGE,
+    INVENTORY_WAREHOUSE_READ,
+    INVENTORY_WAREHOUSE_MANAGE,
+    INVENTORY_BIN_READ,
+    INVENTORY_BIN_MANAGE,
+    INVENTORY_MOVE_READ,
+    INVENTORY_MOVE_CREATE,
     descriptions={
         INVENTORY_ITEM_READ: "Read items and their UoM conversions",
         INVENTORY_ITEM_MANAGE: "Create and edit items and their UoM conversions",
@@ -101,5 +176,11 @@ register_permissions(
         INVENTORY_CATEGORY_MANAGE: "Create and edit item categories",
         INVENTORY_UOM_READ: "Read units of measure",
         INVENTORY_UOM_MANAGE: "Create and edit units of measure",
+        INVENTORY_WAREHOUSE_READ: "Read warehouses",
+        INVENTORY_WAREHOUSE_MANAGE: "Create and edit warehouses",
+        INVENTORY_BIN_READ: "Read storage bins",
+        INVENTORY_BIN_MANAGE: "Create and edit storage bins",
+        INVENTORY_MOVE_READ: "Read the stock-move ledger and on-hand projections",
+        INVENTORY_MOVE_CREATE: "Create stock moves (receipts, issues, transfers, adjustments)",
     },
 )

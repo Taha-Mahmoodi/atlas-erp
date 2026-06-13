@@ -19,11 +19,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from tests.modules.inventory.factories import (
     InventoryPrincipal,
     InventorySetup,
+    StockSetup,
     build_inventory_setup,
+    build_stock_setup,
     create_inventory_principal,
 )
 
-__all__ = ["InventoryPrincipal", "InventorySetup"]
+__all__ = ["InventoryPrincipal", "InventorySetup", "StockSetup"]
 
 
 @pytest.fixture
@@ -32,6 +34,12 @@ async def inventory_setup(
 ) -> InventorySetup:
     """EA + BOX units and a MOVING_AVERAGE raw-materials category in tenant A (PLAN 5.1)."""
     return await build_inventory_setup(db_session, tenant_a)
+
+
+@pytest.fixture
+async def stock_setup(db_session: AsyncSession, tenant_a: uuid.UUID) -> StockSetup:
+    """A STOCKED item + warehouse + two bins in tenant A, ready to post moves (PLAN 5.2)."""
+    return await build_stock_setup(db_session, tenant_a)
 
 
 # --- Inventory-permissioned HTTP clients --------------------------------------

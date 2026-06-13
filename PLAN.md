@@ -64,7 +64,7 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 ## Phase 5 — Inventory & Warehouse
 
 - [x] 5.1 Items (stocked/non-stocked/service), item categories, multi-UoM with conversions, lot & serial masters
-- [ ] 5.2 Warehouses + bins; stock moves as single source of truth; on-hand/availability projections
+- [x] 5.2 Warehouses + bins; stock moves as single source of truth; on-hand/availability projections
 - [ ] 5.3 Costing: moving average AND FIFO (layer consumption) per item category; COGS auto-posted via events to finance
 - [ ] 5.4 Physical/cycle counts with variance posting (stock move + journal)
 
