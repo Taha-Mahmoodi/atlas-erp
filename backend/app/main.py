@@ -233,7 +233,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # D-011 handler-registration order; inventory reads finance/queries downward (STRUCTURE §5).
     app.include_router(inventory_router)
 
+    # Cross-module event handlers (D-011): registered here, at the app factory, so registration
+    # order
+    # is the deterministic module import order. Importing the module runs its ``@on`` subscriptions.
+    # finance/handlers posts the COGS/inventory journal for an inventory ``stock.valued`` event in
+    # the
+    # SAME transaction as the move (PLAN 5.3, D-020) — the first real cross-module handler.
+    register_event_handlers()
+
     return app
+
+
+def register_event_handlers() -> None:
+    """Register the cross-module domain-event handlers (D-011), in the deterministic module order.
+
+    Called from ``create_app`` (the registration seam) and available to seed/CLI flows that build
+    the
+    bus without the HTTP app. IDEMPOTENT and re-runnable: each handler is (re)subscribed only if not
+    already present for its key, so building several apps in one process — or re-registering after
+    the
+    test harness's ``clear_subscriptions`` reset (D-025) — yields exactly one subscription per
+    handler, never a duplicate that would double-post."""
+    from app.core.events import handlers_for, subscribe
+    from app.modules.finance.handlers import post_stock_valuation_journal
+    from app.modules.inventory.events import StockValued
+
+    if post_stock_valuation_journal not in handlers_for(StockValued.key):
+        subscribe(StockValued.key, post_stock_valuation_journal)
 
 
 app = create_app()

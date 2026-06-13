@@ -166,8 +166,91 @@ the same pattern the journal stores finance dimension ids without an FK on a cro
 `inventory.item.read` / `inventory.item.manage`, `inventory.category.read` /
 `inventory.category.manage`, `inventory.uom.read` / `inventory.uom.manage`, **`inventory.warehouse.read`
 / `inventory.warehouse.manage`, `inventory.bin.read` / `inventory.bin.manage`, `inventory.move.read`,
-`inventory.move.create`** — registered into the core RBAC catalog at import. Every endpoint is
+`inventory.move.create`, `inventory.valuation.read`** — registered into the core RBAC catalog at import. Every endpoint is
 permission-guarded; the reference lists (item-categories, uoms, items, warehouses, bins) support
 conditional GETs via a tenant-scoped collection ETag (PERFORMANCE §3 / D-035), while the
 transactional lists (stock-moves, stock-on-hand) carry none. All list endpoints stay within the
 ≤3-query budget (PERFORMANCE §2), and `create_move` runs a bounded number of statements (no N+1).
+
+## Costing (PLAN 5.3, D-020/D-037)
+
+Inventory valuation is the inventory↔finance seam: every value-changing stock move updates the
+**value SSOT** AND posts its COGS/inventory journal **in the same transaction** as the move and the
+quant update. The move ledger + quants stay the **quantity SSOT**; `inv_item_valuations` (moving
+average) and `inv_cost_layers` + `inv_layer_consumptions` (FIFO) are the **value SSOT**. Which engine
+a `(item, warehouse)` uses is the item's `costing_method` (defaulted from its category, D-020). The
+three GL account ids (inventory / COGS / price-difference) come from the item's category as **opaque
+finance uuids** (D-029) — no cross-module FK.
+
+### Stock-move cost input
+
+`inv_stock_moves` carries a nullable `unit_cost` (MoneyType, full scale-6 precision):
+- **RECEIPT / positive ADJUSTMENT** REQUIRE `unit_cost` — the value stock enters at (validated at the
+  service edge before any write).
+- **ISSUE / negative ADJUSTMENT** IGNORE any passed cost — the engine **computes** the outbound cost
+  and writes it back onto the move.
+- **TRANSFER** carries the current valuation (value-neutral within one inventory account).
+
+### Moving average
+
+Per `(item, warehouse)` in `inv_item_valuations` under `with_for_update` (PG row lock serializes
+concurrent movers; SQLite omits FOR UPDATE as a no-op + single-writer lock, D-020):
+- **Receipt:** `total_value += qty × unit_cost`; `on_hand += qty`; `avg = total_value / on_hand`
+  **unrounded** (full precision, so successive issues never drift).
+- **Issue:** `cogs = quantize(qty × avg, currency dp, HALF_UP)`; `total_value -= cogs`; `on_hand -=
+  qty`. When `on_hand` hits **exactly 0**, the residual `total_value` is **flushed** to the
+  price-difference account so value and quantity never disagree — even when the average is
+  non-terminating, value lands at exactly 0.
+
+### FIFO
+
+One `inv_cost_layers` row per receipt (`original_qty = remaining_qty = qty`, `unit_cost`), consumed
+oldest-first by `(received_at, created_at, id)` under `with_for_update` (each receipt is its own
+transaction, so `created_at` is the insertion-order tiebreaker when dates tie — uuid4 ids are not
+monotonic). One `inv_layer_consumptions` row per touched layer records `qty` + `cost`; COGS is the
+sum of per-layer `quantize(qty_from_layer × unit_cost)`. A `CHECK(0 <= remaining_qty <= original_qty)`
+backs it on both engines.
+
+### Same-transaction COGS via the event bus (D-011)
+
+`create_move` computes cost, updates the valuation/layers, then `publish(StockValued(...))` carrying
+the value Δ + the three GL account ids + the chosen **offset account**. The endpoint runs in
+`run_in_uow`, which drains the event **before commit**: `finance/handlers.py` builds + posts the
+journal **through the finance posting service** (never raw inserts) in the shared session. One commit
+= move + quant + valuation + journal + docflow link; **any handler failure rolls the whole
+transaction back**, so a stock move can never exist without its journal entry (the most-tested
+invariant). The handler is registered at the app factory (`register_event_handlers`), the
+deterministic D-011 registration seam.
+
+### GL postings per move type
+
+| Move | Posting |
+|------|---------|
+| RECEIPT / ADJUSTMENT-up | Dr inventory / Cr price-difference (standalone offset; procurement GR overrides later) |
+| ISSUE | Dr COGS / Cr inventory at the computed cost |
+| ADJUSTMENT-down | Dr price-difference / Cr inventory (write-off, no document) |
+| TRANSFER (within one inventory account) | **no journal** — value-neutral (the engine publishes no event) |
+| MAV zero-qty flush | residual to price-difference **within the issue's entry** |
+| Reversal | the **exact reverse** of the original move's entry (reversing an issue credits COGS; reversing a receipt debits price-difference) |
+
+The COGS journal posts with the move's `move_date`. **A move dated into a CLOSED period fails** — the
+finance period trigger fires inside the same transaction and rolls the whole move back. You cannot
+move stock into a closed accounting period; this is correct by construction.
+
+### Reversal
+
+A reversing move runs the **costing reversal** path (replay, not recompute): reversing an ISSUE
+replays its `inv_layer_consumptions` rows backward onto the exact layers (restoring `remaining_qty`)
+or re-adds the moving-average value at the **original** cost; reversing a RECEIPT zeros its layer
+(only valid while unconsumed) or removes the moving-average value. It emits the opposite `StockValued`
+event so the COGS journal is reversed too.
+
+### Read endpoints + queries
+
+`GET /api/v1/inventory/stock-valuations` (per item/warehouse value + qty + avg cost) and
+`GET /api/v1/inventory/items/{id}/cost-layers` (FIFO layers, oldest-first) — guarded by
+`inventory.valuation.read`. `inventory/queries.py` adds `item_value(item, warehouse?)` and
+`valuation_summary()` (the inventory-value dashboard KPI). The qty × cost product is summed in
+**Python** (each factor a typed Decimal), never `func.sum(qty × cost)` — multiplying two
+scaled-integer columns on SQLite would yield a ×10^12 value the MoneyType result processor cannot
+un-scale (D-015 trigger discipline).

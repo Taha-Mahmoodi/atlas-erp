@@ -23,7 +23,7 @@ from app.core.tenancy import system_context, tenant_context
 from app.modules.admin.service import assign_role, create_role, provision_tenant, provision_user
 from app.modules.finance import service as finance_service
 from app.modules.finance.constants import AccountType
-from app.modules.finance.schemas import AccountCreate
+from app.modules.finance.schemas import AccountCreate, FiscalYearCreate
 from app.modules.inventory import service
 from app.modules.inventory.constants import CostingMethod, MoveType
 from app.modules.inventory.models import Bin, Item, ItemCategory, StockMove, Uom, Warehouse
@@ -38,8 +38,14 @@ from app.modules.inventory.schemas import (
 )
 
 # EVERY registered inventory.* key (importing inventory.constants registers them), so a new
-# inventory permission is auto-granted to the full-rights principal (self-extending).
-_INVENTORY_KEYS = tuple(sorted(key for key in catalog_keys() if key.startswith("inventory.")))
+# inventory permission is auto-granted to the full-rights principal (self-extending). Plus the
+# finance setup keys the costing API tests need (a valued move's COGS journal posts to finance, so
+# the full-rights stock-ops client must scaffold accounts + an open period — PLAN 5.3).
+_FINANCE_SETUP_KEYS = ("finance.account.manage", "finance.period.manage")
+_INVENTORY_KEYS = (
+    *sorted(key for key in catalog_keys() if key.startswith("inventory.")),
+    *_FINANCE_SETUP_KEYS,
+)
 
 
 async def seed_uom(
@@ -251,10 +257,13 @@ async def build_stock(
     lot_code: str | None = None,
     serial_code: str | None = None,
     move_date: date | None = None,
+    unit_cost: Decimal = Decimal(1),
 ) -> StockMove:
     """Seed on-hand stock by posting a RECEIPT move into a bin (D-025) — the production path, so the
     quant projection is maintained and the on-hand reads are real. Optional lot/serial create the
-    tracked-instance master on the receipt (5.1 deferred that to receipts)."""
+    tracked-instance master on the receipt (5.1 deferred that to receipts). ``unit_cost`` is the
+    entry cost the costing engine values the stock at (PLAN 5.3); defaulted to 1 so quantity-only
+    tests are unaffected by valuation."""
     return await build_move(
         session,
         tenant_id,
@@ -267,21 +276,30 @@ async def build_stock(
             lot_code=lot_code,
             serial_code=serial_code,
             move_date=move_date,
+            unit_cost=unit_cost,
         ),
     )
 
 
 @dataclass(frozen=True)
 class StockSetup:
-    """A tenant ready to post stock moves: a STOCKED item, a warehouse and two bins (A1, A2). Plain
-    ids so a rollback (expiring loaded ORM objects) cannot break a follow-up payload."""
+    """A tenant ready to post stock moves AND value them (PLAN 5.2/5.3): a STOCKED item whose
+    category wires the three GL accounts, an OPEN fiscal year (so the COGS journal can post), a
+    warehouse and two bins (A1, A2). The account ids + category id are exposed so costing tests can
+    assert against the posted journal. Plain ids so a rollback (expiring loaded ORM objects) cannot
+    break a follow-up payload."""
 
     tenant_id: uuid.UUID
     item_id: uuid.UUID
+    category_id: uuid.UUID
     base_uom_id: uuid.UUID
     warehouse_id: uuid.UUID
     bin_a_id: uuid.UUID
     bin_b_id: uuid.UUID
+    inventory_account_id: uuid.UUID
+    cogs_account_id: uuid.UUID
+    price_difference_account_id: uuid.UUID
+    fiscal_year_id: uuid.UUID
 
 
 async def build_stock_setup(
@@ -289,29 +307,59 @@ async def build_stock_setup(
     tenant_id: uuid.UUID,
     *,
     tracking_mode: str = "NONE",
+    costing: CostingMethod = CostingMethod.MOVING_AVERAGE,
 ) -> StockSetup:
-    """A STOCKED item (EA base) plus a warehouse with two bins (PLAN 5.2). ``tracking_mode`` makes
-    the item lot- or serial-tracked for the tracked-move tests."""
-    setup = await build_inventory_setup(session, tenant_id)
+    """A STOCKED item (EA base) whose category wires the GL accounts, an OPEN 2026 fiscal year, plus
+    a warehouse with two bins (PLAN 5.2/5.3). ``tracking_mode`` makes the item lot-/serial-tracked;
+    ``costing`` picks MOVING_AVERAGE or FIFO. The wired accounts + open period are the costing
+    preconditions (D-020): without them a valued move's COGS journal cannot post."""
+    ea = await seed_uom(session, tenant_id, "EA", "Each")
+    await seed_uom(session, tenant_id, "BOX", "Box")
+    category = await build_item_category(
+        session, tenant_id, costing=costing, with_accounts=True
+    )
     item = await build_item(
         session,
         tenant_id,
         item_code="STK-ITEM",
-        category_id=setup.category_id,
-        base_uom_id=setup.ea_uom_id,
+        category_id=category.id,
+        base_uom_id=ea.id,
         tracking_mode=tracking_mode,
+        costing_method=costing,
     )
+    year = await _seed_open_year(session, tenant_id)
     warehouse = await build_warehouse(session, tenant_id)
     bin_a = await build_bin(session, tenant_id, warehouse.id, code="A1", name="Bin A1")
     bin_b = await build_bin(session, tenant_id, warehouse.id, code="A2", name="Bin A2")
+    # Re-read the category for its (committed) account ids — the build commit expired the object.
+    with tenant_context(tenant_id):
+        category = await service.get_category(session, tenant_id, category.id)
     return StockSetup(
         tenant_id=tenant_id,
         item_id=item.id,
-        base_uom_id=setup.ea_uom_id,
+        category_id=category.id,
+        base_uom_id=ea.id,
         warehouse_id=warehouse.id,
         bin_a_id=bin_a.id,
         bin_b_id=bin_b.id,
+        inventory_account_id=category.inventory_account_id,
+        cogs_account_id=category.cogs_account_id,
+        price_difference_account_id=category.price_difference_account_id,
+        fiscal_year_id=year.id,
     )
+
+
+async def _seed_open_year(session: AsyncSession, tenant_id: uuid.UUID):
+    """Create the 2026 fiscal year (12 OPEN periods) through the real finance service so the COGS
+    journal a valued move posts (PLAN 5.3) lands in an open period (D-018)."""
+    with tenant_context(tenant_id):
+        year = await finance_service.create_fiscal_year(
+            session,
+            tenant_id,
+            FiscalYearCreate(code="2026", name="FY2026", start_date=date(2026, 1, 1)),
+        )
+        await session.commit()
+    return year
 
 
 @dataclass(frozen=True)

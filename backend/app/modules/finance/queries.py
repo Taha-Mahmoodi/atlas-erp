@@ -116,6 +116,15 @@ async def functional_currency(session: AsyncSession, tenant_id: uuid.UUID) -> st
     return await _fx.functional_currency(session, tenant_id)
 
 
+async def functional_currency_or_none(
+    session: AsyncSession, tenant_id: uuid.UUID
+) -> str | None:
+    """The tenant's functional currency code, or None when unconfigured (the v1 single-currency
+    default — D-019). Exposed so other modules (inventory costing, 5.3) can pick the currency the
+    valuation journal posts in without raising when no currency is set up."""
+    return await _fx.functional_currency_or_none(session, tenant_id)
+
+
 async def get_tax_code(
     session: AsyncSession, tenant_id: uuid.UUID, code: str
 ) -> TaxCode | None:

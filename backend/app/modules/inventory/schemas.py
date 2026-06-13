@@ -252,6 +252,10 @@ class StockMoveCreate(ApiModel):
     serial_code: str | None = None
     move_date: date | None = None
     reference: str | None = None
+    # The costing entry cost (PLAN 5.3, D-020): REQUIRED on a RECEIPT / positive ADJUSTMENT (the
+    # value stock enters at); IGNORED on an ISSUE / negative ADJUSTMENT (the engine computes COGS)
+    # and on a TRANSFER (value carries at the current valuation). Full-precision Decimal (D-015).
+    unit_cost: Decimal | None = None
 
 
 class StockMoveRead(ApiModel):
@@ -268,6 +272,8 @@ class StockMoveRead(ApiModel):
     move_date: date
     reference: str | None
     posted: bool
+    # The entry cost (RECEIPT) or the engine-computed per-unit cost (ISSUE) for this move (D-020).
+    unit_cost: Decimal | None
     document_id: uuid.UUID
     created_at: datetime
 
@@ -294,3 +300,33 @@ class StockOnHandRead(ApiModel):
     bin_id: uuid.UUID
     lot_id: uuid.UUID | None
     on_hand_qty: Decimal
+
+
+# --- Valuation + cost layers (PLAN 5.3) ---------------------------------------
+
+
+class StockValuationRead(ApiModel):
+    """One moving-average valuation row: an item's value + on-hand + average cost in a warehouse
+    (D-020/D-037). The value SSOT for a MOVING_AVERAGE item; the inventory-value dashboard reads
+    it."""
+
+    item_id: uuid.UUID
+    warehouse_id: uuid.UUID
+    on_hand_qty: Decimal
+    avg_unit_cost: Decimal
+    total_value: Decimal
+
+
+class CostLayerRead(ApiModel):
+    """One FIFO cost layer: the remaining/original quantity and unit cost of a received batch
+    (D-020). The FIFO value SSOT; the cost-layer drill-down for an item reads these."""
+
+    id: uuid.UUID
+    item_id: uuid.UUID
+    warehouse_id: uuid.UUID
+    receipt_move_id: uuid.UUID
+    received_at: date
+    original_qty: Decimal
+    remaining_qty: Decimal
+    unit_cost: Decimal
+    created_at: datetime

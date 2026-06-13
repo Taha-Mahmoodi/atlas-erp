@@ -22,7 +22,7 @@ from app.core.pagination import (
 )
 from app.core.schemas import Page
 from app.modules.inventory.constants import MoveType
-from app.modules.inventory.models import StockMove, StockQuant
+from app.modules.inventory.models import CostLayer, ItemValuation, StockMove, StockQuant
 from app.modules.inventory.schemas import StockMoveFilter
 
 
@@ -108,4 +108,64 @@ async def list_on_hand(
         cursor=cursor,
         limit=limit,
         filters=filter_fingerprint(item_id, bin_id),
+    )
+
+
+async def list_valuations(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    item_id: uuid.UUID | None = None,
+    warehouse_id: uuid.UUID | None = None,
+    cursor: str | None = None,
+    limit: int = DEFAULT_LIMIT,
+) -> Page[ItemValuation]:
+    """Keyset-paginated moving-average valuation rows (PLAN 5.3): per (item, warehouse) value, qty
+    and avg cost, optionally filtered to one item and/or warehouse. Ordered by item_id for
+    stability. Reads the maintained value SSOT (inv_item_valuations), index-served (PERF §6)."""
+    stmt = select(ItemValuation).where(ItemValuation.tenant_id == tenant_id)
+    if item_id is not None:
+        stmt = stmt.where(ItemValuation.item_id == item_id)
+    if warehouse_id is not None:
+        stmt = stmt.where(ItemValuation.warehouse_id == warehouse_id)
+    return await paginate(
+        session,
+        stmt,
+        order_by=[OrderKey(ItemValuation.item_id, SortDirection.ASC)],
+        pk=ItemValuation.id,
+        cursor=cursor,
+        limit=limit,
+        filters=filter_fingerprint(item_id, warehouse_id),
+    )
+
+
+async def list_cost_layers(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    item_id: uuid.UUID,
+    *,
+    warehouse_id: uuid.UUID | None = None,
+    include_exhausted: bool = False,
+    cursor: str | None = None,
+    limit: int = DEFAULT_LIMIT,
+) -> Page[CostLayer]:
+    """Keyset-paginated FIFO cost layers for an item (PLAN 5.3), oldest-first by received_at — the
+    consumption order. ``include_exhausted`` widens to fully-consumed layers (default: live layers
+    only). Optional warehouse filter. The cost-layer drill-down for a FIFO item; index-served by
+    ``(tenant, item, warehouse, received_at)`` (PERFORMANCE §6)."""
+    stmt = select(CostLayer).where(
+        CostLayer.tenant_id == tenant_id, CostLayer.item_id == item_id
+    )
+    if warehouse_id is not None:
+        stmt = stmt.where(CostLayer.warehouse_id == warehouse_id)
+    if not include_exhausted:
+        stmt = stmt.where(CostLayer.remaining_qty > 0)
+    return await paginate(
+        session,
+        stmt,
+        order_by=[OrderKey(CostLayer.received_at, SortDirection.ASC)],
+        pk=CostLayer.id,
+        cursor=cursor,
+        limit=limit,
+        filters=filter_fingerprint(item_id, warehouse_id, include_exhausted),
     )

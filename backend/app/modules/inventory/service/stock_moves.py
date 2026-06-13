@@ -33,6 +33,7 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import docflow
+from app.core.events import publish
 from app.core.exceptions import ConflictError, NotFoundError, ValidationFailedError
 from app.core.numbering import claim_number, ensure_sequence
 from app.modules.inventory.constants import (
@@ -49,6 +50,7 @@ from app.modules.inventory.constants import (
 )
 from app.modules.inventory.models import Bin, Item, StockMove
 from app.modules.inventory.schemas import StockMoveCreate
+from app.modules.inventory.service import costing, costing_reversal
 from app.modules.inventory.service.stock_quants import (
     apply_bin_delta,
     resolve_lot,
@@ -133,6 +135,30 @@ def _validate_bin_sides(
         )
 
 
+def _is_inbound(move_type: MoveType, to_bin_id: uuid.UUID | None) -> bool:
+    """Whether the move adds stock (the costing-inbound side): a RECEIPT, or a positive ADJUSTMENT
+    (to_bin set). The inbound side is where the REQUIRED entry unit_cost applies (D-020)."""
+    return move_type == MoveType.RECEIPT or (
+        move_type == MoveType.ADJUSTMENT and to_bin_id is not None
+    )
+
+
+def _validate_unit_cost(payload: StockMoveCreate, move_type: MoveType) -> Decimal | None:
+    """Costing input rule (D-020): a RECEIPT / positive ADJUSTMENT REQUIRES ``unit_cost`` (the value
+    stock enters at, > 0). An ISSUE / negative ADJUSTMENT / TRANSFER IGNORE any passed cost — the
+    engine computes the outbound cost / carries the current valuation — so the move stores it as
+    None
+    and the engine fills it. Returns the validated entry cost (None for the computed sides)."""
+    if _is_inbound(move_type, payload.to_bin_id):
+        if payload.unit_cost is None or Decimal(payload.unit_cost) <= 0:
+            raise ValidationFailedError(
+                message="A receipt or stock-increase requires a positive unit cost",
+                code="inventory.receipt_unit_cost_required",
+            )
+        return Decimal(payload.unit_cost)
+    return None
+
+
 async def _apply_quant_deltas(
     session: AsyncSession,
     tenant_id: uuid.UUID,
@@ -161,12 +187,20 @@ async def create_move(
     session: AsyncSession,
     tenant_id: uuid.UUID,
     payload: StockMoveCreate,
+    *,
+    reversal_of: StockMove | None = None,
 ) -> StockMove:
-    """Create + POST a stock move (the heart, PLAN 5.2). Validates everything (see module
-    docstring), claims the gapless STK number, inserts the POSTED move, and updates the quant
-    projection in the SAME transaction. Raises 422 InsufficientStockError when an issue/transfer
-    exceeds on-hand; NotFound for a missing item; 422 for a non-stocked item or a bin-side rule
-    break. The caller commits via uow."""
+    """Create + POST a stock move (the heart, PLAN 5.2/5.3). Validates everything (see module
+    docstring), claims the gapless STK number, inserts the POSTED move, updates the quant
+    projection,
+    runs COSTING and publishes the valuation event — all in the SAME transaction (D-020). Raises 422
+    InsufficientStockError when an issue/transfer exceeds on-hand; NotFound for a missing item; 422
+    for a non-stocked item or a bin-side rule break. The caller commits via uow.
+
+    ``reversal_of`` (set by ``reverse_move``) runs the costing REVERSAL path instead of a fresh
+    valuation: the reversing move replays the original's FIFO consumptions / re-applies its
+    moving-average value and emits the OPPOSITE valuation event so the COGS journal is reversed too
+    (D-020)."""
     move_type = MoveType(payload.move_type)
     quantity = Decimal(payload.quantity)
     if quantity <= 0:
@@ -178,6 +212,11 @@ async def create_move(
 
     item = await _require_stocked_item(session, tenant_id, payload.item_id)
     _validate_bin_sides(move_type, payload.from_bin_id, payload.to_bin_id)
+    # Costing input (D-020): a RECEIPT/positive-ADJUSTMENT requires the entry cost; computed sides
+    # ignore it. Validated BEFORE any write so a missing cost fails fast (no number burned). A
+    # reversal carries its cost from the original move (the costing reversal path), so it does not
+    # need (and does not pass) an entry cost — skip the requirement.
+    entry_cost = None if reversal_of is not None else _validate_unit_cost(payload, move_type)
     if payload.from_bin_id is not None:
         await _require_active_bin(session, tenant_id, payload.from_bin_id, side="from")
     if payload.to_bin_id is not None:
@@ -249,6 +288,9 @@ async def create_move(
         move_date=move_date,
         reference=payload.reference,
         posted=True,
+        # The validated entry cost on an inbound move; the costing engine fills the computed cost on
+        # an outbound/transfer move below (D-020).
+        unit_cost=entry_cost,
     )
     session.add(move)
     await session.flush()
@@ -265,6 +307,19 @@ async def create_move(
         payload.to_bin_id,
         quantity,
     )
+    # Costing IN THE SAME TRANSACTION (D-020), right after the quant update: update the
+    # moving-average valuation / FIFO layers, write the computed cost onto the move, and publish the
+    # StockValued event BEFORE the uow drains it — the COGS/inventory journal posts in this same
+    # transaction, so the move + quant + valuation + journal commit or roll back as one. A
+    # value-neutral within-warehouse transfer returns no event (no journal).
+    if reversal_of is not None:
+        result = await costing_reversal.reverse_costing(
+            session, tenant_id, item, move, reversal_of
+        )
+    else:
+        result = await costing.apply_costing(session, tenant_id, item, move)
+    if result.event is not None:
+        publish(session, result.event)
     return move
 
 
@@ -303,7 +358,13 @@ async def reverse_move(
     # swapped shape because the move_type's required side follows the populated bin.
     reversal_payload = _retype_for_reversal(reversal_payload, MoveType(original.move_type))
 
-    reversal = await create_move(session, tenant_id, reversal_payload)
+    # Pass the original so create_move runs the costing REVERSAL (replay), not a fresh valuation,
+    # and
+    # publishes the OPPOSITE StockValued event so the COGS journal is reversed in the same
+    # transaction (D-020).
+    reversal = await create_move(
+        session, tenant_id, reversal_payload, reversal_of=original
+    )
     await docflow.link_documents(
         session,
         tenant_id,

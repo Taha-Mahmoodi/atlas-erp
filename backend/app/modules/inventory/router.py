@@ -49,6 +49,7 @@ from app.modules.inventory.schemas import (
     UomUpdate,
 )
 from app.modules.inventory.stock_router import stock_router
+from app.modules.inventory.valuation_router import valuation_router
 
 router = APIRouter(prefix="/api/v1/inventory", tags=["inventory"])
 CursorParamsDep = Depends(cursor_params)
@@ -316,7 +317,9 @@ async def create_item_conversion(
     return UomConversionRead.model_validate(conversion)
 
 
-# PLAN 5.2 stock surface (warehouses, bins, moves, on-hand) is a sibling sub-router mounted here, so
-# the whole module stays ONE surface at /api/v1/inventory — the finance journal_router/ap_router
-# include precedent (no second mount in main.py).
+# PLAN 5.2 stock surface (warehouses, bins, moves, on-hand) and the PLAN 5.3 valuation surface
+# (stock-valuations, cost-layers) are sibling sub-routers mounted here, so the whole module stays
+# ONE surface at /api/v1/inventory — the finance journal_router/ap_router include precedent (no
+# second mount in main.py).
 router.include_router(stock_router)
+router.include_router(valuation_router)
