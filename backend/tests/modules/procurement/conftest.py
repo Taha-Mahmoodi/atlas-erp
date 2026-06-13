@@ -17,14 +17,27 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.main import register_event_handlers
 from tests.modules.procurement.factories import (
+    GoodsReceiptSetup,
     ProcurementPrincipal,
     ProcurementSetup,
+    build_goods_receipt_setup,
     build_procurement_setup,
     create_procurement_principal,
 )
 
-__all__ = ["ProcurementPrincipal", "ProcurementSetup"]
+__all__ = ["GoodsReceiptSetup", "ProcurementPrincipal", "ProcurementSetup"]
+
+
+@pytest.fixture(autouse=True)
+def _register_event_handlers(clear_event_subscriptions: Callable[[], None]) -> None:
+    """Register the cross-module handlers for every procurement test (PLAN 6.3, D-041): the
+    procurement→inventory goods-receipt bridge AND the inventory→finance COGS handler, so a GR
+    posted through the SERVICE layer (not the HTTP app, which registers handlers in its factory)
+    creates the stock moves + GR/IR journals. Depends on the global ``clear_event_subscriptions`` so
+    it runs AFTER the per-test reset; idempotent (``register_event_handlers`` de-duplicates)."""
+    register_event_handlers()
 
 
 @pytest.fixture
@@ -34,6 +47,16 @@ async def procurement_setup(
     """A USD currency + a STOCKED inventory item in tenant A, ready to create vendors and approve
     items (PLAN 6.1)."""
     return await build_procurement_setup(db_session, tenant_a)
+
+
+@pytest.fixture
+async def goods_receipt_setup(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> GoodsReceiptSetup:
+    """A SENT PO (10 @ 5 USD) for a STOCKED item, the GL accounts wired, an open period, a warehouse
+    + bin, and the GR/IR clearing posting default mapped — ready to create + post a goods receipt
+    (PLAN 6.3)."""
+    return await build_goods_receipt_setup(db_session, tenant_a)
 
 
 # --- Procurement-permissioned HTTP clients ------------------------------------

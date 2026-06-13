@@ -126,9 +126,22 @@ DEPRECIATION_POSTS_LINK = "posts"
 DEPRECIATION_RUN_JOB = "finance.depreciation_run"
 DEPRECIATION_RUN_SYNC_MAX_ASSETS = 100
 
-# Every known posting-default purpose: FX + the CO/bank/asset clearing accounts.
+# --- Procurement goods-receipt / GR-IR clearing (PLAN 6.3, D-041) -------------
+# The GR/IR (goods-received / invoice-received) clearing account is a per-tenant posting default
+# (a LIABILITY/clearing account). A goods receipt (6.3) posts Dr Inventory / Cr GR-IR via the
+# inventory costing event's valuation-offset OVERRIDE; the matched vendor bill (6.4) posts
+# Dr GR-IR / Cr AP, clearing the account. A tenant MUST map this purpose before a GR can post —
+# the GR has nowhere to credit otherwise (resolved via finance/queries.gr_ir_clearing_account).
+GR_IR_CLEARING = "gr_ir_clearing"
+
+# Every known posting-default purpose: FX + the CO/bank/asset clearing accounts + GR-IR.
 POSTING_PURPOSES: frozenset[str] = FX_POSTING_PURPOSES | frozenset(
-    {CO_ALLOCATION_CLEARING, BANK_UNMATCHED_CLEARING, ASSET_ACQUISITION_CLEARING}
+    {
+        CO_ALLOCATION_CLEARING,
+        BANK_UNMATCHED_CLEARING,
+        ASSET_ACQUISITION_CLEARING,
+        GR_IR_CLEARING,
+    }
 )
 
 # Background-job registry keys (PLAN 4P.5/D-032, closes #26): long-running finance operations

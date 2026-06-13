@@ -7,6 +7,7 @@ working from ONE surface.
 - ``requisitions``: requisition header/line + submit/approve action payloads (6.2).
 - ``rfqs``: RFQ header/line + record-quote / convert-from-requisition payloads (6.2).
 - ``orders``: PO header/line + convert-from-requisition / convert-from-RFQ payloads (6.2).
+- ``goods_receipts``: goods-receipt header/line + filter schemas (6.3).
 - ``approvals``: value-threshold approval-rule schemas (6.2).
 """
 
@@ -15,6 +16,14 @@ from app.modules.procurement.schemas.approvals import (
     ApprovalRuleFilter,
     ApprovalRuleRead,
     ApprovalRuleUpdate,
+)
+from app.modules.procurement.schemas.goods_receipts import (
+    GoodsReceiptCreate,
+    GoodsReceiptDetail,
+    GoodsReceiptFilter,
+    GoodsReceiptLineCreate,
+    GoodsReceiptLineRead,
+    GoodsReceiptRead,
 )
 from app.modules.procurement.schemas.orders import (
     PurchaseOrderCreate,
@@ -62,6 +71,12 @@ __all__ = [
     "ApprovalRuleFilter",
     "ApprovalRuleRead",
     "ApprovalRuleUpdate",
+    "GoodsReceiptCreate",
+    "GoodsReceiptDetail",
+    "GoodsReceiptFilter",
+    "GoodsReceiptLineCreate",
+    "GoodsReceiptLineRead",
+    "GoodsReceiptRead",
     "PurchaseOrderCreate",
     "PurchaseOrderDetail",
     "PurchaseOrderFilter",

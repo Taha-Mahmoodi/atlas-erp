@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.procurement.constants import PurchaseOrderStatus
 from app.modules.procurement.models import (
+    GoodsReceipt,
     PurchaseOrder,
     PurchaseOrderLine,
     Vendor,
@@ -169,6 +170,35 @@ async def get_po_for_receipt(
         .all()
     )
     return po, lines
+
+
+async def get_goods_receipt(
+    session: AsyncSession, tenant_id: uuid.UUID, gr_id: uuid.UUID
+) -> GoodsReceipt | None:
+    """The goods receipt with ``gr_id`` in the tenant, or None (PLAN 6.3). Lets 6.4 (the bill match)
+    read a GR header — PO, vendor, status, receipt date — without importing procurement service
+    internals. A point lookup on the PK."""
+    stmt = select(GoodsReceipt).where(
+        GoodsReceipt.tenant_id == tenant_id, GoodsReceipt.id == gr_id
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def goods_receipts_for_po(
+    session: AsyncSession, tenant_id: uuid.UUID, po_id: uuid.UUID
+) -> list[GoodsReceipt]:
+    """Every goods receipt raised against a PO (PLAN 6.3), newest first — the per-PO receipt history
+    the 6.4 three-way match reads to find what has been received. Index-served by
+    (tenant, purchase_order_id)."""
+    stmt = (
+        select(GoodsReceipt)
+        .where(
+            GoodsReceipt.tenant_id == tenant_id,
+            GoodsReceipt.purchase_order_id == po_id,
+        )
+        .order_by(GoodsReceipt.created_at.desc())
+    )
+    return list((await session.execute(stmt)).scalars().all())
 
 
 async def open_po_lines_for_vendor(

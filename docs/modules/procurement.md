@@ -253,6 +253,61 @@ The document headers are `AuditMixin`; lines ride the header's audit story (the 
 exclusion). The DocFlow chain for any document is the core endpoint
 `GET /api/v1/documents/{document_id}/chain`, which renders requisition → rfq → po.
 
+## Goods receipt (PLAN 6.3) — the three-way GR/IR flow
+
+A **goods receipt** records physical receipt of PO goods and is the first procurement document that
+moves stock and posts to the GL. A `GoodsReceipt` (`proc_goods_receipts`, `DocumentMixin` + gapless
+`GR-` number claimed at creation) is built DRAFT against a PO (`purchase_order_id` composite FK;
+`vendor_id` snapshot; `warehouse_id` opaque inventory id) with `GoodsReceiptLine`s naming the PO line
+received against, the target `bin_id`, the received quantity, optional lot/serial codes, and the
+`requires_inspection` flag — then POSTED.
+
+**The GR/IR three-way flow.** Posting a GR posts **Dr Inventory / Cr GR-IR clearing** (the GR/IR
+clearing account is a per-tenant `gr_ir_clearing` posting default — a LIABILITY/clearing account a
+tenant MUST configure or the post fails 422 `finance.posting_default_unmapped`). The 6.4 vendor bill
+will post **Dr GR-IR / Cr AP**, clearing the GR/IR account — so GR/IR holds the value of goods
+received-but-not-yet-invoiced. This replaces the standalone receipt's price-difference offset via the
+inventory **valuation-offset override** (see inventory.md / D-041).
+
+**Cross-module mechanism = the event bus (D-041).** Procurement must NOT call inventory's service
+(STRUCTURE §5). So `post_goods_receipt` publishes `GoodsReceiptPosted` carrying the per-line receipts
++ the resolved GR/IR account; **inventory's `handlers.py`** subscribes and creates the stock RECEIPT
+moves with `valuation_offset_account_id` = GR/IR, which in turn publish `StockValued` so finance posts
+the inventory-debit / GR-IR journals — a two-hop, same-transaction chain (procurement → inventory →
+finance). The whole post — GR + N moves + N journals + the PO `received_quantity` raise + PO status
+advance — commits **atomically** or rolls back together: a **closed-period `receipt_date`** trips a
+move's journal period trigger and rolls the entire post back (no move, no journal, GR stays DRAFT).
+
+**GR↔move linkage = docflow, not a cross-module FK (D-041).** Inventory owns the move, so the GR line
+carries no `stock_move_id` column; instead the chain records PO →`received_by`→ GR →`moved_by`→ each
+stock move. The DocFlow endpoint renders the full PO → GR → move chain.
+
+**PO status.** A receipt raises each PO line's `received_quantity` (over-receipt beyond the open
+quantity is **rejected 422 `procurement.over_receipt`** in v1 — tolerance is a 6.4 concern) and
+advances the PO to **PARTIALLY_RECEIVED** (any line still open) or **RECEIVED** (all lines fully
+received). The PO must be APPROVED/SENT/PARTIALLY_RECEIVED to receive (else 422
+`procurement.po_not_receivable`).
+
+**Lifecycle: DRAFT → POSTED** (a GR is built line-by-line then posted, unlike a stock move which is
+permanent at creation). A DRAFT GR can be CANCELLED; a **POSTED GR is terminal** — corrected by a
+reversing GR / a return (Phase 7 RMA), never cancelled (v1 ships no reverse-GR). Post is idempotent
+(D-013); re-posting a POSTED GR is rejected.
+
+**Inspection hook (v1 = flag only).** `requires_inspection` is a per-line boolean (sourced from the
+GR line; defaults False). In v1 it **only flags the line** — it does NOT route to a QI bin, block
+downstream use, or gate the stock move. The inspection-lot lifecycle (disposition: accept / reject /
+rework) is **Phase 9 Quality**; the flag is carried through to the stock move for traceability now.
+
+A GR is typically a single delivery (small), so the post runs **inline** (no background-job path,
+unlike bulk count posts / payment runs); the post is O(lines).
+
+| Method | Path | Permission |
+|---|---|---|
+| POST | `/goods-receipts` (create draft; idempotent) | `goods_receipt.manage` |
+| GET | `/goods-receipts` (paginated; filter po/status) · `/{id}` | `goods_receipt.read` |
+| POST | `/goods-receipts/{id}/post` (idempotent) | `goods_receipt.post` |
+| POST | `/goods-receipts/{id}/cancel` | `goods_receipt.manage` |
+
 ## What's deferred (per parity)
 
 - **Multi-characteristic / multi-step release strategies** — Atlas implements amount-only,
@@ -261,10 +316,16 @@ exclusion). The DocFlow chain for any document is the core endpoint
 - **Time-dependent info-record conditions** (price, lead-time, valid-from/to) on approved items.
 - **Partner functions** (separate ordering vs invoicing addresses) and **granular block levels**.
 - **Source determination** (source lists, quota arrangements, automatic source proposal).
-- **Goods receipt + 3-way match** — land in PLAN 6.3–6.4 (the `received_quantity` / `tax_code_id`
-  columns + the `get_po_for_receipt` / `po_line_open_quantity` queries are staged for them now).
+- **3-way match (PO/receipt/bill with tolerances) → AP bill** — PLAN 6.4 (the `tax_code_id` column +
+  the `goods_receipts_for_po` / `po_line_open_quantity` queries are staged for it now). The 6.4 bill
+  clears the GR/IR account this receipt credited.
+- **Over-receipt tolerance** — v1 rejects any receipt beyond a PO line's open quantity; a configurable
+  receipt tolerance is a later refinement.
+- **Inspection-lot disposition (accept/reject/rework, QI bins, blocking)** — Phase 9 Quality; v1's
+  `requires_inspection` is a flag only.
 
 Migrations: **0024_procurement_vendors** (`proc_vendors` + `proc_vendor_approved_items`);
 **0025_procurement_documents** (`proc_requisitions`/`_lines`, `proc_rfqs`/`_lines`,
-`proc_purchase_orders`/`_lines`, `proc_approval_rules` + indexes). Both no trigger-bearing alters,
-portable on SQLite + Postgres.
+`proc_purchase_orders`/`_lines`, `proc_approval_rules` + indexes); **0026_procurement_goods_receipts**
+(`proc_goods_receipts`/`_lines` + indexes). All with no trigger-bearing alters, portable on SQLite +
+Postgres. The `gr_ir_clearing` posting purpose is DATA (a posting default), not schema.

@@ -4,20 +4,14 @@ The read paths (``get_move``, ``list_moves``, ``list_on_hand``) live in ``stock_
 the 400-line cap); this module imports ``get_move`` from there and the package ``__init__``
 re-exports both halves as one surface.
 
-A stock move is the quantity SINGLE SOURCE OF TRUTH and is POSTED-at-creation + IMMUTABLE — there
-is no draft phase, no edit, no delete; a correction is a NEW reversing move (the universal-journal
-reversal philosophy of D-017 applied to stock). ``create_move``:
-
-1. validates — item is STOCKED; the move_type's required bin sides are present (constants
-   MOVE_BIN_SIDES; ADJUSTMENT = exactly one side; TRANSFER = two DIFFERENT bins); bins exist and
-   belong to ACTIVE warehouses; quantity > 0; the item's tracking mode is satisfied (lot/serial
-   resolved, created on a receipt, required-existing on issue/transfer; serial ⇒ quantity == 1);
-2. registers the document + claims the gapless STK number (D-012, at creation — a move is permanent
-   at create);
-3. inserts the StockMove (POSTED);
-4. updates the quant rows in the SAME transaction — decrement from_bin, increment to_bin — through
-   ``apply_bin_delta`` (the CHECK >= 0 + the pre-flight check forbid negative stock, D-020);
-   transfer deltas are applied in deterministic bin-id order (deadlock avoidance, D-020).
+A stock move is the quantity SINGLE SOURCE OF TRUTH and is POSTED-at-creation + IMMUTABLE — no draft
+phase, no edit, no delete; a correction is a NEW reversing move (D-017 applied to stock).
+``create_move`` validates (item STOCKED; move_type's required bin sides present per MOVE_BIN_SIDES —
+ADJUSTMENT one side, TRANSFER two DIFFERENT bins; bins exist in ACTIVE warehouses; quantity > 0;
+tracking mode satisfied — lot/serial resolved, created on a receipt, serial ⇒ qty 1), registers the
+document + claims the gapless STK number at creation (D-012), inserts the POSTED StockMove, and
+updates the quant rows in the SAME transaction via ``apply_bin_delta`` (the CHECK >= 0 forbids
+negative stock; transfer deltas applied in bin-id order for deadlock avoidance, D-020).
 
 The whole thing is one unit of work: move + quant updates commit or roll back together, so the
 ledger and the projection can never disagree. Idempotency (D-013) is owned by the endpoint.
@@ -189,18 +183,22 @@ async def create_move(
     payload: StockMoveCreate,
     *,
     reversal_of: StockMove | None = None,
+    valuation_offset_account_id: uuid.UUID | None = None,
 ) -> StockMove:
     """Create + POST a stock move (the heart, PLAN 5.2/5.3). Validates everything (see module
     docstring), claims the gapless STK number, inserts the POSTED move, updates the quant
-    projection,
-    runs COSTING and publishes the valuation event — all in the SAME transaction (D-020). Raises 422
+    projection, runs COSTING and publishes the valuation event — all in ONE transaction (D-020). 422
     InsufficientStockError when an issue/transfer exceeds on-hand; NotFound for a missing item; 422
     for a non-stocked item or a bin-side rule break. The caller commits via uow.
 
-    ``reversal_of`` (set by ``reverse_move``) runs the costing REVERSAL path instead of a fresh
-    valuation: the reversing move replays the original's FIFO consumptions / re-applies its
-    moving-average value and emits the OPPOSITE valuation event so the COGS journal is reversed too
-    (D-020)."""
+    ``reversal_of`` (set by ``reverse_move``) runs the costing REVERSAL path: the reversing move
+    replays the original's FIFO consumptions / re-applies its moving-average value and emits the
+    OPPOSITE valuation event so the COGS journal is reversed too (D-020).
+
+    ``valuation_offset_account_id`` (PLAN 6.3, D-041) OVERRIDES the receipt's standard
+    valuation-offset (price-difference): the procurement goods-receipt path passes the GR/IR
+    clearing account, so the StockValued event carries it as ``offset_account_id`` and the finance
+    handler credits GR/IR. Ignored on non-receipt types and on a reversal. None ⇒ unchanged."""
     move_type = MoveType(payload.move_type)
     quantity = Decimal(payload.quantity)
     if quantity <= 0:
@@ -308,16 +306,18 @@ async def create_move(
         quantity,
     )
     # Costing IN THE SAME TRANSACTION (D-020), right after the quant update: update the
-    # moving-average valuation / FIFO layers, write the computed cost onto the move, and publish the
-    # StockValued event BEFORE the uow drains it — the COGS/inventory journal posts in this same
-    # transaction, so the move + quant + valuation + journal commit or roll back as one. A
+    # valuation/layers, write the computed cost onto the move, and publish StockValued BEFORE the
+    # uow drains it — so move + quant + valuation + journal commit or roll back as one. A
     # value-neutral within-warehouse transfer returns no event (no journal).
     if reversal_of is not None:
         result = await costing_reversal.reverse_costing(
             session, tenant_id, item, move, reversal_of
         )
     else:
-        result = await costing.apply_costing(session, tenant_id, item, move)
+        result = await costing.apply_costing(
+            session, tenant_id, item, move,
+            valuation_offset_account_id=valuation_offset_account_id,
+        )
     if result.event is not None:
         publish(session, result.event)
     return move
