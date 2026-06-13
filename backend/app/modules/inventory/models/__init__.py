@@ -10,12 +10,18 @@ tenancy mapper-enumeration suite) registers all tables on ``Base.metadata``.
   on-hand quant projection (5.2, D-020/D-036).
 - ``costing``: the moving-average valuation + FIFO cost layers + per-layer consumptions — the VALUE
   SSOT, updated in the same transaction as every move (5.3, D-020/D-037).
+- ``counts``: physical/cycle count documents + their per-quant lines, which post variances as
+  ADJUSTMENT moves through the costing engine (5.4, D-038).
 """
 
 from app.modules.inventory.models.costing import (
     CostLayer,
     ItemValuation,
     LayerConsumption,
+)
+from app.modules.inventory.models.counts import (
+    StockCount,
+    StockCountLine,
 )
 from app.modules.inventory.models.masters import (
     Item,
@@ -36,6 +42,8 @@ __all__ = [
     "LayerConsumption",
     "Lot",
     "SerialNumber",
+    "StockCount",
+    "StockCountLine",
     "StockMove",
     "StockQuant",
     "Uom",

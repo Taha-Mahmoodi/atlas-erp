@@ -237,3 +237,45 @@ async def valuation_summary(
     for item_id_, qty, cost in layer_rows:
         totals[item_id_] = totals.get(item_id_, Decimal(0)) + Decimal(qty) * Decimal(cost)
     return totals
+
+
+async def current_unit_cost(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    item_id: uuid.UUID,
+    warehouse_id: uuid.UUID,
+) -> Decimal:
+    """The item's current per-unit BOOK cost in a warehouse (PLAN 5.4): the moving-average
+    ``avg_unit_cost`` for a MOVING_AVERAGE item, or the weighted average of the live FIFO layers for
+    a FIFO item — the SAME source a value-neutral transfer uses for its ledger cost
+    (costing._current_unit_cost). A positive count variance enters stock at this cost so the value
+    added matches the book cost (rather than an arbitrary entry price). Returns 0 when no
+    valuation/layer exists yet (an item the system thinks is empty, counted positive — the
+    adjustment then enters at 0 cost, a quantity-only correction with no value impact, which the
+    operator can re-cost via a later receipt). The FIFO layer product is summed in PYTHON (D-015: no
+    SQL multiply of two scaled money/quantity columns). One read for the MAV row, one for the FIFO
+    layers (no per-layer N+1)."""
+    valuation = (
+        await session.execute(
+            select(ItemValuation.avg_unit_cost).where(
+                ItemValuation.tenant_id == tenant_id,
+                ItemValuation.item_id == item_id,
+                ItemValuation.warehouse_id == warehouse_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if valuation is not None:
+        return Decimal(valuation)
+    rows = (
+        await session.execute(
+            select(CostLayer.remaining_qty, CostLayer.unit_cost).where(
+                CostLayer.tenant_id == tenant_id,
+                CostLayer.item_id == item_id,
+                CostLayer.warehouse_id == warehouse_id,
+                CostLayer.remaining_qty > 0,
+            )
+        )
+    ).all()
+    total_qty = sum((Decimal(qty) for qty, _cost in rows), Decimal(0))
+    total_value = sum((Decimal(qty) * Decimal(cost) for qty, cost in rows), Decimal(0))
+    return (total_value / total_qty) if total_qty > 0 else Decimal(0)

@@ -330,3 +330,7 @@ class CostLayerRead(ApiModel):
     remaining_qty: Decimal
     unit_cost: Decimal
     created_at: datetime
+
+# Physical & cycle count schemas (PLAN 5.4) live in the sibling ``count_schemas.py`` (split once
+# they would have pushed this file over the STRUCTURE §8 400-line cap, the finance assets_schemas.py
+# precedent); the count router imports them from there.

@@ -149,6 +149,62 @@ STOCK_VALUED_EVENT_KEY = "inventory.stock.valued"
 # (D-012 vocabulary): the move "posts" the valuation journal, mirroring finance's own 'posts' edge.
 STOCK_MOVE_POSTS_LINK = "posts"
 
+
+# --- Physical & cycle counts (PLAN 5.4, D-038) --------------------------------
+class CountType(StrEnum):
+    """What a stock count covers (parity: physical inventory vs cycle counting).
+
+    - PHYSICAL: a whole-warehouse snapshot — every quant in the warehouse becomes a count line.
+    - CYCLE: a chosen subset — the caller picks the items and/or bins to count (the recurring
+      ABC-style spot count), so only quants matching that scope become lines.
+
+    The type only changes which quants are enumerated into lines at populate time; the post path
+    is identical (variance → ADJUSTMENT move) for both."""
+
+    PHYSICAL = "PHYSICAL"
+    CYCLE = "CYCLE"
+
+
+class CountStatus(StrEnum):
+    """Lifecycle of a stock count (PLAN 5.4):
+
+    - DRAFT: created, scope chosen, lines snapshotted (system_qty captured, counted_qty NULL).
+    - COUNTING: at least one counted quantity recorded — the warehouse team is entering counts.
+    - POSTED: variances posted as ADJUSTMENT moves; TERMINAL — a posted count is never re-posted
+      or cancelled (corrections are NEW counts/adjustments, the append-only ledger philosophy).
+    - CANCELLED: abandoned before posting (only from DRAFT/COUNTING)."""
+
+    DRAFT = "DRAFT"
+    COUNTING = "COUNTING"
+    POSTED = "POSTED"
+    CANCELLED = "CANCELLED"
+
+
+# Count document type + number sequence (D-012): a count registers in core_documents and claims its
+# gapless CNT number AT CREATION (a count is a real document the moment it exists — its number is
+# the stable handle the warehouse team references while counting, so it is claimed at creation, the
+# orders/receipts branch, not the draft-numbered-at-post branch). Year-resets (CNT-2026-00001).
+STOCK_COUNT_DOC_TYPE = "inventory.stock_count"
+STOCK_COUNT_SEQUENCE_NAME = "inventory.count"
+STOCK_COUNT_NUMBER_PREFIX = "CNT"
+STOCK_COUNT_NUMBER_PADDING = 5
+
+# docflow link type joining a count's document to each ADJUSTMENT move it generates at post (D-012
+# vocabulary): the count "counts" the move into existence — the variance-posting edge the DocFlow
+# viewer renders from the count to its adjustment moves.
+STOCK_COUNT_ADJUSTMENT_LINK = "counts"
+
+# Background-job threshold (PERFORMANCE §3): a count whose post would generate more than this many
+# variance (non-zero) lines runs as an 'inventory.count_post' job (202 {job_id}); at or below it the
+# post runs inline (201) — mirroring the depreciation-run (100) / bank-import (1000) precedent. Each
+# variance is a real ADJUSTMENT document, so the post is O(N) moves; above this count the request is
+# backgrounded so it cannot hit a proxy timeout.
+COUNT_POST_SYNC_MAX_VARIANCES = 200
+
+# The background-job type for a large count post (code-defined registry key, like the permission
+# catalog — a job type exists because a handler for it ships in the codebase).
+COUNT_POST_JOB = "inventory.count_post"
+
 # The currency the COGS/inventory valuation journal posts in when the tenant has not configured a
 # functional currency (the v1 single-currency default, mirroring the journal tests' USD/2-dp). When
 # a functional currency IS configured the handler uses it; either way costs quantize to its decimals
@@ -176,6 +232,13 @@ INVENTORY_MOVE_CREATE = "inventory.move.create"
 # its own read action (a finance-adjacent concern — value, not just quantity), distinct from the
 # move-ledger read so the value views can be granted to costing/controlling roles independently.
 INVENTORY_VALUATION_READ = "inventory.valuation.read"
+# Physical/cycle counts (PLAN 5.4): read counts/variances vs create+edit a count (scope, snapshot,
+# record counted qty) vs POST it (the privileged action — posting variances changes on-hand AND
+# posts GL journals via the 5.3 path, so it is its own key, the journal.post / depreciation.run
+# precedent).
+INVENTORY_COUNT_READ = "inventory.count.read"
+INVENTORY_COUNT_MANAGE = "inventory.count.manage"
+INVENTORY_COUNT_POST = "inventory.count.post"
 
 register_permissions(
     INVENTORY_ITEM_READ,
@@ -191,6 +254,9 @@ register_permissions(
     INVENTORY_MOVE_READ,
     INVENTORY_MOVE_CREATE,
     INVENTORY_VALUATION_READ,
+    INVENTORY_COUNT_READ,
+    INVENTORY_COUNT_MANAGE,
+    INVENTORY_COUNT_POST,
     descriptions={
         INVENTORY_ITEM_READ: "Read items and their UoM conversions",
         INVENTORY_ITEM_MANAGE: "Create and edit items and their UoM conversions",
@@ -205,5 +271,8 @@ register_permissions(
         INVENTORY_MOVE_READ: "Read the stock-move ledger and on-hand projections",
         INVENTORY_MOVE_CREATE: "Create stock moves (receipts, issues, transfers, adjustments)",
         INVENTORY_VALUATION_READ: "Read stock valuations and FIFO cost layers",
+        INVENTORY_COUNT_READ: "Read stock counts and their variances",
+        INVENTORY_COUNT_MANAGE: "Create stock counts and record counted quantities",
+        INVENTORY_COUNT_POST: "Post stock-count variances as adjustment moves",
     },
 )
