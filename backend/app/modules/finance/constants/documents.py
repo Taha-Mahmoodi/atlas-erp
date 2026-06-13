@@ -45,6 +45,21 @@ AR_INVOICE_POSTS_LINK = "posts"
 AR_RECEIPT_RECEIPTS_LINK = "receipts"
 AR_PARTNER_TYPE = "CUSTOMER"
 
+# --- AR credit note (PLAN 7.4, sales RMA returns) -----------------------------
+# A credit note is the SIGN-FLIPPED customer invoice: it registers in core_documents at creation,
+# claims a gapless CN- number AT POSTING (the AR-invoice precedent), and posts the REVERSING AR
+# journal (Dr revenue net / Dr output tax / Cr AR control gross) so it reduces what the customer
+# owes. Modeled as a CustomerInvoice row whose journal carries document_type AR_CREDIT_NOTE —
+# finance
+# had no credit-note path before 7.4 (4.6 shipped invoices/receipts/dunning only), so this is the
+# minimal credit-memo entrypoint the sales return handler calls. open_amount stays 0 (a credit note
+# is not an open receivable to dun — it is a reduction, documented).
+AR_CREDIT_NOTE_DOC_TYPE = "finance.customer_credit_note"
+AR_CREDIT_NOTE_SEQUENCE_NAME = "finance.customer_credit_note"
+AR_CREDIT_NOTE_NUMBER_PREFIX = "CN"
+AR_CREDIT_NOTE_NUMBER_PADDING = 5
+AR_CREDIT_NOTE_POSTS_LINK = "posts"
+
 # Dunning day-thresholds (PLAN 4.6): highest crossed bound wins; level 0 = no notice yet.
 DUNNING_THRESHOLDS: tuple[int, ...] = (7, 30, 60)
 
@@ -149,7 +164,21 @@ PURCHASE_PRICE_VARIANCE = "purchase_price_variance"
 # MUST map it before a match can post — resolved via finance/queries.ap_control_account.
 AP_CONTROL = "ap_control"
 
-# Every known posting-default purpose: FX + the CO/bank/asset clearing accounts + GR-IR + PPV + AP.
+# --- AR control + sales revenue (PLAN 7.4, sales billing → AR, D-046) ---------
+# The AR control (trade-receivables) account the billing-triggered customer invoice DEBITS at the
+# invoiced total, and the SALES_REVENUE account each invoice line CREDITS at its net. A customer
+# invoice created DIRECTLY in finance (4.6) supplies its own ar_account_id + per-line revenue
+# account
+# per invoice; the sales-billing-triggered invoice resolves them from these per-tenant posting
+# defaults (sales holds no GL account), so a tenant MUST map both before a billing can post —
+# resolved via finance/queries.ar_control_account + finance/queries.sales_revenue_account. The AR
+# control mirrors AP_CONTROL; SALES_REVENUE mirrors the way PPV is a per-tenant default line
+# account.
+AR_CONTROL = "ar_control"
+SALES_REVENUE = "sales_revenue"
+
+# Every known posting-default purpose: FX + the CO/bank/asset clearing accounts + GR-IR + PPV + AP +
+# the AR control + sales-revenue defaults the 7.4 sales billing / credit-note flow resolves.
 POSTING_PURPOSES: frozenset[str] = FX_POSTING_PURPOSES | frozenset(
     {
         CO_ALLOCATION_CLEARING,
@@ -158,6 +187,8 @@ POSTING_PURPOSES: frozenset[str] = FX_POSTING_PURPOSES | frozenset(
         GR_IR_CLEARING,
         PURCHASE_PRICE_VARIANCE,
         AP_CONTROL,
+        AR_CONTROL,
+        SALES_REVENUE,
     }
 )
 

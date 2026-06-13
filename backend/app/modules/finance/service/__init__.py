@@ -60,6 +60,9 @@ from app.modules.finance.service.controlling import (
     update_cost_center,
     update_profit_center,
 )
+from app.modules.finance.service.credit_notes import (
+    create_and_post_customer_credit_note,
+)
 from app.modules.finance.service.customer_invoices import (
     create_customer_invoice,
     get_customer_invoice,
@@ -175,6 +178,7 @@ __all__ = [
     "create_account",
     "create_account_group",
     "create_allocation_rule",
+    "create_and_post_customer_credit_note",
     "create_and_post_payment",
     "create_and_post_receipt",
     "create_asset",

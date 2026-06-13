@@ -57,13 +57,28 @@ from app.core.money import quantize_for_currency
 from app.modules.finance import queries as finance_queries
 from app.modules.finance.constants import DocumentType
 from app.modules.finance.payables_schemas import VendorBillCreate, VendorBillLineCreate
+from app.modules.finance.receivables_schemas import (
+    CustomerCreditNoteCreate,
+    CustomerInvoiceCreate,
+    CustomerInvoiceLineCreate,
+)
 from app.modules.finance.schemas import JournalEntryCreate, JournalLineCreate
+from app.modules.finance.service.credit_notes import create_and_post_customer_credit_note
+from app.modules.finance.service.customer_invoices import (
+    create_customer_invoice,
+    post_customer_invoice,
+)
 from app.modules.finance.service.journal import create_draft_entry, post_entry
 from app.modules.finance.service.vendor_bills import create_vendor_bill, post_vendor_bill
 from app.modules.inventory.constants import DEFAULT_COSTING_CURRENCY, STOCK_MOVE_POSTS_LINK
 from app.modules.inventory.events import StockValued
 from app.modules.procurement.constants import INVOICE_MATCH_BILLED_BY_BILL_LINK
 from app.modules.procurement.events import InvoiceMatched
+from app.modules.sales.constants import (
+    BILLING_INVOICED_BY_INVOICE_LINK,
+    RETURN_CREDITED_BY_CREDIT_NOTE_LINK,
+)
+from app.modules.sales.events import BillingInvoiced, ReturnCredited
 
 # A signed posting: (account_id, amount). Positive amount => debit, negative => credit. The line
 # builder drops zeros and splits into the journal's one-sided debit/credit lines.
@@ -241,4 +256,106 @@ async def create_bill_for_match(session: AsyncSession, event: InvoiceMatched) ->
     )
 
 
-__all__ = ["create_bill_for_match", "post_stock_valuation_journal"]
+async def create_invoice_for_billing(session: AsyncSession, event: BillingInvoiced) -> None:
+    """Create + post the AR customer invoice for a posted sales billing (PLAN 7.4, D-046), in the
+    billing's transaction — the MIRROR of ``create_bill_for_match`` (match → AP bill), sign-flipped
+    to billing → AR invoice.
+
+    Builds a draft customer invoice whose lines CREDIT the sales-revenue account at each net (the
+    header tax code drives output tax), then posts it through the finance AR service
+    (``create_customer_invoice`` + ``post_customer_invoice``) so every AR/journal invariant fires
+    exactly as for a hand-entered invoice: Dr AR control gross / Cr revenue net / Cr output tax,
+    partner-keyed by the opaque customer id (D-029), due = billing_date + the terms sales computed.
+    Linking the billing document to the invoice document ('invoiced_by_invoice') completes the
+    order → delivery → billing → invoice docflow chain. A closed billing period trips the invoice's
+    journal trigger here and rolls the whole billing post back.
+
+    Registered via ``app.main.register_event_handlers`` (the deterministic D-011 seam), so the test
+    harness re-registers it after its per-test ``clear_subscriptions`` reset (D-025)."""
+    lines = [
+        CustomerInvoiceLineCreate(
+            account_id=event.revenue_account_id,
+            description="Sales revenue",
+            net_amount=line.net_amount,
+            tax_code_id=line.tax_code_id,
+        )
+        for line in event.lines
+    ]
+    invoice = await create_customer_invoice(
+        session,
+        event.tenant_id,
+        CustomerInvoiceCreate(
+            partner_id=event.partner_id,
+            partner_name=event.partner_name,
+            invoice_date=event.billing_date,
+            due_date=event.due_date,
+            currency_code=event.currency_code,
+            ar_account_id=event.ar_account_id,
+            external_ref=event.billing_number,
+            description=f"Sales billing {event.billing_number}",
+            lines=lines,
+        ),
+    )
+    await post_customer_invoice(
+        session, event.tenant_id, invoice.id, posting_date=event.billing_date
+    )
+    await docflow.link_documents(
+        session,
+        event.tenant_id,
+        predecessor=event.document_id,
+        successor=invoice.document_id,
+        link_type=BILLING_INVOICED_BY_INVOICE_LINK,
+    )
+
+
+async def create_credit_note_for_return(session: AsyncSession, event: ReturnCredited) -> None:
+    """Create + post the AR credit note for a posted sales return (PLAN 7.4, D-046), in the return's
+    transaction. Builds a credit note (the sign-flipped customer invoice — finance shipped no
+    credit-note path before 7.4) whose lines DEBIT the sales-revenue account at each net (reversing
+    recognized revenue) and whose AR control is CREDITED at the gross (reversing AR), with the
+    header
+    tax code reversing output tax — posted via ``create_and_post_customer_credit_note`` so every
+    journal invariant fires. Linking the return document to the credit-note document ('credited_by')
+    records the return → credit-note chain. A closed return period trips the credit note's journal
+    trigger here and rolls the whole return post back.
+
+    Registered via ``app.main.register_event_handlers`` (the deterministic D-011 seam)."""
+    lines = [
+        CustomerInvoiceLineCreate(
+            account_id=event.revenue_account_id,
+            description="Sales revenue reversal",
+            net_amount=line.net_amount,
+            tax_code_id=line.tax_code_id,
+        )
+        for line in event.lines
+    ]
+    note = await create_and_post_customer_credit_note(
+        session,
+        event.tenant_id,
+        CustomerCreditNoteCreate(
+            partner_id=event.partner_id,
+            partner_name=event.partner_name,
+            credit_note_date=event.credit_note_date,
+            currency_code=event.currency_code,
+            ar_account_id=event.ar_account_id,
+            external_ref=event.return_number,
+            description=f"Sales return {event.return_number}",
+            lines=lines,
+        ),
+        posting_date=event.credit_note_date,
+    )
+    await docflow.link_documents(
+        session,
+        event.tenant_id,
+        predecessor=event.document_id,
+        successor=note.document_id,
+        link_type=RETURN_CREDITED_BY_CREDIT_NOTE_LINK,
+    )
+
+
+__all__ = [
+    "create_bill_for_match",
+    "create_credit_note_for_return",
+    "create_invoice_for_billing",
+    "post_stock_valuation_journal",
+]

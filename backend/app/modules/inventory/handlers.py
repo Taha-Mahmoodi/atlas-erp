@@ -47,8 +47,11 @@ from app.modules.inventory.schemas import StockMoveCreate
 from app.modules.inventory.service.stock_moves import create_move
 from app.modules.procurement.constants import GR_MOVED_BY_STOCK_MOVE_LINK
 from app.modules.procurement.events import GoodsReceiptPosted
-from app.modules.sales.constants import DELIVERY_MOVED_BY_STOCK_MOVE_LINK
-from app.modules.sales.events import DeliveryShipped
+from app.modules.sales.constants import (
+    DELIVERY_MOVED_BY_STOCK_MOVE_LINK,
+    RETURN_RECEIVED_BY_STOCK_MOVE_LINK,
+)
+from app.modules.sales.events import DeliveryShipped, ReturnReceived
 
 
 async def receive_goods_receipt_moves(
@@ -125,4 +128,49 @@ async def issue_delivery_moves(session: AsyncSession, event: DeliveryShipped) ->
         )
 
 
-__all__ = ["issue_delivery_moves", "receive_goods_receipt_moves"]
+async def receive_return_moves(session: AsyncSession, event: ReturnReceived) -> None:
+    """Create the stock RECEIPT moves for a posted sales return (D-046), in the return's transaction
+    — the REVERSE of ``issue_delivery_moves`` (a return is a delivery run backwards).
+
+    One move per return line, each receiving INTO the line's destination bin at the supplied
+    ``unit_cost`` (the goods' current book cost). Each passes ``valuation_offset_account_id`` =
+    the event's ``cogs_account_id`` (the OVERRIDE, mirroring 6.3's GR/IR override), so the costing
+    event posts Dr Inventory / Cr COGS — REVERSING the original issue's COGS (a delivery's issue was
+    Dr COGS / Cr Inventory). A tracked item's lot/serial CODE may create the master instance on the
+    fly (a RECEIPT allowance, unlike an issue). Links the return document to each move document
+    ('received_by') so the docflow chain shows order → return → move(s). A closed return period
+    trips
+    a move's valuation journal trigger and rolls the whole return post back. Registered via
+    ``app.main.register_event_handlers`` (not an import-time ``@on``)."""
+    move_date = date.fromisoformat(event.move_date)
+    for line in event.moves:
+        move = await create_move(
+            session,
+            event.tenant_id,
+            StockMoveCreate(
+                move_type=MoveType.RECEIPT,
+                item_id=line.item_id,
+                quantity=line.quantity,
+                to_bin_id=line.bin_id,
+                lot_code=line.lot_code,
+                serial_code=line.serial_code,
+                move_date=move_date,
+                unit_cost=line.unit_cost,
+                reference=event.return_number,
+            ),
+            valuation_offset_account_id=event.cogs_account_id,
+        )
+        await docflow.link_documents(
+            session,
+            event.tenant_id,
+            predecessor=event.document_id,
+            successor=move.document_id,
+            link_type=RETURN_RECEIVED_BY_STOCK_MOVE_LINK,
+        )
+
+
+__all__ = [
+    "issue_delivery_moves",
+    "receive_goods_receipt_moves",
+    "receive_return_moves",
+]

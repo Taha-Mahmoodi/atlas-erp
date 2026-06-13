@@ -21,8 +21,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.finance.constants import (
     AP_CONTROL,
+    AR_CONTROL,
     GR_IR_CLEARING,
     PURCHASE_PRICE_VARIANCE,
+    SALES_REVENUE,
     BillStatus,
     InvoiceStatus,
     PeriodStatus,
@@ -183,6 +185,30 @@ async def ap_control_account(session: AsyncSession, tenant_id: uuid.UUID) -> uui
     downward (STRUCTURE §5) without importing finance/service (a bill created directly in finance
     supplies its own ap_account_id; the match-triggered bill resolves this default)."""
     return await _posting_defaults.get_posting_default(session, tenant_id, AP_CONTROL)
+
+
+async def ar_control_account(session: AsyncSession, tenant_id: uuid.UUID) -> uuid.UUID:
+    """The tenant's AR control (trade-receivables) account id (PLAN 7.4, D-046). The sales-billing-
+    triggered customer invoice DEBITS this account at the invoiced total (the open item is partner-
+    keyed by the opaque customer id on that line, D-029), and a return's credit note CREDITS it.
+    Resolves the ``ar_control`` posting default and RAISES a clear 422
+    (``finance.posting_default_unmapped``) when unmapped — a billing cannot post without an AR
+    control to debit. Exposed on finance/queries so SALES reads it downward (STRUCTURE §5) without
+    importing finance/service (an invoice created directly in finance supplies its own
+    ar_account_id; the billing-triggered invoice resolves this default — the AP_CONTROL mirror)."""
+    return await _posting_defaults.get_posting_default(session, tenant_id, AR_CONTROL)
+
+
+async def sales_revenue_account(session: AsyncSession, tenant_id: uuid.UUID) -> uuid.UUID:
+    """The tenant's sales-revenue account id (PLAN 7.4, D-046). Each sales-billing-triggered
+    customer invoice line CREDITS this account at its net (Cr revenue), and a return's credit note
+    DEBITS it (Dr revenue, reversing the recognized revenue). Resolves the ``sales_revenue`` posting
+    default and RAISES a clear 422 (``finance.posting_default_unmapped``) when unmapped — a billing
+    cannot post without a revenue account to credit. Exposed on finance/queries so SALES reads it
+    downward
+    (STRUCTURE §5) without importing finance/service (a v1 single revenue account per tenant; the
+    line-level revenue split is a later, mirroring how PPV is one per-tenant default)."""
+    return await _posting_defaults.get_posting_default(session, tenant_id, SALES_REVENUE)
 
 
 async def get_tax_code(

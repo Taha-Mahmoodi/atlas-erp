@@ -18,8 +18,20 @@ internal detail. Re-exported here so call sites use one import.
 - ``deliveries``: outbound-delivery create/cancel (7.3, D-045).
 - ``delivery_post``: outbound-delivery post — the stock-issue → COGS seam (7.3, D-045).
 - ``delivery_reads``: delivery list + header/line point reads (7.3).
+- ``billing`` / ``billing_post`` / ``billing_reads``: billing create-cancel / post (→ AR invoice via
+  the event bus) / reads (7.4, D-046).
+- ``returns`` / ``returns_post`` / ``returns_reads``: return create-cancel / post (→ stock receipt +
+  credit note via the event bus) / reads (7.4, D-046).
 """
 
+from app.modules.sales.service.billing import cancel_billing, create_billing
+from app.modules.sales.service.billing_post import post_billing
+from app.modules.sales.service.billing_reads import (
+    billings_for_order,
+    get_billing,
+    get_billing_lines,
+    list_billings,
+)
 from app.modules.sales.service.conversions import convert_quote_to_order
 from app.modules.sales.service.customer_groups import (
     create_customer_group,
@@ -80,24 +92,39 @@ from app.modules.sales.service.quotes import (
     send_quote,
     update_quote,
 )
+from app.modules.sales.service.returns import cancel_return, create_return
+from app.modules.sales.service.returns_post import post_return
+from app.modules.sales.service.returns_reads import (
+    get_return,
+    get_return_lines,
+    list_returns,
+    returns_for_order,
+)
 
 __all__ = [
     "ConfirmResult",
     "ResolvedPrice",
     "accept_quote",
     "add_price_list_item",
+    "billings_for_order",
+    "cancel_billing",
     "cancel_delivery",
     "cancel_quote",
+    "cancel_return",
     "cancel_sales_order",
     "confirm_order",
     "convert_quote_to_order",
+    "create_billing",
     "create_customer",
     "create_customer_group",
     "create_delivery",
     "create_price_list",
     "create_quote",
+    "create_return",
     "create_sales_order",
     "deliveries_for_order",
+    "get_billing",
+    "get_billing_lines",
     "get_customer",
     "get_customer_group",
     "get_delivery",
@@ -105,22 +132,29 @@ __all__ = [
     "get_price_list",
     "get_quote",
     "get_quote_lines",
+    "get_return",
+    "get_return_lines",
     "get_sales_order",
     "get_sales_order_lines",
+    "list_billings",
     "list_customer_groups",
     "list_customers",
     "list_deliveries",
     "list_price_list_items",
     "list_price_lists",
     "list_quotes",
+    "list_returns",
     "list_sales_orders",
+    "post_billing",
     "post_delivery",
+    "post_return",
     "mark_expired_if_lapsed",
     "mark_quote_expired",
     "reject_quote",
     "release_credit",
     "remove_price_list_item",
     "resolve_price",
+    "returns_for_order",
     "send_quote",
     "update_customer",
     "update_customer_group",

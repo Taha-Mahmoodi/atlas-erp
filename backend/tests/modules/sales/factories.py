@@ -33,7 +33,9 @@ from app.modules.sales.models import (
     PriceList,
     PriceListItem,
     Quote,
+    SalesBilling,
     SalesOrder,
+    SalesReturn,
 )
 from app.modules.sales.schemas import (
     CustomerCreate,
@@ -561,12 +563,248 @@ async def post_delivery(
         return await service.get_delivery(session, tenant_id, delivery_id)
 
 
+# --- Billing + returns (PLAN 7.4) ---------------------------------------------
+
+
+@dataclass(frozen=True)
+class BillingSetup:
+    """An OrderSetup PLUS the finance AR wiring the 7.4 billing/return flow needs (D-046): an AR
+    control account + a sales-revenue account mapped as the ``ar_control`` / ``sales_revenue``
+    posting defaults (so the billing-triggered AR invoice + the return credit note can post), and an
+    optional tax code with a payable account (so the tax-posting assertions have a real code). Plain
+    ids so a rollback cannot break a follow-up payload."""
+
+    order: OrderSetup
+    ar_account_id: uuid.UUID
+    revenue_account_id: uuid.UUID
+    tax_account_id: uuid.UUID
+    tax_code_id: uuid.UUID
+
+
+async def build_billing_setup(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    credit_limit: str = "1000000",
+    tracking_mode: str = "NONE",
+    tax_rate: str = "0",
+) -> BillingSetup:
+    """An OrderSetup wired for billing/returns (PLAN 7.4): creates the AR control + sales-revenue +
+    output-tax accounts, maps the ``ar_control`` / ``sales_revenue`` posting defaults, and a tax
+    code
+    (``tax_rate`` 0 = no tax by default; a positive rate exercises the output-tax leg). Goes through
+    the real finance service (D-025)."""
+    from app.modules.finance import service as finance_svc
+    from app.modules.finance.constants import AR_CONTROL, SALES_REVENUE, AccountType
+    from app.modules.finance.schemas import AccountCreate, TaxCodeCreate
+
+    order = await build_order_setup(
+        session, tenant_id, credit_limit=credit_limit, tracking_mode=tracking_mode
+    )
+    with tenant_context(tenant_id):
+        ar = await finance_svc.create_account(
+            session,
+            tenant_id,
+            AccountCreate(code="1200", name="Accounts Receivable", account_type=AccountType.ASSET),
+        )
+        revenue = await finance_svc.create_account(
+            session,
+            tenant_id,
+            AccountCreate(code="4000", name="Sales Revenue", account_type=AccountType.REVENUE),
+        )
+        tax = await finance_svc.create_account(
+            session,
+            tenant_id,
+            AccountCreate(code="2200", name="Output Tax", account_type=AccountType.LIABILITY),
+        )
+        await finance_svc.set_posting_default(session, tenant_id, AR_CONTROL, ar.id)
+        await finance_svc.set_posting_default(session, tenant_id, SALES_REVENUE, revenue.id)
+        tax_code = await finance_svc.create_tax_code(
+            session,
+            tenant_id,
+            TaxCodeCreate(
+                code="VAT",
+                name="Output VAT",
+                rate_percent=Decimal(tax_rate),
+                tax_payable_account_id=tax.id,
+            ),
+        )
+        await session.commit()
+    return BillingSetup(
+        order=order,
+        ar_account_id=ar.id,
+        revenue_account_id=revenue.id,
+        tax_account_id=tax.id,
+        tax_code_id=tax_code.id,
+    )
+
+
+async def build_delivered_order(
+    session: AsyncSession,
+    setup: BillingSetup,
+    *,
+    quantity: str = "5",
+    unit_price: str = "10",
+    unit_cost: str = "4",
+    tax_code_id: uuid.UUID | None = None,
+) -> SalesOrder:
+    """Create → confirm → fully deliver a one-line order (the 7.4 billing precondition): seed
+    on-hand
+    at ``unit_cost`` (so the COGS is deterministic), create + confirm the order, then deliver the
+    full
+    quantity. Returns the order re-read (now DELIVERED). ``tax_code_id`` rides the order line so the
+    billing/return carries it."""
+    from app.modules.sales.schemas import DeliveryLineCreate
+
+    await build_stock_for_cost(session, setup.order, quantity, unit_cost=unit_cost)
+    order = await build_sales_order(
+        session,
+        setup.order.tenant_id,
+        customer_id=setup.order.customer_id,
+        item_id=setup.order.item_id,
+        uom_id=setup.order.uom_id,
+        quantity=quantity,
+        unit_price=unit_price,
+        tax_code_id=tax_code_id,
+    )
+    confirmed = await confirm_sales_order(session, setup.order.tenant_id, order.id)
+    with tenant_context(setup.order.tenant_id):
+        lines = await service.get_sales_order_lines(session, setup.order.tenant_id, confirmed.id)
+    delivery = await build_delivery(
+        session,
+        setup.order,
+        order_id=confirmed.id,
+        lines=[
+            DeliveryLineCreate(
+                sales_order_line_id=lines[0].id,
+                bin_id=setup.order.bin_id,
+                quantity=Decimal(quantity),
+            )
+        ],
+    )
+    await post_delivery(session, setup.order.tenant_id, delivery.id)
+    with tenant_context(setup.order.tenant_id):
+        return await service.get_sales_order(session, setup.order.tenant_id, confirmed.id)
+
+
+async def build_stock_for_cost(
+    session: AsyncSession, setup: OrderSetup, quantity: str, *, unit_cost: str
+) -> None:
+    """Seed on-hand at a specific entry cost (D-025), so the delivery COGS + the return re-entry
+    cost
+    are deterministic."""
+    from tests.modules.inventory.factories import build_stock
+
+    await build_stock(
+        session,
+        setup.tenant_id,
+        setup.item_id,
+        setup.bin_id,
+        Decimal(quantity),
+        unit_cost=Decimal(unit_cost),
+    )
+
+
+async def build_billing(
+    session: AsyncSession,
+    setup: BillingSetup,
+    *,
+    order_id: uuid.UUID,
+    lines: list,
+    bill_all_delivered: bool = False,
+) -> SalesBilling:
+    """Create a DRAFT billing against an order through the real service inside a uow (D-025).
+    ``lines`` is a list of BillingLineCreate (ignored when ``bill_all_delivered``)."""
+    from app.modules.sales.schemas import BillingCreate
+
+    holder: dict[str, uuid.UUID] = {}
+
+    async def work() -> None:
+        with tenant_context(setup.order.tenant_id):
+            billing = await service.create_billing(
+                session,
+                setup.order.tenant_id,
+                BillingCreate(
+                    sales_order_id=order_id,
+                    bill_all_delivered=bill_all_delivered,
+                    lines=lines,
+                ),
+            )
+            holder["id"] = billing.id
+
+    with tenant_context(setup.order.tenant_id):
+        await run_in_uow(session, work)
+        return await service.get_billing(session, setup.order.tenant_id, holder["id"])
+
+
+async def post_billing(
+    session: AsyncSession, tenant_id: uuid.UUID, billing_id: uuid.UUID
+) -> SalesBilling:
+    """Post a DRAFT billing through the real service inside a uow (D-025): triggers the AR invoice
+    via
+    the event bus, raises invoiced_quantity, advances the order. Returns the posted billing
+    re-read."""
+    async def work() -> None:
+        with tenant_context(tenant_id):
+            await service.post_billing(session, tenant_id, billing_id)
+
+    with tenant_context(tenant_id):
+        await run_in_uow(session, work)
+        return await service.get_billing(session, tenant_id, billing_id)
+
+
+async def build_return(
+    session: AsyncSession,
+    setup: BillingSetup,
+    *,
+    order_id: uuid.UUID,
+    lines: list,
+) -> SalesReturn:
+    """Create a DRAFT return against an order through the real service inside a uow (D-025).
+    ``lines`` is a list of ReturnLineCreate."""
+    from app.modules.sales.schemas import ReturnCreate
+
+    holder: dict[str, uuid.UUID] = {}
+
+    async def work() -> None:
+        with tenant_context(setup.order.tenant_id):
+            sales_return = await service.create_return(
+                session,
+                setup.order.tenant_id,
+                ReturnCreate(
+                    sales_order_id=order_id,
+                    warehouse_id=setup.order.warehouse_id,
+                    lines=lines,
+                ),
+            )
+            holder["id"] = sales_return.id
+
+    with tenant_context(setup.order.tenant_id):
+        await run_in_uow(session, work)
+        return await service.get_return(session, setup.order.tenant_id, holder["id"])
+
+
+async def post_return(
+    session: AsyncSession, tenant_id: uuid.UUID, return_id: uuid.UUID
+) -> SalesReturn:
+    """Post a DRAFT return through the real service inside a uow (D-025): receives stock + posts the
+    credit note via the event bus, raises returned_quantity. Returns the posted return re-read."""
+    async def work() -> None:
+        with tenant_context(tenant_id):
+            await service.post_return(session, tenant_id, return_id)
+
+    with tenant_context(tenant_id):
+        await run_in_uow(session, work)
+        return await service.get_return(session, tenant_id, return_id)
+
+
 # --- Principals ---------------------------------------------------------------
 
 # Finance + inventory setup keys the API tests need to scaffold cross-module data through the wire
 # (a customer's / price list's currency lives in finance; a price-list item points at a real
-# inventory item).
-_FINANCE_SETUP_KEYS = ("finance.fx.manage",)
+# inventory item). finance.ar.read lets the 7.4 billing API test assert the triggered AR invoice
+# over the wire.
+_FINANCE_SETUP_KEYS = ("finance.fx.manage", "finance.ar.read")
 _INVENTORY_SETUP_KEYS = (
     "inventory.uom.manage",
     "inventory.category.manage",
