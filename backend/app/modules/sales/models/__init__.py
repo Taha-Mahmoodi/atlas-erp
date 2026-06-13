@@ -8,10 +8,11 @@ Customer``).
 - ``orders``: the ``Quote`` + ``QuoteLine`` and ``SalesOrder`` + ``SalesOrderLine`` O2C documents
   (7.2).
 - ``deliveries``: the ``Delivery`` + ``DeliveryLine`` outbound fulfilment documents (7.3).
-
-The invoice document tables (7.4) will add their own file here.
+- ``billing``: the ``SalesBilling`` + ``SalesBillingLine`` invoicing documents (7.4).
+- ``returns``: the ``SalesReturn`` + ``SalesReturnLine`` RMA documents (7.4).
 """
 
+from app.modules.sales.models.billing import SalesBilling, SalesBillingLine
 from app.modules.sales.models.customers import Customer, CustomerGroup
 from app.modules.sales.models.deliveries import Delivery, DeliveryLine
 from app.modules.sales.models.orders import (
@@ -21,6 +22,7 @@ from app.modules.sales.models.orders import (
     SalesOrderLine,
 )
 from app.modules.sales.models.pricing import PriceList, PriceListItem
+from app.modules.sales.models.returns import SalesReturn, SalesReturnLine
 
 __all__ = [
     "Customer",
@@ -31,6 +33,10 @@ __all__ = [
     "PriceListItem",
     "Quote",
     "QuoteLine",
+    "SalesBilling",
+    "SalesBillingLine",
     "SalesOrder",
     "SalesOrderLine",
+    "SalesReturn",
+    "SalesReturnLine",
 ]

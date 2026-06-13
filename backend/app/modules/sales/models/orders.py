@@ -217,8 +217,14 @@ class SalesOrderLine(UuidPKMixin, TenantMixin, TimestampMixin, Base):
     delivered_quantity: Mapped[object] = mapped_column(
         QuantityType(), nullable=False, default=0, server_default="0"
     )
-    # Raised by 7.4 billing; ordered − invoiced is the open-to-invoice quantity. Default 0.
+    # Raised by 7.4 billing; delivered − invoiced is the open-to-invoice quantity. Default 0.
     invoiced_quantity: Mapped[object] = mapped_column(
+        QuantityType(), nullable=False, default=0, server_default="0"
+    )
+    # Raised by 7.4 returns (RMA); invoiced − returned is the open-to-return quantity (the return
+    # cap
+    # is INVOICED, not delivered — a credit note must reduce a real invoice, D-046). Default 0.
+    returned_quantity: Mapped[object] = mapped_column(
         QuantityType(), nullable=False, default=0, server_default="0"
     )
     tax_code_id: Mapped[uuid.UUID | None] = mapped_column(sa.Uuid, nullable=True)

@@ -93,6 +93,27 @@ class CustomerInvoiceDetail(CustomerInvoiceRead):
     lines: list[CustomerInvoiceLineRead]
 
 
+# --- Customer credit notes (PLAN 7.4, sales RMA returns) ----------------------
+
+
+class CustomerCreditNoteCreate(ApiModel):
+    """Create + post a customer credit note (PLAN 7.4) — the sign-flipped customer invoice. Same
+    shape as ``CustomerInvoiceCreate`` (``partner_id`` opaque customer id D-029, an AR control
+    account to credit, revenue lines + tax codes), but its posted journal REVERSES the AR invoice's:
+    Dr revenue net / Dr output tax / Cr AR control gross — reducing what the customer owes. Built
+    and
+    posted in one step by the sales-return handler (finance had no credit-note path before 7.4)."""
+
+    partner_id: uuid.UUID
+    partner_name: str
+    credit_note_date: date
+    currency_code: str
+    ar_account_id: uuid.UUID
+    external_ref: str | None = None
+    description: str | None = None
+    lines: list[CustomerInvoiceLineCreate]
+
+
 # --- Customer receipts --------------------------------------------------------
 
 

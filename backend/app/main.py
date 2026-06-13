@@ -268,15 +268,23 @@ def register_event_handlers() -> None:
     from app.core.events import handlers_for, subscribe
     from app.modules.finance.handlers import (
         create_bill_for_match,
+        create_credit_note_for_return,
+        create_invoice_for_billing,
         post_stock_valuation_journal,
     )
     from app.modules.inventory.events import StockValued
     from app.modules.inventory.handlers import (
         issue_delivery_moves,
         receive_goods_receipt_moves,
+        receive_return_moves,
     )
     from app.modules.procurement.events import GoodsReceiptPosted, InvoiceMatched
-    from app.modules.sales.events import DeliveryShipped
+    from app.modules.sales.events import (
+        BillingInvoiced,
+        DeliveryShipped,
+        ReturnCredited,
+        ReturnReceived,
+    )
 
     if post_stock_valuation_journal not in handlers_for(StockValued.key):
         subscribe(StockValued.key, post_stock_valuation_journal)
@@ -298,6 +306,23 @@ def register_event_handlers() -> None:
     # publishes; finance handles its own bill posting (STRUCTURE §5).
     if create_bill_for_match not in handlers_for(InvoiceMatched.key):
         subscribe(InvoiceMatched.key, create_bill_for_match)
+    # Sales billing → finance AR-invoice bridge (PLAN 7.4, D-046): the MIRROR of the invoice-match →
+    # AP-bill bridge, sign-flipped — finance's handler creates + posts the AR customer invoice (Dr
+    # AR
+    # control / Cr revenue + tax) when a billing posts. Sales publishes; finance handles its own
+    # invoice posting (STRUCTURE §5).
+    if create_invoice_for_billing not in handlers_for(BillingInvoiced.key):
+        subscribe(BillingInvoiced.key, create_invoice_for_billing)
+    # Sales return → inventory RECEIPT bridge (PLAN 7.4, D-046): inventory's handler receives the
+    # goods back (Dr Inventory / Cr COGS via the COGS-offset override — reversing the delivery's
+    # issue) when a return posts, which publishes StockValued for the finance COGS handler above.
+    if receive_return_moves not in handlers_for(ReturnReceived.key):
+        subscribe(ReturnReceived.key, receive_return_moves)
+    # Sales return → finance AR-credit-note bridge (PLAN 7.4, D-046): finance's handler creates +
+    # posts the AR credit note (Dr revenue / Cr AR + reverse tax — reversing the billing) when a
+    # return posts. The second leg of an atomic return post (the first is the stock receipt above).
+    if create_credit_note_for_return not in handlers_for(ReturnCredited.key):
+        subscribe(ReturnCredited.key, create_credit_note_for_return)
 
 
 app = create_app()

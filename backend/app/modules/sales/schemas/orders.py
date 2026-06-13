@@ -147,6 +147,7 @@ class SalesOrderLineRead(ApiModel):
     line_amount: Decimal
     delivered_quantity: Decimal
     invoiced_quantity: Decimal
+    returned_quantity: Decimal
     tax_code_id: uuid.UUID | None
 
 

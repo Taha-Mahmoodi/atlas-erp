@@ -58,6 +58,9 @@ class DocumentType(StrEnum):
     JOURNAL = "JOURNAL"
     AP_INVOICE = "AP_INVOICE"
     AR_INVOICE = "AR_INVOICE"
+    # The sign-flipped AR_INVOICE: a sales-return credit note (PLAN 7.4) whose journal posts
+    # Dr revenue / Dr output tax / Cr AR control — reducing what the customer owes.
+    AR_CREDIT_NOTE = "AR_CREDIT_NOTE"
     PAYMENT = "PAYMENT"
     COGS = "COGS"
     FX_REVAL = "FX_REVAL"

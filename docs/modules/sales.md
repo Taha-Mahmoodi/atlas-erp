@@ -11,7 +11,7 @@ sales data, not the multi-role business-partner model) and pricing is **PARTIAL*
 price lists by currency / customer group / date range + discounts, NOT the generalized
 access-sequence engine). What 7.1 deliberately omits is listed under *Deferred* below.
 
-## Tables (migrations 0028 + 0029)
+## Tables (migrations 0028 – 0031)
 
 | Table | Migration | Purpose |
 |---|---|---|
@@ -20,11 +20,15 @@ access-sequence engine). What 7.1 deliberately omits is listed under *Deferred* 
 | `sales_price_lists` | 0028 | Condition headers: currency + optional group + date window + priority + status. |
 | `sales_price_list_items` | 0028 | One base `unit_price` per (list, item), with an optional `min_quantity` floor. |
 | `sales_quotes` / `sales_quote_lines` | 0029 | The pre-sales quotation (DocumentMixin, `QUO-` number) + its lines (opaque item/uom, discount). |
-| `sales_orders` / `sales_order_lines` | 0029 | The committing order (DocumentMixin, `SO-` number, `source_quote_id`, `credit_check_status`) + its lines (ordered/delivered/invoiced quantities). |
+| `sales_orders` / `sales_order_lines` | 0029 | The committing order (DocumentMixin, `SO-` number, `source_quote_id`, `credit_check_status`) + its lines (ordered/delivered/invoiced/returned quantities). |
+| `sales_deliveries` / `sales_delivery_lines` | 0030 | The outbound delivery (DocumentMixin, `DN-` number) + its shipped lines (source bin, lot/serial). |
+| `sales_billings` / `sales_billing_lines` | 0031 | The billing (DocumentMixin, `BIL-` number, customer + terms snapshot) + its billed lines (priced from the order line, optional `delivery_line_id`). |
+| `sales_returns` / `sales_return_lines` | 0031 | The RMA return (DocumentMixin, `RMA-` number, warehouse) + its returned lines (receiving bin, lot/serial, credit price). |
 
 All carry the D-007 composite-tenant-FK backstop (`tenant_unique()` + `tenant_fk()`); money/quantity
-columns use `MoneyType`/`QuantityType` (D-015, exact on both engines). Both migrations create tables
-and indexes only — no triggers, no alters.
+columns use `MoneyType`/`QuantityType` (D-015, exact on both engines). The table-creating migrations
+add tables + indexes only; 0031 also adds the `returned_quantity` column to `sales_order_lines` (batch
+alter, the over-return cap) — no triggers.
 
 ## The customer ↔ AR `partner_id` relationship (D-029)
 
@@ -119,6 +123,12 @@ floor; the winner is picked in Python over that small set — no per-list N+1.
 | `POST /deliveries`, `GET /deliveries`, `GET /deliveries/{id}` | `sales.delivery.manage` / `.read` | Delivery create (idempotent) + reads; list paginated, `?sales_order_id=&status=`. |
 | `POST /deliveries/{id}/post` | `sales.delivery.post` | Issue stock + post COGS via the event bus (idempotent); advances the order. |
 | `POST /deliveries/{id}/cancel` | `sales.delivery.manage` | Cancel a DRAFT delivery (a POSTED delivery is terminal). |
+| `POST /billings`, `GET /billings`, `GET /billings/{id}` | `sales.billing.manage` / `.read` | Billing create (idempotent) + reads; list paginated, `?sales_order_id=&status=`. |
+| `POST /billings/{id}/post` | `sales.billing.post` | Trigger the AR customer invoice (Dr AR / Cr Revenue + tax) via the event bus (idempotent); advances the order INVOICED/CLOSED. |
+| `POST /billings/{id}/cancel` | `sales.billing.manage` | Cancel a DRAFT billing (a POSTED billing is terminal). |
+| `POST /returns`, `GET /returns`, `GET /returns/{id}` | `sales.return.manage` / `.read` | Return create (idempotent) + reads; list paginated, `?sales_order_id=&status=`. |
+| `POST /returns/{id}/post` | `sales.return.post` | Receive stock reversing COGS + post the AR credit note reversing revenue, via the event bus (idempotent); advances `returned_quantity`. |
+| `POST /returns/{id}/cancel` | `sales.return.manage` | Cancel a DRAFT return (a POSTED return is terminal). |
 
 Reference lists (customers, customer groups, price lists) support conditional GETs via a tenant-scoped
 collection ETag (PERFORMANCE §3 / D-035): an `If-None-Match` hit returns 304 without running the page
@@ -244,12 +254,70 @@ delivery is rejected. RBAC splits three authorities (D-009): read by `sales.deli
 create/cancel the DRAFT by `sales.delivery.manage`, and the POST action (issue stock + post COGS) by
 the distinct `sales.delivery.post` (building a delivery note and shipping it are separate rights).
 
-## What 7.3–7.4 add
+## Billing (7.4, D-046) — invoice from delivery → AR via the event bus
 
-- **7.3** Delivery with partial shipments + backorders → stock issue + COGS via the event bus (the
-  first sales event). `delivered_quantity` rises; the order advances PARTIALLY_DELIVERED/DELIVERED.
-- **7.4** Billing: customer invoice from delivery (revenue journals, `tax_code_id` per line), RMA
-  returns with credit notes. `invoiced_quantity` rises; the order advances INVOICED/CLOSED.
+`SalesBilling` / `SalesBillingLine` (`sales_billings` / `_lines`, `DocumentMixin` + gapless `BIL-`
+number claimed at creation) is the sales-side invoicing document — the **AR mirror of the procurement
+invoice match** (6.4), sign-flipped. A billing is built **DRAFT** against an at-least-partially
+delivered order (the customer + `payment_terms_days` snapshot from the order; per line the item +
+`unit_price` + discount + `tax_code_id` snapshot from the order line). Each billed quantity is capped
+at **delivered − invoiced** for that order line — billing more than shipped is rejected **422
+`sales.over_billing`** (the billing-from-delivery constraint: you invoice what shipped, not what was
+ordered). A `bill_all_delivered` convenience flag bills every delivered-not-invoiced line in one shot.
+
+**Post → the AR customer invoice via the event bus (§5).** Sales must NOT call finance's service —
+`post_billing` resolves the AR control + sales-revenue accounts from `finance/queries` up front (a
+missing posting default fails the post before any state change) and publishes **`BillingInvoiced`**;
+**finance's `handlers.py`** subscribes and creates + posts the AR customer invoice **Dr AR control
+gross / Cr sales-revenue per line + Cr output tax**, partner-keyed by the opaque customer id (D-029),
+`due_date` = `billing_date` + the snapshot terms — reusing the existing `create_customer_invoice` +
+`post_customer_invoice` path (no hand-rolled journal). The post raises each order line's
+`invoiced_quantity` and advances the order to **INVOICED** (fully invoiced) or **CLOSED** (fully
+delivered AND invoiced). One atomic transaction (D-011): a closed billing period trips the AR
+invoice's journal trigger and rolls the whole billing post back. POSTED is terminal (corrected by a
+return / credit note, never cancelled); re-post is idempotent-rejected. RBAC: read / manage / the
+distinct `sales.billing.post`. The docflow chain runs order → delivery → **billing** → AR invoice
+(the finance doc, which claims its OWN `INV-` number — two numbers, D-046).
+
+## Returns / RMA (7.4, D-046) — stock receipt reversing COGS + credit note reversing revenue
+
+`SalesReturn` / `SalesReturnLine` (`sales_returns` / `_lines`, `DocumentMixin` + gapless `RMA-`
+number) is the reverse-O2C document — a delivery run backwards. A return is built **DRAFT** against an
+order whose lines were delivered AND invoiced (per line the receiving `bin_id` + the priced fields
+snapshot from the order line). Each returned quantity is capped at **invoiced − returned** — returning
+more is rejected **422 `sales.over_return`**. **The cap is invoiced, NOT delivered (D-046):** a credit
+note must reduce a *real* invoice, so a customer cannot be credited for more than was invoiced. A
+`returned_quantity` column on the order line (migration 0031) tracks the cap.
+
+**Post → TWO event-bus legs, one atomic transaction.** `post_return` publishes:
+- **`ReturnReceived`** → **inventory's `handlers.py`** creates one stock **RECEIPT** move per line
+  with `valuation_offset_account_id` = the item-category **COGS** account (the override, mirroring
+  6.3's GR/IR override), so the costing posts **Dr Inventory / Cr COGS** — REVERSING the delivery's
+  issue. The goods re-enter at their current book cost (resolved from `inventory/queries`).
+- **`ReturnCredited`** → **finance's `handlers.py`** creates + posts an AR **credit note** **Dr
+  sales-revenue / Cr AR control + reverse output tax** — reversing the billing's revenue + AR.
+
+The post raises each order line's `returned_quantity` and links docflow order → return → move /
+credit note. A closed return period trips a move's OR the credit note's journal trigger and rolls the
+whole return post back. POSTED is terminal; re-post idempotent-rejected. RBAC: read / manage / the
+distinct `sales.return.post`.
+
+**Credit notes in finance (existing vs added).** Finance shipped **no** credit-note path in 4.6
+(invoices, receipts, dunning, aging only), so 7.4 **adds** a minimal credit-memo entrypoint
+(`finance/service/credit_notes.create_and_post_customer_credit_note`). A credit note is modeled as a
+`CustomerInvoice` row (no new model) whose POSTED journal carries `document_type` **AR_CREDIT_NOTE**
+and the SIGN-FLIPPED directions of an invoice (Dr revenue + Dr output tax / Cr AR control); it claims
+a gapless **`CN-`** number and carries `open_amount` = 0 (a credit note is a reduction, not an open
+receivable to dun). The draft build (tax + totals) is shared verbatim with the AR invoice via the
+extracted `create_ar_document_draft` builder — the only differences are the doc type and the journal
+direction.
+
+**The order-to-cash GL (D-046).** Delivery posts **Dr COGS / Cr Inventory** (7.3); billing posts **Dr
+AR / Cr Revenue** (+ output tax). A **full return reverses BOTH** — inventory back UP, COGS back DOWN,
+revenue back DOWN, AR back DOWN — so the AR, revenue and COGS accounts net to **zero** and on-hand
+returns to its pre-delivery level (the goods are physically back in stock, so the inventory *account*
+holds their value again). This is proven end-to-end via the finance account-balance projection (the
+6.4 GR/IR-clears-to-zero mirror).
 
 ## Deferred (per parity)
 

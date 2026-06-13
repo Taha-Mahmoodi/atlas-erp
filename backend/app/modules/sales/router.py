@@ -11,6 +11,8 @@ in main.py):
 - order_router: sales orders + confirm (ATP + credit gate) / credit-release / cancel actions and the
   ATP-check endpoint (7.2).
 - delivery_router: outbound deliveries + post (issue stock + COGS) / cancel actions (7.3).
+- billing_router: billings + post (trigger the AR customer invoice) / cancel actions (7.4).
+- return_router: returns (RMA) + post (receive stock + credit note) / cancel actions (7.4).
 
 Every route is guarded by a sales permission key (D-009; manage vs read distinct). Writes commit
 through ``run_in_uow`` (D-011) so audit rows ride the same transaction.
@@ -33,6 +35,7 @@ from app.core.pagination import CursorParams, cursor_params, map_page
 from app.core.rbac import require_permission
 from app.core.schemas import Page
 from app.modules.sales import service
+from app.modules.sales.billing_router import billing_router
 from app.modules.sales.constants import (
     SALES_CUSTOMER_MANAGE,
     SALES_CUSTOMER_READ,
@@ -42,6 +45,7 @@ from app.modules.sales.models import Customer, CustomerGroup
 from app.modules.sales.order_router import order_router
 from app.modules.sales.pricing_router import pricing_router
 from app.modules.sales.quote_router import quote_router
+from app.modules.sales.return_router import return_router
 from app.modules.sales.schemas import (
     CustomerCreate,
     CustomerFilter,
@@ -61,6 +65,8 @@ router.include_router(pricing_router)
 router.include_router(quote_router)
 router.include_router(order_router)
 router.include_router(delivery_router)
+router.include_router(billing_router)
+router.include_router(return_router)
 
 
 async def _commit[T](session: SessionDep, work: Callable[[], Awaitable[T]]) -> T:

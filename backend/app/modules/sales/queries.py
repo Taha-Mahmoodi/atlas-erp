@@ -11,18 +11,16 @@ The central D-029 link: finance AR stores a customer on each invoice/receipt as 
 ``partner_id`` IS the ``Customer.id``, so it is a thin alias over ``get_customer`` named for the
 reporting intent (the exact mirror of procurement's ``get_vendor_for_partner``).
 
-The PRICE RESOLVER is exposed here too: ``resolve_price`` is the public entry point 7.2's order
-entry prices each line through, delegating to ``service/price_resolution.resolve_price`` (the
-deterministic best-match picker, D-043). Putting it in queries.py keeps the rule that other modules
-import only this file.
+The PRICE RESOLVER is exposed too: ``resolve_price`` (the public entry 7.2 prices lines through)
+delegates to ``service/price_resolution.resolve_price`` (the best-match picker, D-043), keeping the
+rule that other modules import only this file.
 
-PLAN 7.2 adds the ORDER reads 7.3 (deliveries) + 7.4 (billing) call — ``get_sales_order``,
-``so_line_open_to_deliver`` (ordered − delivered), ``get_order_for_delivery`` — and the ATP + credit
-helpers the confirm gate + order UI use: ``committed_quantity`` (the reservation = confirmed-
-undelivered demand per item), ``atp_check`` (availability = on-hand − committed + on-order, D-044),
-``open_confirmed_order_value`` + ``customer_open_ar`` (the credit-exposure components).
-``atp_check`` + ``customer_open_ar`` make SANCTIONED downward cross-module reads (inventory
-on-hand, procurement on-order, finance open AR) — sales is above all three (STRUCTURE §5).
+The ORDER reads 7.3/7.4 call — ``get_sales_order``, ``get_order_for_delivery`` /
+``get_order_for_invoice``, the per-line open-quantity helpers ``so_line_open_to_deliver`` /
+``_to_invoice`` / ``_to_return`` (ordered/delivered/invoiced minus the next stage), and the ATP +
+credit helpers the confirm gate uses (``committed_quantity``, ``atp_check``,
+``open_confirmed_order_value``, ``customer_open_ar``) — the last two making SANCTIONED downward
+cross-module reads (inventory on-hand, procurement on-order, finance open AR).
 
 Every function takes an explicit ``tenant_id`` and runs under the caller's tenant context, so the
 D-007 filter applies on top of the explicit predicate — ordinary tenant-scoped reads, not a bypass.
@@ -63,8 +61,7 @@ async def get_customer_for_partner(
     """The customer an AR document's opaque ``partner_id`` refers to (D-029), or None. AR aging /
     reporting calls this to resolve an invoice's ``partner_id`` to a customer name + payment terms.
     The ``partner_id`` IS the ``Customer.id`` (finance stores it without an FK), so this is
-    ``get_customer`` named for the reporting intent — kept as its own function so AR call sites read
-    intent-first and the alias survives any future indirection (the vendor precedent)."""
+    ``get_customer`` named for the reporting intent (the vendor precedent)."""
     return await get_customer(session, tenant_id, partner_id)
 
 
@@ -173,13 +170,12 @@ async def get_sales_order(
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def so_line_open_to_deliver(
+async def _order_line(
     session: AsyncSession, tenant_id: uuid.UUID, order_line_id: uuid.UUID
-) -> Decimal | None:
-    """The still-open-to-deliver quantity on an order line — ORDERED minus DELIVERED — or None if
-    the line does not exist (PLAN 7.2 → 7.3). A delivery (7.3) caps a pick at this. A point lookup
-    on the maintained ``delivered_quantity`` (raised by 7.3), not a SUM over deliveries."""
-    line = (
+) -> SalesOrderLine | None:
+    """One order line by id in the tenant, or None — the shared point read the three open-quantity
+    helpers below subtract maintained columns over (PLAN 7.2–7.4)."""
+    return (
         await session.execute(
             select(SalesOrderLine).where(
                 SalesOrderLine.tenant_id == tenant_id,
@@ -187,6 +183,15 @@ async def so_line_open_to_deliver(
             )
         )
     ).scalar_one_or_none()
+
+
+async def so_line_open_to_deliver(
+    session: AsyncSession, tenant_id: uuid.UUID, order_line_id: uuid.UUID
+) -> Decimal | None:
+    """The still-open-to-deliver quantity on an order line — ORDERED minus DELIVERED — or None if
+    the line does not exist (PLAN 7.2 → 7.3). A delivery (7.3) caps a pick at this. A point lookup
+    on the maintained ``delivered_quantity`` (raised by 7.3), not a SUM over deliveries."""
+    line = await _order_line(session, tenant_id, order_line_id)
     if line is None:
         return None
     return Decimal(str(line.ordered_quantity)) - Decimal(str(line.delivered_quantity))
@@ -196,9 +201,8 @@ async def get_order_for_delivery(
     session: AsyncSession, tenant_id: uuid.UUID, order_id: uuid.UUID
 ) -> tuple[SalesOrder, list[SalesOrderLine]] | None:
     """The order header + its lines (item, ordered/delivered quantities, unit price, tax code) — the
-    data a delivery (7.3) needs to build pick lines and billing (7.4) needs to invoice. None when
-    the order is unknown to this tenant. Two indexed reads (header by PK, lines by (tenant,
-    order_id)); no N+1 over lines."""
+    data a delivery (7.3) builds pick lines from and billing (7.4) invoices. None when the order is
+    unknown. Two indexed reads (header by PK, lines by (tenant, order_id)); no N+1."""
     order = await get_sales_order(session, tenant_id, order_id)
     if order is None:
         return None
@@ -226,26 +230,29 @@ async def so_line_open_to_invoice(
     the line does not exist (PLAN 7.3 → 7.4). 7.4 bills against DELIVERED-but-not-yet-INVOICED
     quantity (you invoice what shipped, not what was ordered), so this caps an invoice line at
     delivered − invoiced, NOT ordered − invoiced. A point lookup on the maintained columns."""
-    line = (
-        await session.execute(
-            select(SalesOrderLine).where(
-                SalesOrderLine.tenant_id == tenant_id,
-                SalesOrderLine.id == order_line_id,
-            )
-        )
-    ).scalar_one_or_none()
+    line = await _order_line(session, tenant_id, order_line_id)
     if line is None:
         return None
     return Decimal(str(line.delivered_quantity)) - Decimal(str(line.invoiced_quantity))
 
 
+async def so_line_open_to_return(
+    session: AsyncSession, tenant_id: uuid.UUID, order_line_id: uuid.UUID
+) -> Decimal | None:
+    """The still-open-to-return quantity on an order line: INVOICED minus RETURNED, or None if the
+    line is unknown (PLAN 7.4). A return caps a line at invoiced-not-yet-returned: a credit note
+    reduces a real invoice, so the cap is invoiced, not delivered (D-046). Maintained columns."""
+    line = await _order_line(session, tenant_id, order_line_id)
+    if line is None:
+        return None
+    return Decimal(str(line.invoiced_quantity)) - Decimal(str(line.returned_quantity))
+
+
 async def get_order_for_invoice(
     session: AsyncSession, tenant_id: uuid.UUID, order_id: uuid.UUID
 ) -> tuple[SalesOrder, list[SalesOrderLine]] | None:
-    """The order header + its lines for BILLING (PLAN 7.3 → 7.4): the data 7.4's invoice run needs
-    to bill the DELIVERED-but-not-yet-invoiced quantity (delivered − invoiced per line). None when
-    the order is unknown to this tenant. The same two-read shape as ``get_order_for_delivery``
-    (header by PK, lines by (tenant, order_id)), named for the billing intent; no N+1 over lines."""
+    """The order header + lines for BILLING / RETURNS (PLAN 7.4): the ``get_order_for_delivery``
+    two-read shape named for the billing intent; no N+1. None when the order is unknown."""
     return await get_order_for_delivery(session, tenant_id, order_id)
 
 
@@ -265,11 +272,8 @@ async def committed_quantity(
     its undelivered quantity; a DRAFT / CREDIT_BLOCKED / CANCELLED / fully-DELIVERED / INVOICED /
     CLOSED order commits nothing). ``exclude_order_id`` drops one order from the sum — used when
     confirming so an order's own demand is checked against availability NET of other commitments.
-
-    SET-BASED (no per-order N+1, PERFORMANCE §2): one join over order lines filtered by the order's
-    status + a positive open quantity, summed in PYTHON over the (small) open set so the
-    exact-decimal QuantityType round-trips identically on both engines (D-015: SQL never subtracts
-    two scaled quantity columns for the result value)."""
+    SET-BASED (no per-order N+1, PERFORMANCE §2): one filtered join, summed in PYTHON over the small
+    open set so the exact-decimal QuantityType round-trips identically on both engines (D-015)."""
     stmt = (
         select(SalesOrderLine.ordered_quantity, SalesOrderLine.delivered_quantity)
         .join(
@@ -323,12 +327,11 @@ async def atp_check(
     on_date: date,
     exclude_order_id: uuid.UUID | None = None,
 ) -> AtpResult:
-    """Available-to-promise for one item (PLAN 7.2, D-044): availability = inventory on-hand
-    (``total_on_hand``) − committed (confirmed-undelivered sales orders) + on-order (procurement
-    ``open_incoming_quantity``). ``on_date`` is accepted for the wire contract (v1 availability is
-    a point-in-time snapshot — date-phased ATP is the documented later). Three bounded cross-module
-    reads (inventory on-hand, sales committed, procurement on-order); no N+1. ``exclude_order_id``
-    excludes one order from the committed sum (confirm checks an order net of OTHER commitments)."""
+    """Available-to-promise for one item (PLAN 7.2, D-044): availability = inventory on-hand −
+    committed (confirmed-undelivered sales orders) + on-order (procurement open-incoming). The
+    ``on_date`` is the wire contract (v1 is a point-in-time snapshot; date-phased ATP is a later).
+    Three bounded cross-module reads, no N+1. ``exclude_order_id`` excludes one order from the
+    committed sum (confirm checks an order net of OTHER commitments)."""
     requested = Decimal(str(quantity))
     on_hand = Decimal(str(await inventory_queries.total_on_hand(session, tenant_id, item_id)))
     committed = await committed_quantity(
@@ -365,13 +368,10 @@ async def open_confirmed_order_value(
 ) -> Decimal:
     """The total value of a customer's OPEN confirmed orders not yet billed (PLAN 7.2, D-044) — the
     open-order side of credit exposure. Sums ``total_amount`` over the customer's CONFIRMED /
-    PARTIALLY_DELIVERED / DELIVERED orders (committed but not yet fully invoiced; an INVOICED
-    order's exposure has moved to AR, a CLOSED/CANCELLED/DRAFT/CREDIT_BLOCKED order is nothing).
-    ``exclude_order_id`` drops one order (the one being confirmed, counted separately).
-
-    SET-BASED (no per-order N+1): one filtered scan on the (tenant, customer_id, status) index,
-    summed in Python so the exact-decimal MoneyType round-trips identically on both engines
-    (D-015)."""
+    PARTIALLY_DELIVERED / DELIVERED orders (committed but not fully invoiced; an INVOICED order's
+    exposure has moved to AR, a CLOSED/CANCELLED/DRAFT/CREDIT_BLOCKED order is nothing).
+    ``exclude_order_id`` drops one order (the one being confirmed). SET-BASED (no N+1): a scan on
+    the (tenant, customer_id, status) index, summed in Python for exact MoneyType (D-015)."""
     stmt = select(SalesOrder.total_amount).where(
         SalesOrder.tenant_id == tenant_id,
         SalesOrder.customer_id == customer_id,

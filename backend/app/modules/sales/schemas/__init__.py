@@ -9,8 +9,18 @@ that surface, so the split is an internal detail.
 - ``orders``: quote + order create/update/read/filter (+ lines), the action payloads, and the
   ATP-check schemas (7.2).
 - ``deliveries``: delivery create/read/filter (+ lines) — the outbound fulfilment document (7.3).
+- ``billing``: billing create/read/filter (+ lines) — the O2C invoicing document (7.4).
+- ``returns``: return create/read/filter (+ lines) — the RMA reverse-O2C document (7.4).
 """
 
+from app.modules.sales.schemas.billing import (
+    BillingCreate,
+    BillingDetail,
+    BillingFilter,
+    BillingLineCreate,
+    BillingLineRead,
+    BillingRead,
+)
 from app.modules.sales.schemas.deliveries import (
     DeliveryCreate,
     DeliveryDetail,
@@ -56,12 +66,26 @@ from app.modules.sales.schemas.orders import (
     SalesOrderRead,
     SalesOrderUpdate,
 )
+from app.modules.sales.schemas.returns import (
+    ReturnCreate,
+    ReturnDetail,
+    ReturnFilter,
+    ReturnLineCreate,
+    ReturnLineRead,
+    ReturnRead,
+)
 
 __all__ = [
     "AtpCheckRequest",
     "AtpCheckResponse",
     "AtpLineRequest",
     "AtpLineResult",
+    "BillingCreate",
+    "BillingDetail",
+    "BillingFilter",
+    "BillingLineCreate",
+    "BillingLineRead",
+    "BillingRead",
     "ConvertQuoteToOrder",
     "CustomerCreate",
     "CustomerFilter",
@@ -90,6 +114,12 @@ __all__ = [
     "QuoteLineRead",
     "QuoteRead",
     "QuoteUpdate",
+    "ReturnCreate",
+    "ReturnDetail",
+    "ReturnFilter",
+    "ReturnLineCreate",
+    "ReturnLineRead",
+    "ReturnRead",
     "SalesOrderCreate",
     "SalesOrderDetail",
     "SalesOrderFilter",

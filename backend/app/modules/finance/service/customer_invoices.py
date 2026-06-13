@@ -1,16 +1,11 @@
 """Customer-invoice lifecycle: draft creation + posting through the journal (PLAN 4.6, AR).
 
-The AP ``vendor_bills.py`` mirror with the sign flipped. ``create_customer_invoice`` computes the
-output tax (via the shared tax engine) and totals on a DRAFT; ``post_customer_invoice`` builds and
-posts the AR journal entry (Dr the AR control for the gross — with the opaque ``partner_id`` stamped
-on the AR line, D-029 — Cr each revenue line net, Cr output tax to the tax code's payable account),
-claims the gapless system number (D-012), links the invoice document to its journal entry (docflow),
-sets ``open_amount`` = gross, and publishes ``CustomerInvoicePosted``. Idempotent at the service
-level: a re-post of an already-POSTED invoice returns it unchanged.
-
-The journal engine handles FX translation at posting (D-019): a foreign-currency invoice's
-functional amounts are frozen at the posting-date SPOT rate by the same machinery every entry uses.
-Finance stays the bottom dependency — this module imports no other module.
+The AP ``vendor_bills.py`` mirror, sign flipped. ``create_customer_invoice`` drafts via the shared
+``create_ar_document_draft`` builder (tax + totals + registration, also reused by the 7.4 credit
+note); ``post_customer_invoice`` posts the balanced AR entry (Dr AR control gross, opaque
+``partner_id`` D-029; Cr each revenue net + output tax), claims the gapless number, links
+invoice->journal, sets ``open_amount`` = gross, publishes ``CustomerInvoicePosted`` (idempotent on
+re-post). The journal engine handles FX at posting (D-019). Finance imports no other module.
 """
 
 from __future__ import annotations
@@ -27,6 +22,7 @@ from app.core.events import publish
 from app.core.exceptions import ConflictError, NotFoundError, ValidationFailedError
 from app.core.money import quantize_for_currency
 from app.core.numbering import claim_number, ensure_sequence
+from app.core.pagination import OrderKey, SortDirection, filter_fingerprint, paginate
 from app.modules.finance.constants import (
     AR_INVOICE_DOC_TYPE,
     AR_INVOICE_NUMBER_PADDING,
@@ -110,32 +106,45 @@ async def get_customer_invoice_lines(
     return list((await session.execute(stmt)).scalars().all())
 
 
-async def create_customer_invoice(
-    session: AsyncSession, tenant_id: uuid.UUID, payload: CustomerInvoiceCreate
+async def create_ar_document_draft(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    partner_id: uuid.UUID,
+    partner_name: str,
+    invoice_date: date,
+    due_date: date,
+    currency_code: str,
+    ar_account_id: uuid.UUID,
+    external_ref: str | None,
+    description: str | None,
+    lines: list,
+    doc_type: str,
 ) -> CustomerInvoice:
-    """Create a DRAFT customer invoice + lines (PLAN 4.6). Validates the AR control + every line
-    account exists; computes output tax per line via the shared tax engine (so net/tax/gross match
-    AP) and rolls up the invoice totals. Registers the document in core_documents with NO number
-    (claimed at posting, D-012). ``open_amount`` stays 0 until posting. Does NOT post a journal."""
-    if not payload.lines:
+    """Create a DRAFT AR document (a customer invoice OR a credit note) + lines (PLAN 4.6/7.4). The
+    shared draft builder: validates the AR control + every line account, computes output tax per
+    line (so net/tax/gross match an invoice exactly), rolls up the totals, and registers it under
+    ``doc_type`` (AR invoice or credit note — the only difference). ``open_amount`` stays 0 until
+    posting; posts NO journal — the caller's post path builds the (forward or reversing) entry."""
+    if not lines:
         raise ValidationFailedError(
-            message="A customer invoice needs at least one line",
+            message="An AR document needs at least one line",
             code="finance.customer_invoice_no_lines",
         )
-    await _require_account(session, tenant_id, payload.ar_account_id, label="AR control")
+    await _require_account(session, tenant_id, ar_account_id, label="AR control")
 
     gross_total = Decimal(0)
     tax_total = Decimal(0)
     net_total = Decimal(0)
     line_rows: list[dict[str, object]] = []
-    for index, line in enumerate(payload.lines, start=1):
+    for index, line in enumerate(lines, start=1):
         await _require_account(session, tenant_id, line.account_id, label="line")
-        net = quantize_for_currency(line.net_amount, payload.currency_code)
+        net = quantize_for_currency(line.net_amount, currency_code)
         tax_amount = Decimal(0)
         if line.tax_code_id is not None:
             tax_code = await _tax_code(session, tenant_id, line.tax_code_id)
             calc = calculate_line_tax(
-                net, tax_code, direction=TaxDirection.OUTPUT, currency_code=payload.currency_code
+                net, tax_code, direction=TaxDirection.OUTPUT, currency_code=currency_code
             )
             net = calc.net_amount
             tax_amount = calc.tax_amount
@@ -160,7 +169,7 @@ async def create_customer_invoice(
     document = await docflow.register_document(
         session,
         tenant_id,
-        AR_INVOICE_DOC_TYPE,
+        doc_type,
         invoice_id,
         doc_number=None,
         status=InvoiceStatus.DRAFT.value,
@@ -169,20 +178,20 @@ async def create_customer_invoice(
         id=invoice_id,
         tenant_id=tenant_id,
         document_id=document.id,
-        partner_id=payload.partner_id,
-        partner_name=payload.partner_name,
-        external_ref=payload.external_ref,
-        invoice_date=payload.invoice_date,
-        due_date=payload.due_date,
-        currency_code=payload.currency_code,
+        partner_id=partner_id,
+        partner_name=partner_name,
+        external_ref=external_ref,
+        invoice_date=invoice_date,
+        due_date=due_date,
+        currency_code=currency_code,
         status=InvoiceStatus.DRAFT.value,
-        ar_account_id=payload.ar_account_id,
+        ar_account_id=ar_account_id,
         gross_amount=gross_total,
         tax_amount=tax_total,
         net_amount=net_total,
         open_amount=Decimal(0),
         dunning_level=0,
-        description=payload.description,
+        description=description,
     )
     session.add(invoice)
     for row in line_rows:
@@ -191,15 +200,35 @@ async def create_customer_invoice(
     return invoice
 
 
+async def create_customer_invoice(
+    session: AsyncSession, tenant_id: uuid.UUID, payload: CustomerInvoiceCreate
+) -> CustomerInvoice:
+    """Create a DRAFT customer invoice + lines (PLAN 4.6) — the AR-invoice doc type over the shared
+    ``create_ar_document_draft`` builder (tax + totals + registration). Does NOT post a journal."""
+    return await create_ar_document_draft(
+        session,
+        tenant_id,
+        partner_id=payload.partner_id,
+        partner_name=payload.partner_name,
+        invoice_date=payload.invoice_date,
+        due_date=payload.due_date,
+        currency_code=payload.currency_code,
+        ar_account_id=payload.ar_account_id,
+        external_ref=payload.external_ref,
+        description=payload.description,
+        lines=payload.lines,
+        doc_type=AR_INVOICE_DOC_TYPE,
+    )
+
+
 def _invoice_journal_lines(
     invoice: CustomerInvoice,
     lines: list[CustomerInvoiceLine],
     tax_account_by_code: dict[uuid.UUID, uuid.UUID],
 ) -> list[JournalLineCreate]:
-    """The balanced AR journal lines for an invoice (PLAN 4.6): Dr the AR control for the gross —
-    partner_id stamped on the AR line so the open item is partner-keyed (D-029) — Cr each line's net
-    to its revenue account, Cr output tax to the tax code's payable account (one line per line with
-    tax). Dimensions ride to the journal line so CO projections see them."""
+    """The balanced AR journal lines for an invoice (PLAN 4.6): Dr the AR control for the gross
+    (partner_id stamped so the open item is partner-keyed, D-029), Cr each line's net to revenue, Cr
+    output tax to the tax code's payable account. Dimensions ride to the journal line."""
     journal_lines: list[JournalLineCreate] = [
         JournalLineCreate(
             account_id=invoice.ar_account_id,
@@ -235,8 +264,7 @@ async def _resolve_tax_accounts(
     session: AsyncSession, tenant_id: uuid.UUID, lines: list[CustomerInvoiceLine]
 ) -> dict[uuid.UUID, uuid.UUID]:
     """Map each line's tax_code_id -> its payable (OUTPUT) account (PLAN 4.6). Raises a clear 422 if
-    a code that levied tax has no payable account wired (the tax engine would otherwise post to
-    None)."""
+    a code that levied tax has no payable account wired."""
     accounts: dict[uuid.UUID, uuid.UUID] = {}
     for line in lines:
         if not line.tax_amount or line.tax_code_id is None or line.tax_code_id in accounts:
@@ -259,12 +287,11 @@ async def post_customer_invoice(
     *,
     posting_date: date | None = None,
 ) -> CustomerInvoice:
-    """Post a DRAFT customer invoice to the journal (PLAN 4.6). Idempotent: an already-POSTED
-    invoice is returned unchanged. Builds the balanced AR entry (document_type AR_INVOICE), posts it
-    via the journal engine (which claims the entry number, resolves the period, and translates FX at
-    the posting rate, D-019), claims the invoice's gapless system number, links invoice->journal
-    (docflow 'posts'), sets ``open_amount`` = gross + status POSTED, and publishes
-    ``CustomerInvoicePosted``. ``posting_date`` defaults to the invoice date."""
+    """Post a DRAFT customer invoice to the journal (PLAN 4.6). Idempotent: a POSTED invoice is
+    returned unchanged. Builds + posts the balanced AR entry (document_type AR_INVOICE) via the
+    journal engine (entry number, period, FX at posting rate D-019), claims the gapless system
+    number, links invoice->journal ('posts'), sets ``open_amount`` = gross + status POSTED, and
+    publishes ``CustomerInvoicePosted``. ``posting_date`` defaults to the invoice date."""
     invoice = await get_customer_invoice(session, tenant_id, invoice_id)
     if invoice.status == InvoiceStatus.POSTED.value:
         return invoice
@@ -352,8 +379,6 @@ async def list_customer_invoices(
 ) -> object:
     """Keyset-paginated invoice list, newest invoice_date first (D-014). ``status`` + ``partner_id``
     filters fold into the cursor fingerprint. Returns a ``Page`` of ORM objects."""
-    from app.core.pagination import OrderKey, SortDirection, filter_fingerprint, paginate
-
     stmt = select(CustomerInvoice).where(CustomerInvoice.tenant_id == tenant_id)
     if status is not None:
         stmt = stmt.where(CustomerInvoice.status == InvoiceStatus(status).value)
