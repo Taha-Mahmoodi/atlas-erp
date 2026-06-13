@@ -23,7 +23,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.inventory.constants import CostingMethod
-from app.modules.inventory.models import Item, ItemCategory, StockQuant
+from app.modules.inventory.models import (
+    CostLayer,
+    Item,
+    ItemCategory,
+    ItemValuation,
+    StockQuant,
+)
 
 
 async def get_item(
@@ -159,3 +165,75 @@ async def on_hand_by_lot(
     )
     rows = (await session.execute(stmt)).all()
     return {row[0]: row[1] for row in rows}
+
+
+# --- Valuation reads (PLAN 5.3, D-020/D-037) ----------------------------------
+# These read the VALUE SSOT (inv_item_valuations for moving-average, inv_cost_layers for FIFO), kept
+# in lock-step with every move in the same transaction (D-037). The inventory-value dashboard KPI
+# and
+# valuation reports read these. MoneyType/QuantityType propagation keeps the SUMs exact (D-015).
+
+
+async def item_value(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    item_id: uuid.UUID,
+    warehouse_id: uuid.UUID | None = None,
+) -> Decimal:
+    """The current total inventory VALUE of an item (PLAN 5.3), optionally narrowed to one
+    warehouse.
+
+    For a MOVING_AVERAGE item this sums ``inv_item_valuations.total_value``; for a FIFO item it sums
+    ``remaining_qty × unit_cost`` over the live cost layers. An item uses exactly one method, so the
+    other source contributes 0. The FIFO product is summed in PYTHON (each factor already a typed
+    Decimal) rather than ``func.sum(qty × cost)``, because multiplying two scaled-integer columns on
+    SQLite yields a ×10^12 value that the MoneyType result processor cannot un-scale (D-015 trigger
+    discipline: SQL never multiplies two stored money/quantity columns)."""
+    valuation_stmt = select(
+        func.coalesce(func.sum(ItemValuation.total_value), 0)
+    ).where(ItemValuation.tenant_id == tenant_id, ItemValuation.item_id == item_id)
+    layer_stmt = select(CostLayer.remaining_qty, CostLayer.unit_cost).where(
+        CostLayer.tenant_id == tenant_id,
+        CostLayer.item_id == item_id,
+        CostLayer.remaining_qty > 0,
+    )
+    if warehouse_id is not None:
+        valuation_stmt = valuation_stmt.where(ItemValuation.warehouse_id == warehouse_id)
+        layer_stmt = layer_stmt.where(CostLayer.warehouse_id == warehouse_id)
+    mav_value = Decimal((await session.execute(valuation_stmt)).scalar_one())
+    fifo_value = sum(
+        (Decimal(qty) * Decimal(cost) for qty, cost in (await session.execute(layer_stmt)).all()),
+        Decimal(0),
+    )
+    return mav_value + fifo_value
+
+
+async def valuation_summary(
+    session: AsyncSession, tenant_id: uuid.UUID
+) -> dict[uuid.UUID, Decimal]:
+    """Total inventory value per item across the tenant (PLAN 5.3): ``{item_id: value}`` — the
+    moving-average totals plus the FIFO live-layer values, merged per item. What the inventory-value
+    dashboard KPI sums. The moving-average totals are grouped in SQL; the FIFO layer products are
+    summed in Python per item (D-015: no SQL multiply of two scaled money/quantity columns).
+    PERFORMANCE §6: two reads, no per-item N+1."""
+    mav_rows = (
+        await session.execute(
+            select(ItemValuation.item_id, func.sum(ItemValuation.total_value))
+            .where(ItemValuation.tenant_id == tenant_id)
+            .group_by(ItemValuation.item_id)
+        )
+    ).all()
+    layer_rows = (
+        await session.execute(
+            select(CostLayer.item_id, CostLayer.remaining_qty, CostLayer.unit_cost).where(
+                CostLayer.tenant_id == tenant_id, CostLayer.remaining_qty > 0
+            )
+        )
+    ).all()
+    totals: dict[uuid.UUID, Decimal] = {}
+    for item_id_, value in mav_rows:
+        if value is not None:
+            totals[item_id_] = totals.get(item_id_, Decimal(0)) + Decimal(value)
+    for item_id_, qty, cost in layer_rows:
+        totals[item_id_] = totals.get(item_id_, Decimal(0)) + Decimal(qty) * Decimal(cost)
+    return totals

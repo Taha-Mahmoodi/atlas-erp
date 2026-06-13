@@ -139,6 +139,23 @@ STOCK_MOVE_NUMBER_PADDING = 5
 STOCK_MOVE_REVERSES_LINK = "reverses"
 
 
+# --- Costing (PLAN 5.3, D-020/D-037) ------------------------------------------
+# The domain-event key inventory publishes when a move changes valuation (D-011). finance/handlers
+# subscribes and posts the COGS/inventory journal in the SAME transaction (D-020). One key carrying
+# the move_type; the handler branches on it for the per-move-type postings.
+STOCK_VALUED_EVENT_KEY = "inventory.stock.valued"
+
+# docflow link type joining a stock move's document to the journal entry the costing event posts
+# (D-012 vocabulary): the move "posts" the valuation journal, mirroring finance's own 'posts' edge.
+STOCK_MOVE_POSTS_LINK = "posts"
+
+# The currency the COGS/inventory valuation journal posts in when the tenant has not configured a
+# functional currency (the v1 single-currency default, mirroring the journal tests' USD/2-dp). When
+# a functional currency IS configured the handler uses it; either way costs quantize to its decimals
+# (D-015). Stored layer/valuation costs keep full scale-6 precision — only the posted COGS rounds.
+DEFAULT_COSTING_CURRENCY = "USD"
+
+
 # --- Permissions (D-009): one key per guarded endpoint action -----------------
 INVENTORY_ITEM_READ = "inventory.item.read"
 INVENTORY_ITEM_MANAGE = "inventory.item.manage"
@@ -155,6 +172,10 @@ INVENTORY_BIN_MANAGE = "inventory.bin.manage"
 # changes on-hand, so it is its own action — the journal.post precedent).
 INVENTORY_MOVE_READ = "inventory.move.read"
 INVENTORY_MOVE_CREATE = "inventory.move.create"
+# Stock valuation visibility (PLAN 5.3): reading the moving-average/FIFO valuation + cost layers is
+# its own read action (a finance-adjacent concern — value, not just quantity), distinct from the
+# move-ledger read so the value views can be granted to costing/controlling roles independently.
+INVENTORY_VALUATION_READ = "inventory.valuation.read"
 
 register_permissions(
     INVENTORY_ITEM_READ,
@@ -169,6 +190,7 @@ register_permissions(
     INVENTORY_BIN_MANAGE,
     INVENTORY_MOVE_READ,
     INVENTORY_MOVE_CREATE,
+    INVENTORY_VALUATION_READ,
     descriptions={
         INVENTORY_ITEM_READ: "Read items and their UoM conversions",
         INVENTORY_ITEM_MANAGE: "Create and edit items and their UoM conversions",
@@ -182,5 +204,6 @@ register_permissions(
         INVENTORY_BIN_MANAGE: "Create and edit storage bins",
         INVENTORY_MOVE_READ: "Read the stock-move ledger and on-hand projections",
         INVENTORY_MOVE_CREATE: "Create stock moves (receipts, issues, transfers, adjustments)",
+        INVENTORY_VALUATION_READ: "Read stock valuations and FIFO cost layers",
     },
 )

@@ -172,6 +172,7 @@ async def test_adjustment_increase_and_decrease(
             item_id=stock_setup.item_id,
             quantity=Decimal(8),
             to_bin_id=stock_setup.bin_a_id,
+            unit_cost=Decimal(1),
         ),
     )
     await build_move(
@@ -294,6 +295,7 @@ async def test_lot_required_for_lot_tracked_item(
                 item_id=setup.item_id,
                 quantity=Decimal(1),
                 to_bin_id=setup.bin_a_id,
+                unit_cost=Decimal(1),
             ),
         )
     assert getattr(exc.value, "code", "") == "inventory.lot_required"
@@ -324,6 +326,7 @@ async def test_serial_move_quantity_must_be_one(
                 quantity=Decimal(2),
                 to_bin_id=setup.bin_a_id,
                 serial_code="SN-002",
+                unit_cost=Decimal(1),
             ),
         )
     assert getattr(exc.value, "code", "") == "inventory.serial_quantity_invalid"
@@ -460,8 +463,10 @@ async def test_create_move_is_bounded_statement_count(
     query_counter: Callable[..., object],
 ) -> None:
     """create_move runs a BOUNDED number of statements regardless of history (no N+1): one move,
-    constant quant + numbering + docflow writes. The exact budget is generous slack above the
-    constant-statement shape — any growth with move history is a regression."""
+    constant quant + numbering + docflow writes, the moving-average valuation update, and the
+    same-transaction COGS journal posting (PLAN 5.3). The budget is generous slack above that
+    constant shape — any growth with MOVE history (or, for FIFO, beyond the layers actually
+    consumed) is a regression."""
     await build_stock(
         db_session, stock_setup.tenant_id, stock_setup.item_id, stock_setup.bin_a_id, Decimal(50)
     )
@@ -483,4 +488,6 @@ async def test_create_move_is_bounded_statement_count(
 
     with query_counter() as qc, tenant_context(stock_setup.tenant_id):  # type: ignore[operator]
         await run_in_uow(db_session, issue)
-    assert qc.count <= 20, qc.statements  # type: ignore[attr-defined]
+    # The budget covers the move write + valuation + the COGS journal posting (draft + lines +
+    # period/numbering/docflow/balance), all constant — a single-layer issue is O(1).
+    assert qc.count <= 45, qc.statements  # type: ignore[attr-defined]

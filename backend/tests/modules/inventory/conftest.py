@@ -16,6 +16,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.main import register_event_handlers
 from tests.modules.inventory.factories import (
     InventoryPrincipal,
     InventorySetup,
@@ -26,6 +27,18 @@ from tests.modules.inventory.factories import (
 )
 
 __all__ = ["InventoryPrincipal", "InventorySetup", "StockSetup"]
+
+
+@pytest.fixture(autouse=True)
+def _register_cogs_handler(clear_event_subscriptions: Callable[[], None]) -> None:
+    """Register the inventory->finance COGS handler for every inventory test (PLAN 5.3, D-020).
+
+    The global autouse ``clear_event_subscriptions`` (tests/conftest.py) wipes the subscription
+    registry before each test, so a costing move posted through the SERVICE layer (not the HTTP app,
+    which registers handlers in its factory) would otherwise have no COGS handler. Depending on that
+    fixture orders this AFTER the clear, so the handler is present for the test body. Idempotent —
+    ``register_event_handlers`` de-duplicates."""
+    register_event_handlers()
 
 
 @pytest.fixture

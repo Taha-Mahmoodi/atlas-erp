@@ -45,7 +45,7 @@ from app.core.models import (
     tenant_fk,
     tenant_unique,
 )
-from app.core.money import QuantityType
+from app.core.money import MoneyType, QuantityType
 
 
 class Warehouse(UuidPKMixin, TenantMixin, AuditMixin, TimestampMixin, Base):
@@ -174,6 +174,13 @@ class StockMove(UuidPKMixin, TenantMixin, AuditMixin, TimestampMixin, DocumentMi
     posted: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, default=True, server_default=sa.true()
     )
+    # The costing input/output (PLAN 5.3, D-020): the value at which stock enters (REQUIRED on a
+    # RECEIPT / positive ADJUSTMENT — the entry cost) or the value the costing engine COMPUTED for
+    # the stock that left (ISSUE / negative ADJUSTMENT — moving-average or summed FIFO layers). A
+    # TRANSFER carries the current valuation (value-neutral within one inventory account). NULLABLE
+    # at the column level because pre-5.3 moves had none and the engine fills it; full scale-6
+    # MoneyType so unit costs keep precision (D-015) — only the POSTED COGS rounds to currency dp.
+    unit_cost: Mapped[Decimal | None] = mapped_column(MoneyType(), nullable=True)
 
 
 class StockQuant(UuidPKMixin, TenantMixin, TimestampMixin, Base):

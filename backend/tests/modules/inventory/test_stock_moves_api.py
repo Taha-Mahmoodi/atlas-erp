@@ -30,11 +30,43 @@ async def _bin(client: AsyncClient, warehouse_id: str, code: str = "A1") -> str:
     return response.json()["id"]
 
 
-async def _stocked_item(client: AsyncClient) -> str:
-    uom = await client.post("/api/v1/inventory/uoms", json={"code": "EA", "name": "Each"})
-    cat = await client.post(
-        "/api/v1/inventory/item-categories", json={"code": "C1", "name": "Cat"}
+async def _account(client: AsyncClient, code: str, name: str, account_type: str) -> str:
+    response = await client.post(
+        "/api/v1/finance/accounts",
+        json={"code": code, "name": name, "account_type": account_type},
     )
+    assert response.status_code == 201, response.text
+    return response.json()["id"]
+
+
+async def _open_year(client: AsyncClient) -> None:
+    """Seed the 2026 fiscal year (12 OPEN periods) so a valued move's COGS journal can post."""
+    response = await client.post(
+        "/api/v1/finance/fiscal-years",
+        json={"code": "2026", "name": "FY2026", "start_date": "2026-01-01"},
+    )
+    assert response.status_code == 201, response.text
+
+
+async def _stocked_item(client: AsyncClient) -> str:
+    """A STOCKED item whose category wires the three GL accounts (the costing precondition, PLAN
+    5.3) AND an open fiscal year, all through the API so the receipt's COGS journal can post."""
+    await _open_year(client)
+    uom = await client.post("/api/v1/inventory/uoms", json={"code": "EA", "name": "Each"})
+    inventory_account = await _account(client, "1300", "Inventory", "ASSET")
+    cogs_account = await _account(client, "5000", "COGS", "EXPENSE")
+    price_diff_account = await _account(client, "5900", "Price difference", "EXPENSE")
+    cat = await client.post(
+        "/api/v1/inventory/item-categories",
+        json={
+            "code": "C1",
+            "name": "Cat",
+            "inventory_account_id": inventory_account,
+            "cogs_account_id": cogs_account,
+            "price_difference_account_id": price_diff_account,
+        },
+    )
+    assert cat.status_code == 201, cat.text
     item = await client.post(
         "/api/v1/inventory/items",
         json={
@@ -50,7 +82,13 @@ async def _stocked_item(client: AsyncClient) -> str:
 
 
 async def _receipt(
-    client: AsyncClient, item_id: str, bin_id: str, qty: str, *, key: str
+    client: AsyncClient,
+    item_id: str,
+    bin_id: str,
+    qty: str,
+    *,
+    key: str,
+    unit_cost: str = "2.00",
 ) -> Response:
     response = await client.post(
         "/api/v1/inventory/stock-moves",
@@ -59,6 +97,7 @@ async def _receipt(
             "item_id": item_id,
             "quantity": qty,
             "to_bin_id": bin_id,
+            "unit_cost": unit_cost,
         },
         headers={"Idempotency-Key": key},
     )

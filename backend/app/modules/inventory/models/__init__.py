@@ -8,8 +8,15 @@ tenancy mapper-enumeration suite) registers all tables on ``Base.metadata``.
 - ``masters``: item categories, UoMs, conversions, the item master, lot/serial instances (5.1).
 - ``stock``: warehouses, bins, the stock-move ledger (the quantity SSOT) and the maintained
   on-hand quant projection (5.2, D-020/D-036).
+- ``costing``: the moving-average valuation + FIFO cost layers + per-layer consumptions — the VALUE
+  SSOT, updated in the same transaction as every move (5.3, D-020/D-037).
 """
 
+from app.modules.inventory.models.costing import (
+    CostLayer,
+    ItemValuation,
+    LayerConsumption,
+)
 from app.modules.inventory.models.masters import (
     Item,
     ItemCategory,
@@ -22,8 +29,11 @@ from app.modules.inventory.models.stock import Bin, StockMove, StockQuant, Wareh
 
 __all__ = [
     "Bin",
+    "CostLayer",
     "Item",
     "ItemCategory",
+    "ItemValuation",
+    "LayerConsumption",
     "Lot",
     "SerialNumber",
     "StockMove",

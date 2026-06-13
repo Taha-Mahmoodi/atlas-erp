@@ -25,6 +25,11 @@ from app.modules.inventory.service.conversions import (
     get_conversion_factors,
     list_conversions,
 )
+from app.modules.inventory.service.costing import (
+    CostingResult,
+    apply_costing,
+    reverse_costing,
+)
 from app.modules.inventory.service.items import (
     create_item,
     get_item,
@@ -33,7 +38,13 @@ from app.modules.inventory.service.items import (
 )
 from app.modules.inventory.service.stock_moves import create_move, reverse_move
 from app.modules.inventory.service.stock_quants import InsufficientStockError
-from app.modules.inventory.service.stock_reads import get_move, list_moves, list_on_hand
+from app.modules.inventory.service.stock_reads import (
+    get_move,
+    list_cost_layers,
+    list_moves,
+    list_on_hand,
+    list_valuations,
+)
 from app.modules.inventory.service.uoms import (
     create_uom,
     get_uom,
@@ -48,7 +59,9 @@ from app.modules.inventory.service.warehouses import (
 )
 
 __all__ = [
+    "CostingResult",
     "InsufficientStockError",
+    "apply_costing",
     "convert_quantity",
     "create_bin",
     "create_category",
@@ -57,6 +70,7 @@ __all__ = [
     "create_move",
     "create_uom",
     "create_warehouse",
+    "reverse_costing",
     "get_bin",
     "get_category",
     "get_conversion_factors",
@@ -67,10 +81,12 @@ __all__ = [
     "list_bins",
     "list_categories",
     "list_conversions",
+    "list_cost_layers",
     "list_items",
     "list_moves",
     "list_on_hand",
     "list_uoms",
+    "list_valuations",
     "list_warehouses",
     "reverse_move",
     "update_bin",
