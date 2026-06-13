@@ -367,7 +367,10 @@ items are keyed by the opaque `partner_id` (D-029) — finance never FK-referenc
 - `POST /fiscal-periods/{id}/close` and `/open` — action sub-resources (STRUCTURE §7), guarded by
   `finance.period.manage`.
 - `POST /journal-entries` (create draft), `GET /journal-entries` (paginated), `GET /{id}` (with
-  lines) — `finance.journal.post` / `finance.journal.read`.
+  lines) — `finance.journal.post` / `finance.journal.read`. The journal endpoints live in
+  `journal_router.py` and mount into the finance router (same one-surface pattern as FX/tax),
+  keeping `router.py` focused on the COA + fiscal-calendar reference endpoints under the 400-line
+  cap.
 - `POST /journal-entries/{id}/post` and `/{id}/reverse` — action sub-resources, **idempotent**
   (D-013, require the `Idempotency-Key` header), guarded by `finance.journal.post` /
   `finance.journal.reverse`.
@@ -402,6 +405,33 @@ items are keyed by the opaque `partner_id` (D-029) — finance never FK-referenc
 
 Writes commit through `run_in_uow` (D-011), so audit rows ride the same transaction and the
 event semantics will be identical to seed/CLI once finance publishes events.
+
+### Conditional requests on reference lists (PERFORMANCE §3 / D-035, closes #28)
+
+The **slow-changing reference** list endpoints support `ETag` / `If-None-Match` so a client (and the
+SPA's TanStack Query cache) can revalidate cheaply: a matching `If-None-Match` returns **304 Not
+Modified** with no body, skipping the page query entirely (the 304 path runs the auth load + one
+ETag aggregate = 2 statements vs the 200 path's 3). The endpoints that carry an ETag:
+
+- `GET /accounts`, `GET /account-groups`
+- `GET /currencies`, `GET /tax-codes`
+- `GET /fiscal-years`, `GET /fiscal-periods`
+- `GET /posting-defaults`
+
+Transactional/fast-changing lists deliberately carry **no** ETag: `journal-entries`, `vendor-bills`,
+`customer-invoices`, `customer-receipts`, `vendor-payments`, `exchange-rates` (rate history),
+`bank-statements`, `depreciation-runs`, `fx-revaluation-runs`, and `jobs`.
+
+**Validator semantics** (core/conditional.py, D-035). The ETag is a **collection-level WEAK**
+validator computed from ONE cheap aggregate — `SELECT COUNT(id), MAX(updated_at)` over the tenant's
+rows — formatted `W/"<count>-<max_updated_micros>-<tenant8>-<request_fingerprint>"`. Any insert
+moves the count; any update moves `MAX(updated_at)` (TimestampMixin's `onupdate`); a delete moves
+the count — so the validator flips on any change to the collection. Because it is collection-level,
+**any** change to the collection invalidates **every** page's cached validator (acceptable for small
+reference sets). The aggregate is automatically **tenant-scoped** by the D-007 listener, and the
+`tenant8` component makes a cross-tenant 304 impossible even in theory. The `request_fingerprint`
+(cursor + limit + filters, reusing the pagination fingerprint) is folded in so a 304 can only ever
+be served for the **identical** page request — it can never return the wrong slice.
 
 ## Accounts Payable (PLAN 4.5, D-029)
 
