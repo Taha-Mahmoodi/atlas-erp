@@ -1,0 +1,162 @@
+"""Inventory request/response schemas (Pydantic v2, ApiModel base) for PLAN 5.1.
+
+Read schemas mirror the models field-for-field in snake_case; enums are typed with the constants
+classes (ApiModel's ``use_enum_values`` serializes them as their UPPER_SNAKE string, matching the
+columns). Quantities (reorder point/quantity, the UoM conversion factor) are ``Decimal`` in Python,
+serialized as strings (D-015); the frontend types them as string and formats in lib/format.ts.
+Create/Update carry only client-settable fields; ids, timestamps and tenant_id are server-owned.
+
+``costing_method`` is OPTIONAL on ItemCreate — the service defaults it from the item's category
+(D-020) when omitted, and STORES it on the item.
+"""
+
+import uuid
+from datetime import datetime
+from decimal import Decimal
+
+from app.core.schemas import ApiModel
+from app.modules.inventory.constants import CostingMethod, ItemType, TrackingMode
+
+# --- Item categories ----------------------------------------------------------
+
+
+class ItemCategoryCreate(ApiModel):
+    """Create an item category (D-020/D-029). The three GL-account ids are OPTIONAL opaque finance
+    uuids — supplied ones are validated to exist in finance; a STOCKED item's category needs them
+    before stock moves can post (enforced when moves land, 5.2+)."""
+
+    code: str
+    name: str
+    default_costing_method: CostingMethod = CostingMethod.MOVING_AVERAGE
+    inventory_account_id: uuid.UUID | None = None
+    cogs_account_id: uuid.UUID | None = None
+    price_difference_account_id: uuid.UUID | None = None
+
+
+class ItemCategoryUpdate(ApiModel):
+    """Partial update — every field optional; ``code`` is immutable after creation (items
+    reference the category) and so is deliberately absent."""
+
+    name: str | None = None
+    default_costing_method: CostingMethod | None = None
+    inventory_account_id: uuid.UUID | None = None
+    cogs_account_id: uuid.UUID | None = None
+    price_difference_account_id: uuid.UUID | None = None
+
+
+class ItemCategoryRead(ApiModel):
+    id: uuid.UUID
+    code: str
+    name: str
+    default_costing_method: CostingMethod
+    inventory_account_id: uuid.UUID | None
+    cogs_account_id: uuid.UUID | None
+    price_difference_account_id: uuid.UUID | None
+    created_at: datetime
+    updated_at: datetime
+
+
+# --- Units of measure ---------------------------------------------------------
+
+
+class UomCreate(ApiModel):
+    code: str
+    name: str
+
+
+class UomUpdate(ApiModel):
+    """Partial update — only the display name; ``code`` is immutable (items/conversions reference
+    it) and so is deliberately absent."""
+
+    name: str | None = None
+
+
+class UomRead(ApiModel):
+    id: uuid.UUID
+    code: str
+    name: str
+    created_at: datetime
+    updated_at: datetime
+
+
+# --- Items --------------------------------------------------------------------
+
+
+class ItemCreate(ApiModel):
+    """Create an item. ``costing_method`` is optional — defaulted from the category when omitted
+    (D-020). ``tracking_mode`` may be non-NONE only for STOCKED items (the service enforces it).
+    ``base_uom_id`` is the unit every quantity is stored in; alternate UoMs are added separately."""
+
+    item_code: str
+    name: str
+    description: str | None = None
+    item_type: ItemType
+    category_id: uuid.UUID
+    base_uom_id: uuid.UUID
+    costing_method: CostingMethod | None = None
+    tracking_mode: TrackingMode = TrackingMode.NONE
+    is_active: bool = True
+    reorder_point: Decimal | None = None
+    reorder_quantity: Decimal | None = None
+
+
+class ItemUpdate(ApiModel):
+    """Partial update — every field optional; ``item_code`` and ``item_type`` are immutable after
+    creation (later stock/costing history references them) and so are deliberately absent. The
+    service still enforces the tracking-only-on-stocked invariant on a changed ``tracking_mode``."""
+
+    name: str | None = None
+    description: str | None = None
+    category_id: uuid.UUID | None = None
+    base_uom_id: uuid.UUID | None = None
+    costing_method: CostingMethod | None = None
+    tracking_mode: TrackingMode | None = None
+    is_active: bool | None = None
+    reorder_point: Decimal | None = None
+    reorder_quantity: Decimal | None = None
+
+
+class ItemRead(ApiModel):
+    id: uuid.UUID
+    item_code: str
+    name: str
+    description: str | None
+    item_type: ItemType
+    category_id: uuid.UUID
+    base_uom_id: uuid.UUID
+    costing_method: CostingMethod
+    tracking_mode: TrackingMode
+    is_active: bool
+    reorder_point: Decimal | None
+    reorder_quantity: Decimal | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ItemFilter(ApiModel):
+    """List filters for the items endpoint. None means "no constraint"; the router folds the set
+    into the cursor's filter fingerprint so a cursor cannot cross filtered views."""
+
+    item_type: ItemType | None = None
+    category_id: uuid.UUID | None = None
+    is_active: bool | None = None
+
+
+# --- UoM conversions (nested under an item) -----------------------------------
+
+
+class UomConversionCreate(ApiModel):
+    """Add an alternate UoM for an item. ``factor_to_base`` multiplies an alternate-UoM quantity to
+    yield the base-UoM quantity (base EA, alt BOX, factor 12 ⇒ 1 BOX = 12 EA); must be > 0. The
+    item_id comes from the path, not the body."""
+
+    alt_uom_id: uuid.UUID
+    factor_to_base: Decimal
+
+
+class UomConversionRead(ApiModel):
+    id: uuid.UUID
+    item_id: uuid.UUID
+    alt_uom_id: uuid.UUID
+    factor_to_base: Decimal
+    created_at: datetime

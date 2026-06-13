@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 # autogen revision is still hand-reviewed per D-022).
 import app.modules.admin.models  # noqa: F401
 import app.modules.finance.models  # noqa: F401
+import app.modules.inventory.models  # noqa: F401
 from app.core.db import enable_sqlite_foreign_keys
 from app.core.models import Base
 

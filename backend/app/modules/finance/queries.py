@@ -80,6 +80,22 @@ async def account_exists(
     return (await session.execute(stmt)).first() is not None
 
 
+async def account_exists_by_id(
+    session: AsyncSession, tenant_id: uuid.UUID, account_id: uuid.UUID
+) -> bool:
+    """Whether an account with ``account_id`` exists in the tenant's chart of accounts.
+
+    The by-id companion to ``account_exists`` (sanctioned cross-module read, STRUCTURE §5 / D-029):
+    inventory item categories reference finance GL accounts by OPAQUE uuid — never a cross-module
+    FK — so the inventory service validates each referenced account id through this contract before
+    storing it on a category. Tenant-scoped, so the D-007 filter applies on top of the explicit
+    predicate (an ordinary tenant read, not a bypass)."""
+    stmt = select(Account.id).where(
+        Account.tenant_id == tenant_id, Account.id == account_id
+    )
+    return (await session.execute(stmt)).first() is not None
+
+
 async def get_rate(
     session: AsyncSession,
     tenant_id: uuid.UUID,
