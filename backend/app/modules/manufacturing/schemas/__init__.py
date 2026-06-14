@@ -7,6 +7,8 @@ precedent) — split by aggregate so each file stays small and the router import
   sub-resource.
 - ``production``: the production-order Create/Read/Detail/Filter + the exploded component/operation
   reads + the issue/finish action request bodies (PLAN 8.2).
+- ``mrp``: the MRP run request/read/summary + planned-order read + capacity-load read + the
+  planned-order convert request (PLAN 8.3).
 """
 
 from app.modules.manufacturing.schemas.boms import (
@@ -16,6 +18,14 @@ from app.modules.manufacturing.schemas.boms import (
     BomFilter,
     BomRead,
     BomUpdate,
+)
+from app.modules.manufacturing.schemas.mrp import (
+    CapacityLoadRead,
+    MrpRunRead,
+    MrpRunRequest,
+    MrpRunSummary,
+    PlannedOrderConvertRequest,
+    PlannedOrderRead,
 )
 from app.modules.manufacturing.schemas.production import (
     ComponentIssueLine,
@@ -50,9 +60,15 @@ __all__ = [
     "BomFilter",
     "BomRead",
     "BomUpdate",
+    "CapacityLoadRead",
     "ComponentIssueLine",
     "FinishOrderRequest",
     "IssueComponentsRequest",
+    "MrpRunRead",
+    "MrpRunRequest",
+    "MrpRunSummary",
+    "PlannedOrderConvertRequest",
+    "PlannedOrderRead",
     "ProductionOrderComponentRead",
     "ProductionOrderCreate",
     "ProductionOrderDetail",

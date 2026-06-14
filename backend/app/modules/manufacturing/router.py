@@ -27,6 +27,7 @@ from app.modules.manufacturing.constants import (
     MFG_WORKCENTER_READ,
 )
 from app.modules.manufacturing.models import WorkCenter
+from app.modules.manufacturing.mrp_router import mrp_router
 from app.modules.manufacturing.production_order_router import production_order_router
 from app.modules.manufacturing.routing_router import routing_router
 from app.modules.manufacturing.schemas import (
@@ -131,9 +132,11 @@ async def update_work_center(
     return WorkCenterRead.model_validate(work_center)
 
 
-# The BOM surface (boms + nested components), the routing surface (routings + nested operations) and
-# the production-order surface (orders + issue/finish actions) are sibling sub-routers mounted here,
-# so the whole module is ONE surface at /api/v1/manufacturing.
+# The BOM surface (boms + nested components), the routing surface (routings + nested operations),
+# the production-order surface (orders + issue/finish actions) and the MRP surface (runs + planned
+# orders + capacity) are sibling sub-routers mounted here, so the whole module is ONE surface at
+# /api/v1/manufacturing.
 router.include_router(bom_router)
 router.include_router(routing_router)
 router.include_router(production_order_router)
+router.include_router(mrp_router)

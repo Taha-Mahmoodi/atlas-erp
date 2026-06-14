@@ -203,6 +203,12 @@ A CONFIRMED order's undelivered quantity (ordered − delivered) is "committed" 
 reservation table; `committed_quantity` is a query over confirmed-but-undelivered order lines (D-044).
 When 7.3 delivers, `delivered_quantity` rises and the commitment shrinks automatically.
 
+**`open_demand_item_ids` (8.3, D-049):** manufacturing's MRP run reads `sales/queries` for
+independent demand — `open_demand_item_ids` returns the distinct items carrying undelivered
+CONFIRMED / PARTIALLY_DELIVERED order lines, and the run then sums each via `committed_quantity`.
+This is a one-directional downward/sibling read (manufacturing → `sales/queries`); sales never imports
+`manufacturing/queries`, so there is no §5 cycle.
+
 ## Delivery (7.3, D-045) — the outbound twin of the goods receipt
 
 A **delivery** records the physical shipment of order goods — the **outbound mirror** of the

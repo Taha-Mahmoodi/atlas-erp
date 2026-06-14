@@ -74,6 +74,55 @@ class ProductionOrderStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class PlannedOrderType(StrEnum):
+    """How a PLANNED ORDER's net requirement is sourced (PLAN 8.3, D-049). The MAKE-vs-BUY rule is
+    structural: an item is MAKE if it has an ACTIVE default BOM (it is produced in-house, and the
+    run EXPLODES its BOM into dependent component demand), else BUY (it is procured — a leaf the
+    explosion stops at).
+
+    - MAKE: convert → a real production order (manufacturing.create_production_order, intra-module).
+    - BUY: convert → a procurement DRAFT requisition (cross-module, via the planned-buy query
+      procurement reads — the §5-clean mechanism, D-049).
+    """
+
+    MAKE = "MAKE"
+    BUY = "BUY"
+
+
+class PlannedOrderStatus(StrEnum):
+    """Lifecycle of a PLANNED ORDER (PLAN 8.3, D-049). The MRP run produces PLANNED proposals; a
+    planner FIRMS the ones to keep, CONVERTS them into real orders, or CANCELS them.
+
+    - PLANNED: the run's fresh proposal. SUPERSEDED by the next run (a re-run deletes un-firmed
+      PLANNED orders and regenerates — the regeneration policy, D-049).
+    - FIRMED: a planner has committed to it; a re-run KEEPS it (and nets it as supply, so it is not
+      re-proposed). Editable into CONVERTED/CANCELLED.
+    - CONVERTED: turned into a real production order / requisition (``converted_document_id`` links
+      it via docflow). Terminal; a re-run keeps it and nets the created supply.
+    - CANCELLED: a planner discarded it. Terminal; a re-run keeps the row (history) but it adds no
+      supply.
+    """
+
+    PLANNED = "PLANNED"
+    FIRMED = "FIRMED"
+    CONVERTED = "CONVERTED"
+    CANCELLED = "CANCELLED"
+
+
+class MrpRunStatus(StrEnum):
+    """Lifecycle of an MRP RUN (PLAN 8.3, D-049) — distinct from the generic ``JobStatus`` because
+    the run is a domain document with its own number, even when executed as a background job.
+
+    - RUNNING: the engine is gathering demand/supply and writing planned orders.
+    - COMPLETED: the plan is written (planned-make/buy counts populated, ``completed_at`` set).
+    - FAILED: the run aborted; no plan was committed (the uow rolled back).
+    """
+
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
 class BomStatus(StrEnum):
     """Lifecycle of a BOM VERSION (D-047). A BOM is activated to become usable by production/MRP.
 
@@ -129,6 +178,15 @@ MFG_PRODUCTION_ORDER_MANAGE = "manufacturing.production_order.manage"
 MFG_PRODUCTION_ORDER_RELEASE = "manufacturing.production_order.release"
 MFG_PRODUCTION_ORDER_EXECUTE = "manufacturing.production_order.execute"
 
+# MRP + planned-order permissions (PLAN 8.3, D-049). The RUN authority is separated from the
+# PLANNED-ORDER manage authority (segregation of duties): running the planning engine is a
+# planning-controller act, while firming/converting/cancelling a specific proposal is a
+# planner/buyer act. Read is split too so a viewer can inspect the plan without running it.
+MFG_MRP_READ = "manufacturing.mrp.read"
+MFG_MRP_RUN = "manufacturing.mrp.run"
+MFG_PLANNED_ORDER_READ = "manufacturing.planned_order.read"
+MFG_PLANNED_ORDER_MANAGE = "manufacturing.planned_order.manage"
+
 register_permissions(
     MFG_BOM_READ,
     MFG_BOM_MANAGE,
@@ -140,6 +198,10 @@ register_permissions(
     MFG_PRODUCTION_ORDER_MANAGE,
     MFG_PRODUCTION_ORDER_RELEASE,
     MFG_PRODUCTION_ORDER_EXECUTE,
+    MFG_MRP_READ,
+    MFG_MRP_RUN,
+    MFG_PLANNED_ORDER_READ,
+    MFG_PLANNED_ORDER_MANAGE,
     descriptions={
         MFG_BOM_READ: "Read bills of materials and their components",
         MFG_BOM_MANAGE: "Create, edit and activate bills of materials and their components",
@@ -151,6 +213,10 @@ register_permissions(
         MFG_PRODUCTION_ORDER_MANAGE: "Create, edit and cancel production orders",
         MFG_PRODUCTION_ORDER_RELEASE: "Release production orders (reserve materials)",
         MFG_PRODUCTION_ORDER_EXECUTE: "Issue components to and finish production orders",
+        MFG_MRP_READ: "Read MRP runs, their planned orders and capacity loads",
+        MFG_MRP_RUN: "Run material requirements planning",
+        MFG_PLANNED_ORDER_READ: "Read planned orders",
+        MFG_PLANNED_ORDER_MANAGE: "Firm, convert and cancel planned orders",
     },
 )
 
@@ -176,3 +242,40 @@ PRODUCTION_ORDER_FINISHED_TO_MOVE_LINK = "finished_to"
 # PUBLISHES, inventory's handlers create the moves with the WIP offset override.
 COMPONENTS_ISSUED_EVENT_KEY = "manufacturing.production_order.components_issued"
 ORDER_FINISHED_EVENT_KEY = "manufacturing.production_order.finished"
+
+# PLAN 8.3 (D-049): a planned BUY order's conversion publishes this; procurement's handler creates
+# the DRAFT requisition (the §5-clean planned-BUY → requisition mechanism, the billing→invoice
+# precedent — manufacturing never imports procurement service).
+PLANNED_BUY_CONVERTED_EVENT_KEY = "manufacturing.planned_order.buy_converted"
+
+# --- MRP run document type, numbering, job + docflow links (PLAN 8.3, D-049) -------------------
+# The MRP RUN is a posted document in the D-012 sense (it registers in core_documents and claims a
+# gapless MRP- number at creation — the depreciation-run precedent). The PLANNED ORDERS it produces
+# are NOT separately numbered: they are ephemeral planning output keyed by their run (and
+# regenerated each run), so they carry no gapless number — only the RUN does. The CapacityLoad rows
+# are likewise run-scoped output, not documents.
+MRP_RUN_DOC_TYPE = "manufacturing.mrp_run"
+MRP_RUN_SEQUENCE_NAME = "manufacturing.mrp_run"
+MRP_RUN_NUMBER_PREFIX = "MRP"
+MRP_RUN_NUMBER_PADDING = 5
+
+# The background-job type the MRP run ALWAYS executes as (PLAN 8.3, PERFORMANCE §3). Unlike
+# depreciation (which runs inline below a threshold), an MRP run SCANS every planning-relevant item
+# in the tenant — it is naturally a job, so it is ALWAYS submitted as one for consistency (D-049).
+MRP_RUN_JOB = "manufacturing.mrp_run"
+
+# The planning horizon (days) the run nets demand over and the rough capacity check spreads
+# available hours across when the caller does not specify one. A v1 single-bucket horizon (no
+# date-phasing): all demand inside the horizon is netted into ONE bucket (parity: net-change /
+# time-phased planning is deferred).
+MRP_DEFAULT_HORIZON_DAYS = 30
+
+# The maximum BOM-explosion depth the run walks before aborting (PLAN 8.3, D-049). A guard against a
+# pathological (masters-rejected-but-defensive) cycle; the docflow get_chain depth-cap precedent.
+MRP_MAX_EXPLOSION_LEVELS = 20
+
+# Docflow edge from a PLANNED ORDER's run document to the real document its conversion creates
+# (D-012/D-049): MRP run → 'planned_to' → production order / requisition. The planned order carries
+# the converted document id on its row too (``converted_document_id``), the durable link the
+# convert flow writes.
+PLANNED_ORDER_CONVERTED_LINK = "planned_to"

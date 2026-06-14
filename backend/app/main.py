@@ -288,8 +288,13 @@ def register_event_handlers() -> None:
         receive_goods_receipt_moves,
         receive_return_moves,
     )
-    from app.modules.manufacturing.events import ComponentsIssued, OrderFinished
+    from app.modules.manufacturing.events import (
+        ComponentsIssued,
+        OrderFinished,
+        PlannedBuyConverted,
+    )
     from app.modules.procurement.events import GoodsReceiptPosted, InvoiceMatched
+    from app.modules.procurement.handlers import create_requisition_for_planned_buy
     from app.modules.sales.events import (
         BillingInvoiced,
         DeliveryShipped,
@@ -350,6 +355,13 @@ def register_event_handlers() -> None:
         subscribe(OrderFinished.key, receive_finished_order_move)
     if post_production_variance not in handlers_for(OrderFinished.key):
         subscribe(OrderFinished.key, post_production_variance)
+    # Manufacturing planned-BUY → procurement DRAFT-requisition bridge (PLAN 8.3, D-049): a planned
+    # BUY order's conversion publishes PlannedBuyConverted and procurement's handler creates the
+    # requisition in the SAME transaction, linking the MRP run document → 'planned_to' → requisition
+    # (the §5-clean planned-BUY → requisition mechanism — manufacturing never imports procurement
+    # service, the billing → AR-invoice precedent).
+    if create_requisition_for_planned_buy not in handlers_for(PlannedBuyConverted.key):
+        subscribe(PlannedBuyConverted.key, create_requisition_for_planned_buy)
 
 
 app = create_app()

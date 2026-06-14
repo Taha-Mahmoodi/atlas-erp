@@ -10,10 +10,12 @@ operator/contributor map and grows with each manufacturing task (PLAN 8.1…8.3)
 
 ## Status
 
-**PLAN 8.1 laid the PP master data:** multi-level versioned **BOMs**, **work centres**, and
-**routings** (s4hana-parity PP: BOMs multi-level+versioned, work centers, routings — all FULL).
-Production orders (8.2) and the deterministic MRP run + rough capacity check (8.3) build on these
-masters in place.
+**Phase 8 / Manufacturing is COMPLETE.** PLAN 8.1 laid the PP master data — multi-level versioned
+**BOMs**, **work centres**, **routings** (s4hana-parity PP: all FULL); 8.2 added **production orders**
+(reserve → issue to WIP → finish to stock, the manufacturing↔inventory↔finance seam, D-048); 8.3
+added the deterministic **MRP run + rough capacity check** (D-049). Sections below cover each in turn;
+`models/`, `service/`, `schemas/` are split into per-concern files (the BOM/routing/production/mrp
+split) and re-exported from each package `__init__`.
 
 | File | Concern | Key decision |
 |---|---|---|
@@ -98,8 +100,11 @@ id; manufacturing never reaches across with an FK.
 
 `get_bom` / `get_active_bom_for_item(item_id)` (the ACTIVE default version) / `bom_components(bom_id)`
 · `get_routing` / `get_active_routing_for_item(item_id)` / `routing_operations(routing_id)` ·
-`get_work_center` / `work_center_capacity(work_center_id)`. This is the **only** manufacturing file
-8.2/8.3 import — thin, stable, no service imports.
+`get_work_center` / `work_center_capacity(work_center_id)`. 8.3 adds the MRP supply/output reads:
+`open_production_order_supply(item_id)` (un-finished open-order quantity, the production analogue of
+`procurement.open_incoming_quantity`), `planned_make_supply(item_id)` (firmed/converted planned-order
+quantity), `get_mrp_run` / `planned_orders(run_id)`. This is the **only** manufacturing file other
+modules import — thin, stable, no service imports.
 
 ## Production orders (8.2, D-048) — the manufacturing↔inventory↔finance seam
 
@@ -141,14 +146,92 @@ unmapped WIP account fails an issue/finish loud (422). Permissions: `manufacturi
 `.read` / `.manage` (create+cancel) / `.release` / `.execute` (issue+finish). Docflow: order →
 `issued_to` → ISSUE moves, order → `finished_to` → finished RECEIPT move + variance entry.
 
-## What 8.3 adds (and what parity defers)
+## MRP run + rough capacity check (8.3, D-049)
 
-- **8.3 — MRP run + rough capacity check:** explode sales-order demand + reorder points against
-  supply → planned orders; load work centres vs available hours (the snapshotted order operations'
-  `planned_minutes` are the per-order load).
+The **MRP run** (`mfg_mrp_runs`, prefix `MRP-`) is a deterministic, set-based, level-ordered planning
+pass that nets demand against supply, explodes MAKE items' BOMs into dependent component demand, and
+writes **planned orders** (`mfg_planned_orders`) plus a rough per-work-centre **capacity load**
+(`mfg_capacity_loads`). It is **always a background job** (`manufacturing.mrp_run`): `POST
+/api/v1/manufacturing/mrp/runs` submits the job and returns **202 `{job_id}`** for `/api/v1/jobs`
+polling (the depreciation-run precedent — the run scans every planning-relevant item, so it never
+runs inline). The submit is idempotent (D-013).
+
+**Demand sources (level-0, independent):**
+- **Open sales-order demand** — undelivered quantity on CONFIRMED / PARTIALLY_DELIVERED orders, read
+  via `sales/queries.open_demand_item_ids` (the items) + `sales/queries.committed_quantity` (the sum,
+  the ATP reservation figure).
+- **Reorder-point shortfall** — an item at/below its reorder point demands its `reorder_quantity`, via
+  `inventory/queries.items_below_reorder_point` (the 6.4 consumption-based scan).
+
+**Supply (netted off demand):** `inventory/queries.total_on_hand` (on-hand) +
+`procurement/queries.open_incoming_quantity` (open POs) +
+`manufacturing/queries.open_production_order_supply` (un-finished open production orders) +
+`manufacturing/queries.planned_make_supply` (still-open FIRMED/CONVERTED planned orders — a
+committed proposal nets as supply so a re-run does not re-propose it).
+
+**Netting formula:** `net_requirement = max(0, demand − supply)`, quantized to the QuantityType scale
+(D-015; summed in Python so the exact decimal round-trips identically on both engines).
+
+**Make vs Buy is structural — active-BOM presence:** an item with an ACTIVE default BOM
+(`get_active_bom_for_item`) is **MAKE** (produced in-house → a planned **PRODUCTION** order, and its
+BOM is exploded into dependent component demand); an item with no active BOM is **BUY** (procured → a
+planned **PURCHASE** order, a leaf the explosion stops at). This is how Atlas distinguishes
+manufactured from purchased items.
+
+**Multi-level explosion + cycle guard (D-047):** the run is **level-ordered** — level 0 (the
+independently-demanded items) nets first; each MAKE item's net requirement explodes its BOM into
+dependent demand for its components at the next level (`dependent = quantity_per × parent_net /
+base_quantity × (1 + scrap_percent/100)`, the create-production-order math), accumulating across all
+parents (a component used by two finished goods sums). Per level the active BOMs and their components
+are batched (two queries) and the explosion runs **in memory** — no per-component N+1. The cycle
+guard is a **`netted` set** (a component re-appearing at a deeper level is folded into its earlier
+net — low-level-code, never re-planned) plus a **`MRP_MAX_EXPLOSION_LEVELS = 20` depth cap** (the
+docflow `get_chain` precedent), so a masters-rejected-but-defensive cycle (A↔B across separate BOMs)
+terminates cleanly rather than hanging.
+
+**Planned orders are the output + their lifecycle.** `PLANNED` (the fresh proposal — superseded by
+the next run, which **regenerates**: deletes the tenant's un-firmed PLANNED rows then writes a fresh
+plan) → `FIRMED` (a planner committed to it — survives a re-run and nets as supply) → `CONVERTED`
+(turned into a real document) | `CANCELLED` (discarded; the row survives for history, adds no
+supply). Each run is its own snapshot (multiple runs allowed).
+
+**Conversion (the §5-clean cross-module write).** `POST /planned-orders/{id}/convert`:
+- a **MAKE** order calls manufacturing's OWN `create_production_order` (intra-module) and records
+  `converted_document_id` + a docflow run → `planned_to` → production-order edge;
+- a **BUY** order **publishes `PlannedBuyConverted`** → procurement's
+  `handlers.create_requisition_for_planned_buy` creates the DRAFT requisition in the **same
+  transaction** + links run → `planned_to` → requisition (the billing → AR-invoice precedent —
+  manufacturing never imports sales/inventory/procurement **service**).
+
+**Rough capacity check (parity capacity = PARTIAL — evaluation only).** For the run's planned MAKE
+orders (their items' active routings, batched) **plus** the tenant's open production orders (their
+snapshot operations' precomputed `planned_minutes`, one grouped query), the check sums each work
+centre's **load** = Σ(`setup_time_minutes + run_time_minutes_per_unit × quantity`) and compares it to
+**available** = `capacity_hours_per_day × (efficiency_percent / 100) × horizon_days × 60`;
+`utilization_percent = load / available × 100` and **`is_overloaded = load > available`**. There is
+**no leveling / finite scheduling** — a rough infinite-capacity load picture only. The loads are
+persisted per run (a stable report; the capacity endpoint returns the overloaded ones first).
+
+**Cross-module read directions added (§5, no cycle).** MRP reads three sibling/lower modules'
+`queries.py`: manufacturing → `sales/queries` (`open_demand_item_ids` added in 8.3,
+`committed_quantity` pre-existing), manufacturing → `procurement/queries`
+(`open_incoming_quantity`), manufacturing → `inventory/queries` + `finance/queries` (pre-existing).
+Sales and procurement are **siblings** of manufacturing; the reads are **one-directional** (neither
+sales nor procurement imports `manufacturing/queries` — manufacturing is the newest module), so there
+is **no bidirectional query cycle** (STRUCTURE §5 bans only bidirectional pairs). The planned-BUY →
+requisition write is an **event**, never a service import.
+
+**Permissions:** `manufacturing.mrp.read` / `.mrp.run` (segregated — running the engine is a
+planning-controller act) / `.planned_order.read` / `.planned_order.manage` (firm/convert/cancel).
+**Endpoints** (`mrp_router`, mounted): `POST /mrp/runs` (202 + job), `GET /mrp/runs` (paginated) +
+`/{id}` (header + capacity), `GET /{id}/planned-orders` (paginated, filter type/status), `GET
+/{id}/capacity`, `POST /planned-orders/{id}/convert` (idempotent) / `/firm` / `/cancel`.
+
+## What parity defers
 
 **Deferred per s4hana-parity (PP):** operation-level confirmations (8.2 plans order-level
 completion only), capacity *leveling*/finite scheduling (8.3 does rough infinite-capacity load
-only), demand management/PIRs/planning strategies, kanban, repetitive manufacturing, PP-PI process
-orders, and PP/DS — the typical v1-grade boundary, with each marked as a layer-on-later in the
-parity map.
+only), MRP exception messages / rescheduling / MRP areas / net-change / time-phased planning (8.3 is
+a single-bucket regenerative net), MRP-Live performance, demand management/PIRs/planning strategies,
+kanban, repetitive manufacturing, PP-PI process orders, and PP/DS — the typical v1-grade boundary,
+with each marked as a layer-on-later in the parity map.

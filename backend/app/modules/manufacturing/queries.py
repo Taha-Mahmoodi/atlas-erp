@@ -19,12 +19,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.manufacturing.constants import (
     BomStatus,
+    PlannedOrderStatus,
     ProductionOrderStatus,
     RoutingStatus,
 )
 from app.modules.manufacturing.models import (
     Bom,
     BomComponent,
+    MrpRun,
+    PlannedOrder,
     ProductionOrder,
     ProductionOrderComponent,
     Routing,
@@ -191,3 +194,77 @@ async def open_production_orders(
         .order_by(ProductionOrder.order_number)
     )
     return list((await session.execute(stmt)).scalars().all())
+
+
+# --- MRP supply + planned-order reads (PLAN 8.3, D-049) ------------------------
+
+
+async def open_production_order_supply(
+    session: AsyncSession, tenant_id: uuid.UUID, item_id: uuid.UUID
+) -> Decimal:
+    """The UN-FINISHED quantity an item's OPEN production orders will yield (PLAN 8.3) — the
+    in-house-supply side of the MRP net (the production analogue of procurement's
+    ``open_incoming_quantity``). Sums ``quantity − finished_quantity`` over the item's
+    DRAFT/RELEASED/IN_PROGRESS orders (a FINISHED/CANCELLED order yields nothing more). SET-BASED
+    (no per-order N+1, PERFORMANCE §2): one filtered scan on (tenant, item_id), summed in PYTHON so
+    the exact-decimal QuantityType round-trips identically on both engines (D-015)."""
+    open_statuses = (
+        ProductionOrderStatus.DRAFT.value,
+        ProductionOrderStatus.RELEASED.value,
+        ProductionOrderStatus.IN_PROGRESS.value,
+    )
+    stmt = select(ProductionOrder.quantity, ProductionOrder.finished_quantity).where(
+        ProductionOrder.tenant_id == tenant_id,
+        ProductionOrder.item_id == item_id,
+        ProductionOrder.status.in_(open_statuses),
+    )
+    rows = (await session.execute(stmt)).all()
+    return sum(
+        (Decimal(str(qty)) - Decimal(str(finished)) for qty, finished in rows),
+        Decimal(0),
+    )
+
+
+async def get_mrp_run(
+    session: AsyncSession, tenant_id: uuid.UUID, run_id: uuid.UUID
+) -> MrpRun | None:
+    """The MRP run with ``run_id`` in the tenant, or None. A point lookup on the PK."""
+    stmt = select(MrpRun).where(MrpRun.tenant_id == tenant_id, MrpRun.id == run_id)
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def planned_orders(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    mrp_run_id: uuid.UUID,
+) -> list[PlannedOrder]:
+    """A run's planned orders, ordered by (level, item) so finished goods (level 0) precede their
+    components (PLAN 8.3). One indexed read by (tenant, mrp_run_id); the capacity scan + the nested
+    list read these."""
+    stmt = (
+        select(PlannedOrder)
+        .where(
+            PlannedOrder.tenant_id == tenant_id,
+            PlannedOrder.mrp_run_id == mrp_run_id,
+        )
+        .order_by(PlannedOrder.level, PlannedOrder.item_id)
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def planned_make_supply(
+    session: AsyncSession, tenant_id: uuid.UUID, item_id: uuid.UUID
+) -> Decimal:
+    """The quantity an item's still-open FIRMED/CONVERTED planned orders contribute as supply across
+    ALL runs (PLAN 8.3, the regeneration policy, D-049). A FIRMED/CONVERTED planned order is a
+    committed replenishment a fresh run must NOT re-propose — so the run nets it as supply.
+    SET-BASED, summed in Python (D-015)."""
+    stmt = select(PlannedOrder.quantity).where(
+        PlannedOrder.tenant_id == tenant_id,
+        PlannedOrder.item_id == item_id,
+        PlannedOrder.status.in_(
+            (PlannedOrderStatus.FIRMED.value, PlannedOrderStatus.CONVERTED.value)
+        ),
+    )
+    rows = (await session.execute(stmt)).all()
+    return sum((Decimal(str(qty)) for (qty,) in rows), Decimal(0))

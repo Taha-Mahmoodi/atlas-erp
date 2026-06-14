@@ -24,12 +24,13 @@ from tests.modules.manufacturing.factories import (
     build_manufacturing_setup,
     create_mfg_principal,
 )
+from tests.modules.manufacturing.mrp_factories import MrpSetup, build_mrp_setup
 from tests.modules.manufacturing.production_factories import (
     ProductionOrderSetup,
     build_production_order_setup,
 )
 
-__all__ = ["ManufacturingPrincipal", "ManufacturingSetup", "ProductionOrderSetup"]
+__all__ = ["ManufacturingPrincipal", "ManufacturingSetup", "MrpSetup", "ProductionOrderSetup"]
 
 
 @pytest.fixture(autouse=True)
@@ -120,6 +121,32 @@ async def production_api(
     access_token = await _login(client, principal)
     client.headers["Authorization"] = f"Bearer {access_token}"
     yield ProductionApi(client=client, setup=setup)
+
+
+@dataclass(frozen=True)
+class MrpApi:
+    """A logged-in full-rights client plus an MrpSetup seeded in THAT client's tenant — so the MRP
+    endpoints (run as a job, planned-order reads + conversions, capacity) can be driven over the
+    wire against a tenant with real demand + a multi-level BOM."""
+
+    client: AsyncClient
+    setup: MrpSetup
+
+
+@pytest.fixture
+async def mrp_api(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    mfg_user_factory: Callable[..., AsyncIterator[ManufacturingPrincipal]],
+) -> AsyncIterator[MrpApi]:
+    """A bearer-token client whose principal holds all manufacturing keys, with the full MRP setup
+    (a confirmed undelivered sales order, a multi-level BOM, a routing, a vendor) seeded in that
+    principal's tenant (PLAN 8.3)."""
+    principal = await mfg_user_factory()
+    setup = await build_mrp_setup(db_session, principal.tenant_id)
+    access_token = await _login(client, principal)
+    client.headers["Authorization"] = f"Bearer {access_token}"
+    yield MrpApi(client=client, setup=setup)
 
 
 @pytest.fixture
