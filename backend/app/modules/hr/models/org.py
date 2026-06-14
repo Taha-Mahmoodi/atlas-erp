@@ -1,8 +1,8 @@
-"""HR models (PLAN 10.1, parity HCM core = employees + departments + positions + org chart): the
-``Department``, ``Position`` and ``Employee`` masters.
+"""HR org masters (PLAN 10.1, parity HCM core = employees + departments + positions + org chart):
+the ``Department``, ``Position`` and ``Employee`` masters.
 
-THREE tables, one concern (HCM v1) — well under the 400-line cap, so a single models.py (the quality
-precedent; split into a models/ package only at the cap).
+THREE tables, one concern (the HCM org core). The hr models became a PACKAGE in PLAN 10.2 (leave
+landed in a sibling ``leave.py``); this file holds the org masters unchanged.
 
 All three are MASTERS keyed by a USER-SUPPLIED ``code`` unique per tenant (the item-code / work-
 centre precedent — no gapless document number, no DocumentMixin: HR masters are not posted documents

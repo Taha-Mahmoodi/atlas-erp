@@ -25,8 +25,11 @@ from decimal import Decimal
 from app.core.schemas import ApiModel, Masked
 from app.modules.hr.constants import (
     HR_EMPLOYEE_READ_COMPENSATION,
+    AccrualFrequency,
     EmploymentStatus,
     EmploymentType,
+    LeaveRequestStatus,
+    LeaveUnit,
 )
 
 # --- Department ---------------------------------------------------------------
@@ -246,3 +249,142 @@ class OrgChartResponse(ApiModel):
     the caller anchored on) — a pure structural snapshot of the reporting tree."""
 
     roots: list[OrgChartNode]
+
+
+# --- Leave type (PLAN 10.2, D-053) --------------------------------------------
+
+
+class LeaveTypeCreate(ApiModel):
+    """Create a leave type. ``code`` is user-supplied + unique per tenant; ``accrual_amount`` >= 0
+    (the per-period grant, days as a Decimal string, D-015); ``max_balance`` (optional) caps the
+    accrued balance and must be >= ``accrual_amount`` when set (validated in the service)."""
+
+    code: str
+    name: str
+    accrual_frequency: AccrualFrequency = AccrualFrequency.MONTHLY
+    accrual_amount: Decimal
+    max_balance: Decimal | None = None
+    unit: LeaveUnit = LeaveUnit.DAYS
+    is_paid: bool = True
+    is_active: bool = True
+
+
+class LeaveTypeUpdate(ApiModel):
+    """Partial update. ``code`` is immutable (absent). A changed ``accrual_amount`` /
+    ``max_balance``
+    is re-validated. All fields optional — only the set ones change (exclude_unset)."""
+
+    name: str | None = None
+    accrual_frequency: AccrualFrequency | None = None
+    accrual_amount: Decimal | None = None
+    max_balance: Decimal | None = None
+    unit: LeaveUnit | None = None
+    is_paid: bool | None = None
+    is_active: bool | None = None
+
+
+class LeaveTypeRead(ApiModel):
+    id: uuid.UUID
+    code: str
+    name: str
+    accrual_frequency: AccrualFrequency
+    accrual_amount: Decimal
+    max_balance: Decimal | None
+    unit: LeaveUnit
+    is_paid: bool
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class LeaveTypeFilter(ApiModel):
+    is_active: bool | None = None
+    accrual_frequency: AccrualFrequency | None = None
+
+
+# --- Leave balance (read-only over the API; written by the accrual run + approve/cancel) -------
+
+
+class LeaveBalanceRead(ApiModel):
+    """The running balance per employee per leave type. Read-only over the API — it is written by
+    the accrual run (grants) and the request approve/cancel transitions (decrement/restore)."""
+
+    id: uuid.UUID
+    employee_id: uuid.UUID
+    leave_type_id: uuid.UUID
+    balance_days: Decimal
+    accrued_to_date: Decimal
+    taken_to_date: Decimal
+    last_accrual_period: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AccrualResult(ApiModel):
+    """The result of an accrual run (PLAN 10.2): the period it ran for, the frequency, and how many
+    balance rows were granted (a created-or-updated count). A same-period re-run reports 0."""
+
+    frequency: AccrualFrequency
+    period: str
+    balances_accrued: int
+
+
+# --- Leave request (PLAN 10.2, D-053) -----------------------------------------
+
+
+class LeaveRequestCreate(ApiModel):
+    """File a DRAFT leave request. The employee + leave type must exist in the tenant; ``days`` > 0
+    (a Decimal string — 0.5 is a half day, D-015); ``end_date`` >= ``start_date`` (validated in the
+    service). ``days`` is caller-supplied (calendar/business-day computation from the dates is the
+    documented later, D-053)."""
+
+    employee_id: uuid.UUID
+    leave_type_id: uuid.UUID
+    start_date: date
+    end_date: date
+    days: Decimal
+    reason: str | None = None
+    notes: str | None = None
+
+
+class LeaveRequestUpdate(ApiModel):
+    """Partial update of a DRAFT leave request (only a draft is editable). ``employee_id`` /
+    ``leave_type_id`` are immutable (absent). A changed date range / days is re-validated."""
+
+    start_date: date | None = None
+    end_date: date | None = None
+    days: Decimal | None = None
+    reason: str | None = None
+    notes: str | None = None
+
+
+class LeaveDecision(ApiModel):
+    """The approve/reject decision payload (PLAN 10.2): ``notes`` is the optional decision note the
+    approver records. The endpoint splits approve vs reject (distinct routes), so no
+    decision enum is
+    needed here — the route carries the verb."""
+
+    notes: str | None = None
+
+
+class LeaveRequestRead(ApiModel):
+    id: uuid.UUID
+    request_number: str
+    employee_id: uuid.UUID
+    leave_type_id: uuid.UUID
+    start_date: date
+    end_date: date
+    days: Decimal
+    status: LeaveRequestStatus
+    reason: str | None
+    approved_by: uuid.UUID | None
+    decided_at: datetime | None
+    notes: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class LeaveRequestFilter(ApiModel):
+    employee_id: uuid.UUID | None = None
+    status: LeaveRequestStatus | None = None
+    leave_type_id: uuid.UUID | None = None

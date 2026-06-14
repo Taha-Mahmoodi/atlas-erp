@@ -55,6 +55,53 @@ class EmploymentType(StrEnum):
     CONTRACT = "CONTRACT"
 
 
+class LeaveRequestStatus(StrEnum):
+    """Lifecycle of a LEAVE REQUEST (PLAN 10.2, D-053). The procurement requisition
+    submit→approve→reject precedent (D-040), without a value-threshold rule — every request awaits
+    a distinct ``hr.leave.approve`` holder.
+
+    - **DRAFT** — created, editable, not yet routed for approval. The default at creation.
+    - **SUBMITTED** — filed for approval; awaits an approver. Editing is closed.
+    - **APPROVED** — approved; the employee's leave balance for the type is DECREMENTED by the
+      request days at this transition (the value-bearing step, D-053).
+    - **REJECTED** — declined. Terminal; no balance effect.
+    - **CANCELLED** — withdrawn. From DRAFT/SUBMITTED there is no balance effect; cancelling an
+      APPROVED request RESTORES the decremented balance (D-053).
+    """
+
+    DRAFT = "DRAFT"
+    SUBMITTED = "SUBMITTED"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    CANCELLED = "CANCELLED"
+
+
+class LeaveUnit(StrEnum):
+    """The unit a leave type / request tracks in (PLAN 10.2, D-053). v1 tracks leave in **DAYS**
+    only. Half-day granularity is expressible WITHOUT a new unit — ``days`` is a ``QuantityType``
+    (NUMERIC scale 6, D-015), so a caller supplies ``0.5`` for a half day; a dedicated HALF_DAY unit
+    (and shift-aware part-day math) is the documented later. The enum exists so the later unit set
+    has a home and the column reads self-documenting."""
+
+    DAYS = "DAYS"
+
+
+class AccrualFrequency(StrEnum):
+    """How a leave type ACCRUES (PLAN 10.2, D-053): the cadence the accrual run grants
+    ``accrual_amount`` on.
+
+    - **MONTHLY** — accrues each month (e.g. 1.67 days/month ≈ 20/year).
+    - **ANNUAL** — accrues once per year (e.g. 20 days/year granted in one run).
+
+    The accrual run is invoked per frequency (``POST /leave-balances/accrue?frequency=``) so a
+    tenant runs the monthly grant monthly and the annual grant yearly, each idempotent for its
+    period (D-053).
+    """
+
+    MONTHLY = "MONTHLY"
+    ANNUAL = "ANNUAL"
+
+
 # --- Permissions (D-009): one key per guarded endpoint action -----------------
 # Employee + department + position masters each split read/manage. The employee adds the SENSITIVE
 # read_compensation key (D-052): it gates BOTH the masked compensation/PII fields' visibility (the
@@ -69,6 +116,20 @@ HR_DEPARTMENT_MANAGE = "hr.department.manage"
 HR_POSITION_READ = "hr.position.read"
 HR_POSITION_MANAGE = "hr.position.manage"
 
+# Leave (PLAN 10.2, D-053). Leave TYPES are configuration (read/manage). A leave REQUEST splits the
+# filing authority (``.request`` — an employee/manager files + submits + cancels their request) from
+# the distinct APPROVAL authority (``.approve`` — the value-bearing decision that decrements the
+# balance; the procurement requisition .approve precedent, D-040). The accrual RUN is gated by
+# ``.manage`` on the leave type (running the grant is a configuration-owner action, no
+# separate key —
+# the maintenance .run precedent applies to time-based generation, but accrual is set-based over the
+# type config, so the type-manage key suffices).
+HR_LEAVE_TYPE_READ = "hr.leave_type.read"
+HR_LEAVE_TYPE_MANAGE = "hr.leave_type.manage"
+HR_LEAVE_READ = "hr.leave.read"
+HR_LEAVE_REQUEST = "hr.leave.request"
+HR_LEAVE_APPROVE = "hr.leave.approve"
+
 register_permissions(
     HR_EMPLOYEE_READ,
     HR_EMPLOYEE_MANAGE,
@@ -77,6 +138,11 @@ register_permissions(
     HR_DEPARTMENT_MANAGE,
     HR_POSITION_READ,
     HR_POSITION_MANAGE,
+    HR_LEAVE_TYPE_READ,
+    HR_LEAVE_TYPE_MANAGE,
+    HR_LEAVE_READ,
+    HR_LEAVE_REQUEST,
+    HR_LEAVE_APPROVE,
     descriptions={
         HR_EMPLOYEE_READ: "Read employees (compensation/PII masked)",
         HR_EMPLOYEE_MANAGE: "Create and edit employees (non-compensation fields)",
@@ -85,8 +151,25 @@ register_permissions(
         HR_DEPARTMENT_MANAGE: "Create and edit departments",
         HR_POSITION_READ: "Read positions",
         HR_POSITION_MANAGE: "Create and edit positions",
+        HR_LEAVE_TYPE_READ: "Read leave types",
+        HR_LEAVE_TYPE_MANAGE: "Create and edit leave types and run leave accrual",
+        HR_LEAVE_READ: "Read leave requests and balances",
+        HR_LEAVE_REQUEST: "File, submit and cancel leave requests",
+        HR_LEAVE_APPROVE: "Approve or reject leave requests",
     },
 )
+
+# The leave-request number sequence (PLAN 10.2, D-053). Leave requests claim a gapless
+# ``LV-`` number
+# AT CREATION (the procurement-requisition claim-at-create precedent, D-040) so a request is
+# traceable by a human-readable id from the moment it is filed — they are NOT docflow documents (no
+# DocumentMixin/predecessor links: a leave request has no successor document in v1), so the
+# number is
+# a plain ``request_number`` column, not a core_documents registration. ``year_reset`` keeps the
+# counter per calendar year (LV-2026-00001 style numbering via the sequence's year column).
+LEAVE_REQUEST_SEQUENCE_NAME = "hr.leave_request"
+LEAVE_REQUEST_NUMBER_PREFIX = "LV"
+LEAVE_REQUEST_NUMBER_PADDING = 5
 
 # The default currency code stamped on a new employee's compensation when none is supplied. A plain
 # ISO 4217 alpha-3 (not validated against finance currencies in v1 — compensation currency is

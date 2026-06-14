@@ -23,11 +23,13 @@ from app.modules.admin.service import assign_role, create_role, provision_tenant
 from app.modules.finance import service as finance_service
 from app.modules.finance.controlling_schemas import CostCenterCreate
 from app.modules.hr import service
-from app.modules.hr.constants import EmploymentStatus, EmploymentType
-from app.modules.hr.models import Department, Employee, Position
+from app.modules.hr.constants import AccrualFrequency, EmploymentStatus, EmploymentType
+from app.modules.hr.models import Department, Employee, LeaveRequest, LeaveType, Position
 from app.modules.hr.schemas import (
     DepartmentCreate,
     EmployeeCreate,
+    LeaveRequestCreate,
+    LeaveTypeCreate,
     PositionCreate,
 )
 
@@ -146,6 +148,64 @@ async def build_employee(
         )
         await session.commit()
     return employee
+
+
+async def build_leave_type(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    code: str = "LT-ANNUAL",
+    name: str = "Annual leave",
+    accrual_frequency: AccrualFrequency = AccrualFrequency.MONTHLY,
+    accrual_amount: Decimal = Decimal("2"),
+    max_balance: Decimal | None = None,
+    is_active: bool = True,
+) -> LeaveType:
+    """Create a leave type through the real service (D-025)."""
+    with tenant_context(tenant_id):
+        leave_type = await service.create_leave_type(
+            session,
+            tenant_id,
+            LeaveTypeCreate(
+                code=code,
+                name=name,
+                accrual_frequency=accrual_frequency,
+                accrual_amount=accrual_amount,
+                max_balance=max_balance,
+                is_active=is_active,
+            ),
+        )
+        await session.commit()
+    return leave_type
+
+
+async def build_leave_request(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    employee_id: uuid.UUID,
+    leave_type_id: uuid.UUID,
+    start_date: date = date(2026, 6, 1),
+    end_date: date = date(2026, 6, 3),
+    days: Decimal = Decimal("3"),
+    reason: str | None = None,
+) -> LeaveRequest:
+    """Create a DRAFT leave request through the real service (D-025)."""
+    with tenant_context(tenant_id):
+        request = await service.create_leave_request(
+            session,
+            tenant_id,
+            LeaveRequestCreate(
+                employee_id=employee_id,
+                leave_type_id=leave_type_id,
+                start_date=start_date,
+                end_date=end_date,
+                days=days,
+                reason=reason,
+            ),
+        )
+        await session.commit()
+    return request
 
 
 @dataclass(frozen=True)

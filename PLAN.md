@@ -96,7 +96,7 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 ## Phase 10 — Human Resources
 
 - [x] 10.1 Employees (masked compensation fields), departments, positions, org chart
-- [ ] 10.2 Leave: types, accruals, approval flow
+- [x] 10.2 Leave: types, accruals, approval flow
 - [ ] 10.3 Time tracking with project & cost-center allocation
 - [ ] 10.4 Simple gross→net payroll posting a journal, explicitly flagged as not jurisdiction-compliant
 
