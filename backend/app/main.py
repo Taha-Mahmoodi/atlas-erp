@@ -30,6 +30,7 @@ from app.modules.inventory.router import router as inventory_router
 from app.modules.maintenance.router import router as maintenance_router
 from app.modules.manufacturing.router import router as manufacturing_router
 from app.modules.procurement.router import router as procurement_router
+from app.modules.projects.router import router as projects_router
 from app.modules.quality.router import router as quality_router
 from app.modules.sales.router import router as sales_router
 
@@ -273,6 +274,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # adds payroll: HR PUBLISHES its first cross-module event (PayrollPosted) and finance posts the
     # consolidated payroll journal through the bus (D-055).
     app.include_router(hr_router)
+    # Projects module (PLAN 11.1): projects + a WBS-element tree as COSTING OBJECTS + the project
+    # cost report at /api/v1/projects. Mounted after hr, the D-011 module import order; projects is
+    # the TOP of the dependency order — it reads finance/queries (cost-centre existence +
+    # costs_by_project_dimension, the journal projection of actuals by the opaque WBS dimension),
+    # hr/queries (approved hours by WBS), and sales/queries (customer existence) DOWNWARD (STRUCTURE
+    # §5 / D-029 / D-056). It publishes/subscribes to NO cross-module event — projects is masters +
+    # a READ report; "posting time/purchases to a WBS" means a journal line / timesheet tags the WBS
+    # id as its opaque project dimension, projects posts nothing itself (D-056).
+    app.include_router(projects_router)
 
     # Cross-module event handlers (D-011): registered here, at the app factory, so registration
     # order
