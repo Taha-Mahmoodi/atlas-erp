@@ -76,6 +76,27 @@ class LeaveRequestStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class TimesheetStatus(StrEnum):
+    """Lifecycle of a TIMESHEET (PLAN 10.3, D-054). A timesheet HEADER groups an employee's time
+    entries over a period and is approved at the HEADER level (the SAP CATS / leave-request
+    approval precedent, D-053) — the clean SAP-like model: lines are editable only while the header
+    is a DRAFT, and approval routes the whole period at once.
+
+    - **DRAFT** — created, editable, not yet routed for approval. The default at creation; time
+      entries may be added / updated / removed ONLY in this state.
+    - **SUBMITTED** — filed for approval; awaits an approver. The lines are frozen.
+    - **APPROVED** — approved (the ``hr.timesheet.approve`` action). The value-bearing state: only
+      APPROVED time entries feed the cost/project allocation aggregates (payroll 10.4 + project
+      costing Phase 11 read approved time via ``hr/queries``).
+    - **REJECTED** — declined. Terminal.
+    """
+
+    DRAFT = "DRAFT"
+    SUBMITTED = "SUBMITTED"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+
+
 class LeaveUnit(StrEnum):
     """The unit a leave type / request tracks in (PLAN 10.2, D-053). v1 tracks leave in **DAYS**
     only. Half-day granularity is expressible WITHOUT a new unit — ``days`` is a ``QuantityType``
@@ -130,6 +151,16 @@ HR_LEAVE_READ = "hr.leave.read"
 HR_LEAVE_REQUEST = "hr.leave.request"
 HR_LEAVE_APPROVE = "hr.leave.approve"
 
+# Timesheets (PLAN 10.3, D-054). A timesheet groups time entries for an employee over a period and
+# goes through HEADER-level approval. ``.read`` reads timesheets + entries + the allocation report;
+# ``.manage`` creates timesheets, edits draft entries, submits and cancels (the filing authority —
+# an employee/manager records time); ``.approve`` is the DISTINCT approval authority (approve/reject
+# the submitted period — the value-bearing transition, the leave ``.approve`` precedent, D-053). A
+# ``.manage`` holder can submit but is 403 on approve.
+HR_TIMESHEET_READ = "hr.timesheet.read"
+HR_TIMESHEET_MANAGE = "hr.timesheet.manage"
+HR_TIMESHEET_APPROVE = "hr.timesheet.approve"
+
 register_permissions(
     HR_EMPLOYEE_READ,
     HR_EMPLOYEE_MANAGE,
@@ -143,6 +174,9 @@ register_permissions(
     HR_LEAVE_READ,
     HR_LEAVE_REQUEST,
     HR_LEAVE_APPROVE,
+    HR_TIMESHEET_READ,
+    HR_TIMESHEET_MANAGE,
+    HR_TIMESHEET_APPROVE,
     descriptions={
         HR_EMPLOYEE_READ: "Read employees (compensation/PII masked)",
         HR_EMPLOYEE_MANAGE: "Create and edit employees (non-compensation fields)",
@@ -156,8 +190,22 @@ register_permissions(
         HR_LEAVE_READ: "Read leave requests and balances",
         HR_LEAVE_REQUEST: "File, submit and cancel leave requests",
         HR_LEAVE_APPROVE: "Approve or reject leave requests",
+        HR_TIMESHEET_READ: "Read timesheets, time entries and the allocation report",
+        HR_TIMESHEET_MANAGE: "Create timesheets, record time entries, submit and cancel",
+        HR_TIMESHEET_APPROVE: "Approve or reject submitted timesheets",
     },
 )
+
+# The timesheet number sequence (PLAN 10.3, D-054). A timesheet claims a gapless ``TS-`` number AT
+# CREATION (the leave-request / procurement-requisition claim-at-create precedent, D-040/D-053) so a
+# period is traceable by a human-readable id from the moment it is opened — a timesheet is NOT a
+# docflow document (no DocumentMixin / predecessor links: it has no successor document in v1;
+# payroll 10.4 + project costing 11 READ its approved entries via hr/queries, not via docflow). The
+# number is a plain ``timesheet_number`` column. ``year_reset`` keeps the counter per calendar year
+# (TS-2026-00001 style).
+TIMESHEET_SEQUENCE_NAME = "hr.timesheet"
+TIMESHEET_NUMBER_PREFIX = "TS"
+TIMESHEET_NUMBER_PADDING = 5
 
 # The leave-request number sequence (PLAN 10.2, D-053). Leave requests claim a gapless
 # ``LV-`` number

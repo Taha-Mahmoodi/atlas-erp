@@ -12,16 +12,20 @@ employees (PERFORMANCE §6: a bounded recursive read in memory, no per-node N+1)
 """
 
 import uuid
+from datetime import date
+from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.hr.constants import MAX_HIERARCHY_DEPTH
+from app.modules.hr.constants import MAX_HIERARCHY_DEPTH, TimesheetStatus
 from app.modules.hr.models import (
     Department,
     Employee,
     LeaveBalance,
     LeaveRequest,
+    TimeEntry,
+    Timesheet,
 )
 
 
@@ -168,3 +172,96 @@ async def leave_balances_for_employee(
         .order_by(LeaveBalance.leave_type_id)
     )
     return list((await session.execute(stmt)).scalars().all())
+
+
+# --- Time tracking (PLAN 10.3, D-054) -----------------------------------------
+
+
+async def get_timesheet(
+    session: AsyncSession, tenant_id: uuid.UUID, timesheet_id: uuid.UUID
+) -> Timesheet | None:
+    """The timesheet with ``timesheet_id`` in the tenant, or None. A point lookup on the PK."""
+    stmt = select(Timesheet).where(
+        Timesheet.tenant_id == tenant_id, Timesheet.id == timesheet_id
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def timesheets_for_employee(
+    session: AsyncSession, tenant_id: uuid.UUID, employee_id: uuid.UUID
+) -> list[Timesheet]:
+    """One employee's timesheets, newest period first. Index-served by (tenant, employee_id,
+    status)."""
+    stmt = (
+        select(Timesheet)
+        .where(Timesheet.tenant_id == tenant_id, Timesheet.employee_id == employee_id)
+        .order_by(Timesheet.period_start.desc())
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def time_entries_for_timesheet(
+    session: AsyncSession, tenant_id: uuid.UUID, timesheet_id: uuid.UUID
+) -> list[TimeEntry]:
+    """The time-entry lines of one timesheet, ordered by entry_date then id (stable). Index-served
+    by (tenant, timesheet_id)."""
+    stmt = (
+        select(TimeEntry)
+        .where(TimeEntry.tenant_id == tenant_id, TimeEntry.timesheet_id == timesheet_id)
+        .order_by(TimeEntry.entry_date, TimeEntry.id)
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def approved_hours_for_project(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    project_id: uuid.UUID,
+    *,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> Decimal:
+    """Total APPROVED time hours allocated to ``project_id`` (D-054). Phase 11 projects calls this
+    for project cost/time. A single set-based SUM over time entries of APPROVED timesheets,
+    optionally bounded by the entry-date range (PERFORMANCE §2)."""
+    stmt = (
+        select(func.coalesce(func.sum(TimeEntry.hours), 0))
+        .join(Timesheet, Timesheet.id == TimeEntry.timesheet_id)
+        .where(
+            TimeEntry.tenant_id == tenant_id,
+            TimeEntry.project_id == project_id,
+            Timesheet.status == TimesheetStatus.APPROVED.value,
+        )
+    )
+    if date_from is not None:
+        stmt = stmt.where(TimeEntry.entry_date >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(TimeEntry.entry_date <= date_to)
+    return (await session.execute(stmt)).scalar_one()
+
+
+async def approved_hours_for_cost_center(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    cost_center_id: uuid.UUID,
+    *,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> Decimal:
+    """Total APPROVED time hours allocated to ``cost_center_id`` (D-054). The CO-reporting companion
+    to ``approved_hours_for_project``. A single set-based SUM over time entries of APPROVED
+    timesheets, optionally bounded by the entry-date range (PERFORMANCE §2)."""
+    stmt = (
+        select(func.coalesce(func.sum(TimeEntry.hours), 0))
+        .join(Timesheet, Timesheet.id == TimeEntry.timesheet_id)
+        .where(
+            TimeEntry.tenant_id == tenant_id,
+            TimeEntry.cost_center_id == cost_center_id,
+            Timesheet.status == TimesheetStatus.APPROVED.value,
+        )
+    )
+    if date_from is not None:
+        stmt = stmt.where(TimeEntry.entry_date >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(TimeEntry.entry_date <= date_to)
+    return (await session.execute(stmt)).scalar_one()

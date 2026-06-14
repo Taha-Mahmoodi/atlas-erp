@@ -24,7 +24,15 @@ from app.modules.finance import service as finance_service
 from app.modules.finance.controlling_schemas import CostCenterCreate
 from app.modules.hr import service
 from app.modules.hr.constants import AccrualFrequency, EmploymentStatus, EmploymentType
-from app.modules.hr.models import Department, Employee, LeaveRequest, LeaveType, Position
+from app.modules.hr.models import (
+    Department,
+    Employee,
+    LeaveRequest,
+    LeaveType,
+    Position,
+    TimeEntry,
+    Timesheet,
+)
 from app.modules.hr.schemas import (
     DepartmentCreate,
     EmployeeCreate,
@@ -32,6 +40,7 @@ from app.modules.hr.schemas import (
     LeaveTypeCreate,
     PositionCreate,
 )
+from app.modules.hr.time_schemas import TimeEntryCreate, TimesheetCreate
 
 # EVERY registered hr.* key (importing hr.constants registers them), so a new permission is
 # auto-granted to the full-rights principal (self-extending). Plus the finance cost-centre setup key
@@ -206,6 +215,62 @@ async def build_leave_request(
         )
         await session.commit()
     return request
+
+
+async def build_timesheet(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    employee_id: uuid.UUID,
+    period_start: date = date(2026, 6, 1),
+    period_end: date = date(2026, 6, 30),
+    notes: str | None = None,
+) -> Timesheet:
+    """Create a DRAFT timesheet through the real service (D-025)."""
+    with tenant_context(tenant_id):
+        timesheet = await service.create_timesheet(
+            session,
+            tenant_id,
+            TimesheetCreate(
+                employee_id=employee_id,
+                period_start=period_start,
+                period_end=period_end,
+                notes=notes,
+            ),
+        )
+        await session.commit()
+    return timesheet
+
+
+async def build_time_entry(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    timesheet_id: uuid.UUID,
+    entry_date: date = date(2026, 6, 2),
+    hours: Decimal = Decimal("8"),
+    project_id: uuid.UUID | None = None,
+    cost_center_id: uuid.UUID | None = None,
+    task_description: str | None = "Work",
+    is_billable: bool = False,
+) -> TimeEntry:
+    """Add a time entry to a DRAFT timesheet through the real service (D-025)."""
+    with tenant_context(tenant_id):
+        entry = await service.add_time_entry(
+            session,
+            tenant_id,
+            timesheet_id,
+            TimeEntryCreate(
+                entry_date=entry_date,
+                hours=hours,
+                project_id=project_id,
+                cost_center_id=cost_center_id,
+                task_description=task_description,
+                is_billable=is_billable,
+            ),
+        )
+        await session.commit()
+    return entry
 
 
 @dataclass(frozen=True)

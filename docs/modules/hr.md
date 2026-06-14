@@ -19,18 +19,21 @@ operator/contributor map.
 
 ## Status
 
-**PLAN 10.1 and 10.2 are COMPLETE** — this opens Phase 10 (Human Resources). 10.1: department/
+**PLAN 10.1, 10.2 and 10.3 are COMPLETE** — this opens Phase 10 (Human Resources). 10.1: department/
 position/employee CRUD, the masked compensation/PII read with a dedicated compensation-write
 endpoint, the department hierarchy + employee org-chart reporting line with cycle guards, and an
 org-chart endpoint. 10.2: leave types with periodic accrual, a per-employee-per-type running balance,
-and the leave-request approval flow (see [Leave](#leave-plan-102--d-053) below).
+and the leave-request approval flow (see [Leave](#leave-plan-102--d-053) below). 10.3: timesheets +
+time entries with project & cost-centre allocation, header-level approval, and the allocation reports
+(see [Time tracking](#time-tracking-plan-103--d-054) below).
 
 | File | Concern | Key decision |
 |---|---|---|
-| `constants.py` | `EmploymentStatus`, `EmploymentType`, `LeaveRequestStatus`, `LeaveUnit`, `AccrualFrequency` enums + permission keys (registered at import), incl. the sensitive `hr.employee.read_compensation` + the `LV-` sequence | D-052, D-053, D-009 |
+| `constants.py` | `EmploymentStatus`, `EmploymentType`, `LeaveRequestStatus`, `LeaveUnit`, `AccrualFrequency`, `TimesheetStatus` enums + permission keys (registered at import), incl. the sensitive `hr.employee.read_compensation` + the `LV-`/`TS-` sequences | D-052, D-053, D-054, D-009 |
 | `models/org.py` | `Department` (`hr_departments`), `Position` (`hr_positions`), `Employee` (`hr_employees`) | D-029, D-015, D-009 |
 | `models/leave.py` | `LeaveType` (`hr_leave_types`), `LeaveBalance` (`hr_leave_balances`), `LeaveRequest` (`hr_leave_requests`) | D-053, D-015 |
-| `schemas.py` | Create/Update/Read/Filter for all six entities + `EmployeeCompensationUpdate` + the org-chart response + the leave action payloads; **`EmployeeRead` carries the `Masked(...)` fields** | D-009, D-015 |
+| `models/time.py` | `Timesheet` (`hr_timesheets`), `TimeEntry` (`hr_time_entries`) | D-054, D-015, D-029 |
+| `schemas.py` / `time_schemas.py` | Create/Update/Read/Filter for all entities + `EmployeeCompensationUpdate` + the org-chart response + the leave/timesheet action payloads + the allocation report; **`EmployeeRead` carries the `Masked(...)` fields** | D-009, D-015, D-054 |
 | `service/departments.py` | department CRUD + cost-centre/manager validation + the **hierarchy cycle guard** | D-029, D-052 |
 | `service/positions.py` | position CRUD + department validation | D-052 |
 | `service/employees.py` | employee CRUD + reference validation + the **manager-cycle guard** + `set_compensation` (the dedicated masked-write path) | D-009, D-052 |
@@ -38,13 +41,17 @@ and the leave-request approval flow (see [Leave](#leave-plan-102--d-053) below).
 | `service/leave_config.py` | leave-type CRUD + balance reads | D-053 |
 | `service/leave.py` | the leave-request lifecycle + the **approve-decrements / cancel-restores** balance logic | D-053, D-040 |
 | `service/leave_accrual.py` | the **period-keyed idempotent accrual run** | D-053 |
-| `queries.py` | `get_employee`/`employee_exists`, `get_department`/`department_employees`, `employee_manager_chain`, `org_chart_for`, `get_leave_request`/`leave_requests_for_employee`/`get_leave_balance`/`leave_balances_for_employee` — the only file a later module imports | STRUCTURE §5 |
-| `router.py` + `position_router.py` + `employee_router.py` + `leave_router.py` | REST under `/api/v1/hr` (one surface; sub-routers mounted in `router.py`) | D-009, D-014, D-035 |
+| `service/timesheets.py` | timesheet header CRUD + time-entry add/update/remove + the **maintained `total_hours`** + cost-centre validation / `project_id`-opaque | D-054, D-029 |
+| `service/timesheet_lifecycle.py` | the timesheet submit → approve / reject / cancel transitions | D-054 |
+| `service/time_reads.py` / `service/time_allocation.py` | timesheet list + entry list / the **APPROVED-only allocation aggregates** | D-054, D-014 |
+| `queries.py` | the 10.1/10.2 reads + `get_timesheet`/`timesheets_for_employee`/`time_entries_for_timesheet`/`approved_hours_for_project`/`approved_hours_for_cost_center` — the only file a later module imports | STRUCTURE §5 |
+| `router.py` + `position_router.py` + `employee_router.py` + `leave_router.py` + `timesheet_router.py` | REST under `/api/v1/hr` (one surface; sub-routers mounted in `router.py`) | D-009, D-014, D-035 |
 
-Migrations: `0037_hr` (org masters) and `0038_hr_leave` (leave — three tables + indexes, no triggers,
-down_revision 0037). There is **no** `events.py` / `handlers.py`: HR publishes/subscribes to no
-cross-module event in v1 (an empty event file would be a dead file — STRUCTURE §8.3); payroll (10.4)
-will post a journal through the bus and may **read** leave via `queries.py`.
+Migrations: `0037_hr` (org masters), `0038_hr_leave` (leave — three tables), and `0039_hr_time`
+(time — `hr_timesheets` + `hr_time_entries` + indexes, no triggers, down_revision 0038). There is
+**no** `events.py` / `handlers.py`: HR publishes/subscribes to no cross-module event in v1 (an empty
+event file would be a dead file — STRUCTURE §8.3); payroll (10.4) will post a journal through the bus
+and may **read** leave + approved time via `queries.py`.
 
 ## Compensation masking (the headline of 10.1 — D-009)
 
@@ -206,20 +213,94 @@ The **`hr.leave.request` vs `hr.leave.approve` split** is the distinct-approval-
 idempotent; the leave-type list carries the D-035 conditional-GET ETag (config = reference data);
 lists are paginated within the ≤3-query budget.
 
+## Time tracking (PLAN 10.3 — D-054)
+
+The CATS-style timesheet (s4hana-parity §HCM "Time recording with account assignment" = Full): a
+**`Timesheet` header** groups an employee's time entries over a period and goes through HEADER-level
+approval; **`TimeEntry` lines** hang off it, each carrying an **allocation** to a project and/or a
+cost centre — the cost/project allocation deliverable.
+
+### The timesheet + entry model
+
+- **`Timesheet`** (`hr_timesheets`): `UuidPKMixin, TenantMixin, AuditMixin, TimestampMixin`. It
+  claims a gapless **`TS-`** `timesheet_number` at creation (the leave-request claim-at-create
+  precedent, D-040/D-053) but is **NOT a docflow document** (no `DocumentMixin` — a timesheet has no
+  successor document in v1). Composite tenant FK to `hr_employees`; `period_start`/`period_end`
+  (Date, `end >= start`); `status` (`TimesheetStatus`: DRAFT|SUBMITTED|APPROVED|REJECTED);
+  `total_hours` (a **maintained** `QuantityType` sum of the entry hours, kept in step by the service
+  on every line add/update/remove); `submitted_at`/`approved_at`/`approved_by` (opaque core users
+  id, no FK). UNIQUE(tenant, employee_id, period_start) — one timesheet per employee per period.
+- **`TimeEntry`** (`hr_time_entries`): `UuidPKMixin, TenantMixin, TimestampMixin` (the line is not
+  separately audited — the header is the audited unit, the journal-line precedent). Composite tenant
+  FK to `hr_timesheets`; `entry_date` (within the header period); `hours` (`QuantityType`, CHECK
+  > 0); `task_description`; `is_billable` (default false). Entries can repeat per day/project, so
+  there is **no** unique constraint on the line — just an index (tenant, timesheet_id).
+
+### `project_id` is opaque/unvalidated until Phase 11; `cost_center_id` is validated
+
+A time entry's **`cost_center_id`** is an opaque finance cost-centre id **validated** via
+`finance/queries.cost_center_exists` when set (D-029) — a bad id is a 422. A time entry's
+**`project_id`** is a **nullable opaque `Uuid` stored as-is and NOT validated in v1**: the projects
+module is **Phase 11 (not yet built)**, so there is no table to validate against and **no forward
+dependency on projects is created**. The validation hook wires up when `projects/queries` exists in
+Phase 11 — at which point `add_time_entry`/`update_time_entry` will call a projects existence probe
+exactly as they call `cost_center_exists` today, and `approved_hours_for_project` (already in
+`hr/queries`) is the per-project hook Phase-11 project costing will call.
+
+### The approval flow
+
+The header lifecycle mirrors the leave-request submit → approve / reject precedent (D-053) but
+approves at the **header** level (the SAP CATS model). Lines are editable **only while the header is
+a DRAFT**. **DRAFT** (create; employee exists, `end >= start`, TS- number claimed) → **SUBMITTED**
+(submit; stamps `submitted_at`, lines frozen) → **APPROVED**/**REJECTED** (record approver +
+decision time). A SUBMITTED timesheet can be **cancelled** = reopened to DRAFT so the filer can edit
+and re-submit; an APPROVED/REJECTED timesheet is terminal. **APPROVED is the value-bearing state**:
+only entries of APPROVED timesheets feed the allocation aggregates. Create/submit/approve/reject are
+D-013 idempotent.
+
+The **`hr.timesheet.manage` vs `hr.timesheet.approve` split** is the distinct-approval-authority
+pattern: `.manage` creates / edits draft entries / submits / cancels; `.approve` is the distinct
+approval authority (approve/reject). A `.manage` holder can submit but is 403 on approve.
+`.read` reads timesheets + entries + the allocation report.
+
+### Allocation reports
+
+`hours_by_cost_center` / `hours_by_project` are **set-based GROUP-BY aggregates over APPROVED time
+entries only** (DRAFT/SUBMITTED/REJECTED time is provisional and never costed), each one query,
+optionally bounded by an entry-date range. They back `GET /timesheets/allocation?by=cost_center|
+project&from=&to=` and feed **project costing in Phase 11** and **CO reporting**. The `hr/queries`
+companions `approved_hours_for_project(project_id)` and `approved_hours_for_cost_center(...)` are the
+per-dimension hooks a later module reads.
+
+### Endpoints + structure
+
+`timesheet_router.py` is mounted into `router.py` (ONE surface at `/api/v1/hr`): timesheets CRUD +
+submit/approve/reject/cancel; nested `GET/POST /timesheets/{id}/time-entries` + PATCH/DELETE for a
+line; the allocation report (declared before `/{id}` so the literal path wins). The timesheet schemas
+live in a sibling `time_schemas.py` and the service in `service/timesheets.py` (header + entries),
+`service/timesheet_lifecycle.py` (the approval transitions), `service/time_reads.py` (list +
+pagination), `service/time_allocation.py` (the aggregates) — each under the 400-line cap. Lists are
+paginated within the ≤3-query budget. **No cross-module events** — time is intra-HR; payroll (10.4)
+and project costing (11) READ approved time via `hr/queries`.
+
 ## Cross-module boundary (STRUCTURE §5)
 
-The only downward read is `finance/queries.cost_center_exists` (a department's optional cost centre)
-plus a core `core_users` probe for an employee's optional login. Finance is an older module and imports
-nothing from HR, so the import is one-directional (no cycle). `queries.py` is the only file a later
-module (payroll, projects) imports.
+The only downward read is `finance/queries.cost_center_exists` (a department's optional cost centre
+and a time entry's optional cost centre) plus a core `core_users` probe for an employee's optional
+login. Finance is an older module and imports nothing from HR, so the import is one-directional (no
+cycle). `queries.py` is the only file a later module (payroll, projects) imports — including the
+`approved_hours_for_project`/`approved_hours_for_cost_center` time-allocation hooks.
 
 ## What's out of scope (parity)
 
-Date-effective history and formal hire/transfer/terminate actions; timesheet/CATS;
-jurisdiction-compliant payroll; pay-grade structures and comp-review cycles; talent (recruiting/
-onboarding/learning/performance/succession); benefits administration; and ESS/MSS screens. **Leave
-and absence management is now in scope** (PLAN 10.2 above); leave-specific "later" items —
-work-schedule collision checks, quota carryover rules, business-day computation, allow-negative
-balances, and a HALF_DAY unit — are noted inline. See the
+Date-effective history and formal hire/transfer/terminate actions; jurisdiction-compliant payroll;
+pay-grade structures and comp-review cycles; talent (recruiting/onboarding/learning/performance/
+succession); benefits administration; and ESS/MSS screens. **Leave and absence management** (PLAN
+10.2) and **time recording with project & cost-centre allocation** (PLAN 10.3) are now in scope.
+Time-tracking "later" items: validating `project_id` once the projects module exists (Phase 11);
+work-schedule rules and overtime/premium evaluation; per-entry approval; and a maintenance-expense /
+labour-cost journal from approved time (payroll 10.4 + project costing 11 read approved time today).
+Leave-specific "later" items — work-schedule collision checks, quota carryover rules, business-day
+computation, allow-negative balances, and a HALF_DAY unit — are noted inline. See the
 [parity doc HCM section](../research/s4hana-parity.md) for the full reconciliation and the "later"
 notes.
