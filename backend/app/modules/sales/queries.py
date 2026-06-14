@@ -302,6 +302,37 @@ async def committed_quantity(
     )
 
 
+async def open_demand_item_ids(
+    session: AsyncSession, tenant_id: uuid.UUID
+) -> list[uuid.UUID]:
+    """The distinct items carrying OPEN sales-order demand (PLAN 8.3) — items on undelivered lines
+    of CONFIRMED / PARTIALLY_DELIVERED orders. MRP reads this (downward, the sanctioned cross-module
+    read) to discover which items have independent sales demand, then sums each via
+    ``committed_quantity``. ONE set-based DISTINCT query (no N+1); ordered for a deterministic
+    plan."""
+    stmt = (
+        select(SalesOrderLine.item_id)
+        .join(
+            SalesOrder,
+            (SalesOrderLine.tenant_id == SalesOrder.tenant_id)
+            & (SalesOrderLine.order_id == SalesOrder.id),
+        )
+        .where(
+            SalesOrderLine.tenant_id == tenant_id,
+            SalesOrder.status.in_(
+                [
+                    SalesOrderStatus.CONFIRMED.value,
+                    SalesOrderStatus.PARTIALLY_DELIVERED.value,
+                ]
+            ),
+            SalesOrderLine.delivered_quantity < SalesOrderLine.ordered_quantity,
+        )
+        .distinct()
+        .order_by(SalesOrderLine.item_id)
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
 @dataclass(frozen=True)
 class AtpResult:
     """The ATP outcome for one item (D-044): ``available`` = on_hand − committed + on_order;

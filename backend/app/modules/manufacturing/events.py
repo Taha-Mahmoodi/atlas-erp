@@ -40,6 +40,7 @@ from app.core.events import DomainEvent
 from app.modules.manufacturing.constants import (
     COMPONENTS_ISSUED_EVENT_KEY,
     ORDER_FINISHED_EVENT_KEY,
+    PLANNED_BUY_CONVERTED_EVENT_KEY,
 )
 
 
@@ -147,9 +148,38 @@ class OrderFinished(DomainEvent):
     move: FinishedReceiptMove
 
 
+class PlannedBuyConverted(DomainEvent):
+    """A planned BUY order was converted to a procurement requisition (PLAN 8.3, D-049). The
+    §5-clean cross-module mechanism for the planned-BUY → requisition conversion: manufacturing OWNS
+    the planned order but MUST NOT call procurement's service (STRUCTURE §5), so the convert flow
+    PUBLISHES this and procurement's ``handlers.create_requisition_for_planned_buy`` creates the
+    DRAFT requisition in the SAME transaction and links the run document → 'planned_to' →
+    requisition
+    document (the docflow edge is the durable converted link, the billing→invoice precedent — the
+    planned order itself is not a document, the MRP run is).
+
+    - ``run_document_id`` — the MRP run's core_documents id, the docflow predecessor the requisition
+      links to (so the plan → requisition flow is renderable).
+    - ``item_id`` — the opaque inventory item to buy (D-029); ``uom_id`` its base UoM (resolved by
+      manufacturing from inventory/queries before publishing); ``quantity`` the net requirement.
+    - ``currency_code`` — the requisition line currency (the tenant functional currency, the reorder
+      scan's default); ``description`` the proposal note (why this buy).
+    """
+
+    key: ClassVar[str] = PLANNED_BUY_CONVERTED_EVENT_KEY
+
+    run_document_id: uuid.UUID
+    item_id: uuid.UUID
+    uom_id: uuid.UUID
+    quantity: Decimal
+    currency_code: str
+    description: str
+
+
 __all__ = [
     "ComponentIssueMove",
     "ComponentsIssued",
     "FinishedReceiptMove",
     "OrderFinished",
+    "PlannedBuyConverted",
 ]

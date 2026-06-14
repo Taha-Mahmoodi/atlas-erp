@@ -86,7 +86,7 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 
 - [x] 8.1 Multi-level versioned BOMs, work centers, routings with setup/run times
 - [x] 8.2 Production orders: material reservation, issue to WIP, finish to stock, WIP journals feeding product costing
-- [ ] 8.3 MRP run (explode sales demand + reorder points vs supply → planned orders) + rough capacity check (load vs available hours)
+- [x] 8.3 MRP run (explode sales demand + reorder points vs supply → planned orders) + rough capacity check (load vs available hours) — **COMPLETES Phase 8 / Manufacturing**
 
 ## Phase 9 — Quality & Maintenance
 
