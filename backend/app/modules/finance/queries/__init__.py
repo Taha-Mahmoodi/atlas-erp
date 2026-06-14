@@ -19,6 +19,9 @@ package kept growing — the read surface now lives in sibling modules, all re-e
   ``partner_id``.
 * ``controlling`` — CO dimension validation, cost-centre / project-dimension balances, and the
   statement base aggregates (``account_balances`` / ``net_income``).
+* ``dashboards`` — the role-based dashboard KPI aggregates the reporting module (PLAN 13.1, D-058)
+  reads downward: ``cash_position`` (sum of is_cash_equivalent balances), ``ar_aging_summary`` /
+  ``ap_aging_summary`` (rolled-up bucket totals), ``wip_balance`` (the WIP-clearing balance).
 
 Every function takes an explicit ``tenant_id`` and runs under the caller's tenant context, so
 the D-007 filter applies on top of the explicit predicate — these are ordinary tenant-scoped
@@ -43,6 +46,13 @@ from app.modules.finance.queries.controlling import (
     net_income,
     profit_center_exists,
 )
+from app.modules.finance.queries.dashboards import (
+    AgingBuckets,
+    ap_aging_summary,
+    ar_aging_summary,
+    cash_position,
+    wip_balance,
+)
 from app.modules.finance.queries.partner_ledger import (
     customer_open_balance,
     get_open_customer_invoices,
@@ -66,12 +76,16 @@ from app.modules.finance.queries.posting_accounts import (
 )
 
 __all__ = [
+    "AgingBuckets",
     "account_balances",
     "account_exists",
     "account_exists_by_id",
+    "ap_aging_summary",
     "ap_control_account",
+    "ar_aging_summary",
     "ar_control_account",
     "calculate_line_tax",
+    "cash_position",
     "cost_center_balance",
     "cost_center_exists",
     "costs_by_project_dimension",
@@ -94,5 +108,6 @@ __all__ = [
     "salary_expense_account",
     "sales_revenue_account",
     "wages_payable_account",
+    "wip_balance",
     "wip_clearing_account",
 ]
