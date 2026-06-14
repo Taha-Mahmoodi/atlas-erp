@@ -52,6 +52,11 @@ from app.modules.manufacturing.constants import (
 from app.modules.manufacturing.events import ComponentsIssued, OrderFinished
 from app.modules.procurement.constants import GR_MOVED_BY_STOCK_MOVE_LINK
 from app.modules.procurement.events import GoodsReceiptPosted
+from app.modules.quality.constants import (
+    INSPECTION_DISPOSITIONED_BY_MOVE_LINK,
+    RejectDisposition,
+)
+from app.modules.quality.events import InspectionDispositioned
 from app.modules.sales.constants import (
     DELIVERY_MOVED_BY_STOCK_MOVE_LINK,
     RETURN_RECEIVED_BY_STOCK_MOVE_LINK,
@@ -257,7 +262,59 @@ async def receive_finished_order_move(
     )
 
 
+async def disposition_rejected_stock(
+    session: AsyncSession, event: InspectionDispositioned
+) -> None:
+    """Move the REJECTED stock for a rejected inspection lot (D-050), in the decision's transaction
+    —
+    the quality twin of the GR/delivery bridges.
+
+    SCRAP → an ADJUSTMENT-out (``from_bin`` set, no ``to_bin``): the costing engine offsets an
+    ADJUSTMENT-down to the price-difference / inventory-adjustment account (the write-off), so the
+    move posts Dr inventory-adjustment / Cr Inventory at the stock's book value — total on-hand
+    drops. BLOCK → a TRANSFER from the receiving bin to the event's blocked/QI bin: value-neutral (a
+    within-warehouse transfer publishes no costing journal), so total on-hand is unchanged but the
+    stock leaves the usable bin. The costing engine COMPUTES the cost of the stock that left, so no
+    unit_cost is passed. Insufficient stock at the bin raises InsufficientStockError, rolling the
+    decision back (D-020). Links the inspection-lot document → 'dispositioned_by' → move document.
+    Registered via ``app.main.register_event_handlers`` (not an import-time ``@on``)."""
+    move_date = date.fromisoformat(event.move_date)
+    disposition = RejectDisposition(event.disposition)
+    if disposition == RejectDisposition.SCRAP:
+        payload = StockMoveCreate(
+            move_type=MoveType.ADJUSTMENT,
+            item_id=event.item_id,
+            quantity=event.rejected_quantity,
+            from_bin_id=event.from_bin_id,
+            lot_id=event.inventory_lot_id,
+            serial_id=event.serial_id,
+            move_date=move_date,
+            reference=event.lot_number,
+        )
+    else:  # BLOCK — a quarantine transfer to the blocked bin
+        payload = StockMoveCreate(
+            move_type=MoveType.TRANSFER,
+            item_id=event.item_id,
+            quantity=event.rejected_quantity,
+            from_bin_id=event.from_bin_id,
+            to_bin_id=event.to_bin_id,
+            lot_id=event.inventory_lot_id,
+            serial_id=event.serial_id,
+            move_date=move_date,
+            reference=event.lot_number,
+        )
+    move = await create_move(session, event.tenant_id, payload)
+    await docflow.link_documents(
+        session,
+        event.tenant_id,
+        predecessor=event.document_id,
+        successor=move.document_id,
+        link_type=INSPECTION_DISPOSITIONED_BY_MOVE_LINK,
+    )
+
+
 __all__ = [
+    "disposition_rejected_stock",
     "issue_delivery_moves",
     "issue_production_components",
     "receive_finished_order_move",
