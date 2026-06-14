@@ -133,11 +133,20 @@ def _write_lines(
 
 
 async def create_quote(
-    session: AsyncSession, tenant_id: uuid.UUID, payload: QuoteCreate
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    payload: QuoteCreate,
+    *,
+    quote_id: uuid.UUID | None = None,
 ) -> Quote:
     """Create a DRAFT quote + lines (PLAN 7.2). Validates the customer exists, resolves the currency
     (supplied or the customer's default), prices each line (resolver default + discount), computes
-    the total, and claims the QUO number + registers the document AT CREATION (D-012/D-040)."""
+    the total, and claims the QUO number + registers the document AT CREATION (D-012/D-040).
+
+    ``quote_id`` (optional) lets a caller supply the PK instead of letting it default — used by the
+    CRM
+    convert handler (D-057), which pre-generates the id so the converting opportunity can record
+    ``converted_quote_id`` deterministically. None mints a fresh uuid4 (the normal path)."""
     await require_customer_exists(session, tenant_id, payload.customer_id)
     quote_date = payload.quote_date or date.today()
     currency = await resolve_currency(
@@ -152,7 +161,7 @@ async def create_quote(
         payload_lines=payload.lines,
     )
 
-    quote_id = uuid.uuid4()
+    quote_id = quote_id or uuid.uuid4()
     document = await docflow.register_document(
         session, tenant_id, QUOTE_DOC_TYPE, quote_id, doc_number=None,
         status=QuoteStatus.DRAFT.value

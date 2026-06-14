@@ -24,6 +24,7 @@ from app.core.rbac import current_permissions
 from app.core.schemas import ErrorBody, ErrorEnvelope
 from app.core.security_router import router as security_router
 from app.core.tenancy import current_tenant_id
+from app.modules.crm.router import router as crm_router
 from app.modules.finance.router import router as finance_router
 from app.modules.hr.router import router as hr_router
 from app.modules.inventory.router import router as inventory_router
@@ -283,6 +284,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # a READ report; "posting time/purchases to a WBS" means a journal line / timesheet tags the WBS
     # id as its opaque project dimension, projects posts nothing itself (D-056).
     app.include_router(projects_router)
+    # CRM module (PLAN 12.1): leads → opportunities kanban + activities + convert-to-customer+quote
+    # at
+    # /api/v1/crm. Mounted after projects, the D-011 module import order; CRM is the TOP of the
+    # dependency order — it reads finance/queries (currency existence), hr/queries (owner-employee
+    # existence), inventory/queries (opportunity-line item existence + base UoM), and sales/queries
+    # (existing-customer existence) DOWNWARD (STRUCTURE §5 / D-029 / D-057). The convert action
+    # PUBLISHES OpportunityConverted and SALES' handler creates the customer + quote (CRM never
+    # imports
+    # sales/service); SALES imports crm/events declaratively (events-only, no cycle, D-057).
+    app.include_router(crm_router)
 
     # Cross-module event handlers (D-011): registered here, at the app factory, so registration
     # order
@@ -306,6 +317,7 @@ def register_event_handlers() -> None:
     test harness's ``clear_subscriptions`` reset (D-025) — yields exactly one subscription per
     handler, never a duplicate that would double-post."""
     from app.core.events import handlers_for, subscribe
+    from app.modules.crm.events import OpportunityConverted
     from app.modules.finance.handlers import (
         create_bill_for_match,
         create_credit_note_for_return,
@@ -339,6 +351,7 @@ def register_event_handlers() -> None:
         ReturnCredited,
         ReturnReceived,
     )
+    from app.modules.sales.handlers import create_customer_and_quote_for_conversion
 
     if post_stock_valuation_journal not in handlers_for(StockValued.key):
         subscribe(StockValued.key, post_stock_valuation_journal)
@@ -425,6 +438,18 @@ def register_event_handlers() -> None:
     # imports finance/service — STRUCTURE §5), the match → AP-bill / billing → AR-invoice precedent.
     if create_payroll_journal not in handlers_for(PayrollPosted.key):
         subscribe(PayrollPosted.key, create_payroll_journal)
+    # CRM opportunity-convert → sales customer + quote bridge (PLAN 12.1, D-057), CRM's FIRST (and
+    # only) cross-module event: a convert publishes OpportunityConverted and SALES'
+    # create_customer_and_quote_for_conversion creates the customer (if the opportunity is not
+    # already
+    # linked to one) + the quote through SALES' OWN service in the SAME transaction, linking the
+    # opportunity document → 'converted_to_quote' → quote document. CRM publishes; SALES handles its
+    # own customer/quote creation (CRM never imports sales/service — STRUCTURE §5), the billing →
+    # AR-invoice / planned-buy → requisition precedent with the roles flipped. SALES imports
+    # crm/events
+    # declaratively (events-only) — one-directional, no cycle (D-057).
+    if create_customer_and_quote_for_conversion not in handlers_for(OpportunityConverted.key):
+        subscribe(OpportunityConverted.key, create_customer_and_quote_for_conversion)
 
 
 app = create_app()

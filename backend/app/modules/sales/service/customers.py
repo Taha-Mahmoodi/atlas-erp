@@ -79,11 +79,20 @@ async def get_customer(
 
 
 async def create_customer(
-    session: AsyncSession, tenant_id: uuid.UUID, payload: CustomerCreate
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    payload: CustomerCreate,
+    *,
+    customer_id: uuid.UUID | None = None,
 ) -> Customer:
     """Create a customer. Rejects a duplicate customer_code; validates the default currency exists
     in finance and the customer group (if given) exists. ``status`` defaults to ACTIVE;
-    ``payment_terms_days`` to NET30, ``credit_limit`` to 0 = cash-only (schema)."""
+    ``payment_terms_days`` to NET30, ``credit_limit`` to 0 = cash-only (schema).
+
+    ``customer_id`` (optional) lets a caller supply the PK instead of letting it default — used by
+    the
+    CRM convert handler (D-057), which pre-generates the id so the converting opportunity can record
+    ``converted_customer_id`` deterministically. None keeps the default uuid4 (the normal path)."""
     if await _customer_by_code(session, tenant_id, payload.customer_code) is not None:
         raise ConflictError(
             message=f"A customer with code {payload.customer_code} already exists",
@@ -94,6 +103,7 @@ async def create_customer(
     if payload.customer_group_id is not None:
         await _validate_group(session, tenant_id, payload.customer_group_id)
     customer = Customer(
+        **({"id": customer_id} if customer_id is not None else {}),
         tenant_id=tenant_id,
         customer_code=payload.customer_code,
         name=payload.name,
