@@ -1,8 +1,19 @@
-"""Reporting module (PLAN 13.1, the FIRST Phase 13 plan) — role-based dashboard KPI cards.
+"""Reporting module (Phase 13, COMPLETE) — role-based dashboard KPI cards (13.1) + the ad-hoc
+generic report builder (13.2).
 
-PLAN 13.1 delivers the deliberately small reporting core the build spec §13.1 scopes: ROLE-BASED
-DASHBOARDS with KPI cards — cash position, AR/AP aging, inventory value, open orders, OTD%, WIP.
-(The generic report builder is §13.2, the next plan.)
+PLAN 13.1 delivers ROLE-BASED DASHBOARDS with KPI cards — cash position, AR/AP aging, inventory
+value, open orders, OTD%, WIP. PLAN 13.2 adds the GENERIC REPORT BUILDER (D-059): an ad-hoc
+define-and-run query over a WHITELIST registry of reportable entities/columns (``report_registry``),
+gated per entity by the source module's read permission, constructed via the ORM with TYPED BINDS
+(tenant auto-filtered by ``do_orm_execute``, no SQL injection), capped at 10k rows for the JSON grid
+with a STREAMING CSV export for larger sets. Masked/sensitive columns (HR compensation/PII) are
+excluded from the whitelist outright, so they can never be exposed through a report.
+
+THE MODEL-IMPORT EXCEPTION (D-059). Reporting is otherwise a LEAF reading only other modules'
+``queries`` downward (D-058); ``report_registry`` is the ONE place it imports the model classes — a
+READ-ONLY query-construction need (the builder selects/filters/groups over them through the tenant-
+filtered session; it never calls their services and writes nothing). No module imports reporting, so
+there is no cycle.
 
 THE LOAD-BEARING IDEA — A READ-ONLY KPI AGGREGATOR (D-058, D-021). Reporting owns NO tables, NO
 sequences, NO document types: every KPI is a PROJECTION read off another module's existing
@@ -40,11 +51,15 @@ calls" holds: the dashboard screen is a single endpoint call. The internal aggre
 (many KPIs) by design — documented, asserted with the query counter (D-058).
 
 NO events / handlers (D-058): reporting triggers no cross-module write — it is a pure read
-aggregator (an empty event file would be a dead file, STRUCTURE §8.3). NO migration: it owns no
-tables.
+aggregator (an empty event file would be a dead file, STRUCTURE §8.3). NO migration (D-058/D-059):
+it owns no tables, and the report builder is AD-HOC (define-and-run, no persisted report defs, v1).
 
-Structure (each <400 lines, STRUCTURE §3): ``constants.py`` (the dashboard key + KPI→permission
-map), ``schemas.py`` (the typed KPI sub-models), ``service.py`` (``dashboard_kpis``), ``router.py``
-(the single dashboard endpoint). No ``queries.py`` — reporting is a LEAF consumer; nothing reads it,
+Structure (each <400 lines, STRUCTURE §3): ``constants.py`` (the dashboard + report-builder keys +
+KPI→permission map + the report operator/aggregation enums + the 10k cap), ``schemas.py`` (the typed
+KPI sub-models + the ReportSpec/ReportResult/entity-catalog schemas), ``report_registry.py`` (the
+report-builder WHITELIST — the ONE model-import site, D-059), ``report_builder.py`` (``run_report``
++ ``stream_report_csv`` the ORM typed-bind construction), ``service.py`` (``dashboard_kpis``),
+``router.py`` (the dashboard endpoint + the report-builder routes). No ``queries.py`` — reporting is
+a LEAF consumer; nothing reads it,
 so an empty queries file would be an orphan (STRUCTURE §8.3).
 """

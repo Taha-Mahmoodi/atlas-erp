@@ -1,17 +1,22 @@
-"""Reporting (role-based dashboards) constants (STRUCTURE §3): the dashboard permission key + the
-KPI catalog and its KPI→source-permission GATING MAP, registered into the core RBAC catalog at
-import (D-009 / D-058).
+"""Reporting (role-based dashboards + report builder) constants (STRUCTURE §3): the dashboard +
+report-builder permission keys, the KPI catalog and its KPI→source-permission GATING MAP, and the
+report-builder operator / aggregation enums + the 10k row cap (D-009 / D-058 / D-059), registered
+into the core RBAC catalog at import.
 
 A SINGLE file (STRUCTURE §8.4: split into a constants/ package only at the 400-line cap) — PLAN
-13.1's read-only KPI dashboard sits well under that.
+13.1's dashboard + 13.2's report-builder constants sit well under that.
 
-READ-ONLY (D-058). Reporting owns NO tables, NO sequences, NO document types — it is a projection
-aggregator over OTHER modules' ``queries`` (D-021: KPIs read existing queries, never new stored
-totals). So the only key it DECLARES is ``reporting.dashboard.read`` (base dashboard access). Every
-individual KPI is gated by the SOURCE module's existing read permission, so the dashboard is
-ROLE-BASED: a finance role sees finance KPIs, a sales role sees sales KPIs, and the endpoint returns
-ONLY the KPIs the caller is permitted to see (the ``KPI_PERMISSIONS`` map below is the contract).
+READ-ONLY (D-058 / D-059). Reporting owns NO tables, NO sequences, NO document types — it is a
+projection aggregator over OTHER modules' ``queries`` (the dashboard) and a READ-ONLY query builder
+over a WHITELIST of their ORM models (the report builder, D-059). The only keys it DECLARES are
+``reporting.dashboard.read`` (base dashboard access) and ``reporting.report.run`` (base report
+access). Every individual KPI / reportable entity is gated by the SOURCE module's existing read
+permission, so both surfaces are ROLE-BASED: a finance role sees finance KPIs + finance reports, a
+sales role sees sales ones, etc. (the ``KPI_PERMISSIONS`` map + the registry's per-entity
+``source_permission`` are the contracts).
 """
+
+from enum import StrEnum
 
 from app.core.rbac import register_permissions
 from app.modules.finance.constants import (
@@ -23,17 +28,55 @@ from app.modules.inventory.constants import INVENTORY_VALUATION_READ
 from app.modules.procurement.constants import PROCUREMENT_PO_READ
 from app.modules.sales.constants import SALES_ORDER_READ
 
-# --- The base dashboard permission (D-009 / D-058) ----------------------------
-# The ONLY key reporting declares: holding it is the price of admission to the dashboard endpoint.
-# Each KPI inside is then gated by the SOURCE module's read permission (KPI_PERMISSIONS below).
+# --- The base permissions reporting declares (D-009 / D-058 / D-059) ----------
+# The price of admission to each surface. Each KPI / reportable entity is then gated by the SOURCE
+# module's read permission (KPI_PERMISSIONS below; the registry's per-entity source_permission).
 REPORTING_DASHBOARD_READ = "reporting.dashboard.read"
+# Base report-builder access (D-059): holding it lets a caller list entities and run/export reports,
+# but EACH reportable entity additionally requires its source module's read permission, so a finance
+# role can only report on finance entities, etc. (mirrors the dashboard's role-based gating).
+REPORTING_REPORT_RUN = "reporting.report.run"
 
 register_permissions(
     REPORTING_DASHBOARD_READ,
+    REPORTING_REPORT_RUN,
     descriptions={
         REPORTING_DASHBOARD_READ: "Access the role-based KPI dashboard",
+        REPORTING_REPORT_RUN: "Run and export ad-hoc reports over whitelisted entities",
     },
 )
+
+
+# --- Report builder enums + the row cap (D-059, PERFORMANCE §3) ----------------
+# The FIXED operator set a report filter may use. A filter names a WHITELISTED column, an operator
+# from THIS set, and a value the builder coerces to the column's Python type and BINDS (never
+# string-interpolates) — so a value can only ever be data, never SQL (the no-injection guarantee).
+class FilterOperator(StrEnum):
+    EQ = "eq"
+    NE = "ne"
+    GT = "gt"
+    GTE = "gte"
+    LT = "lt"
+    LTE = "lte"
+    IN = "in"  # value is a list; each element coerced + bound
+    LIKE = "like"  # case-insensitive substring on string columns only
+    BETWEEN = "between"  # value is a [low, high] pair
+    IS_NULL = "is_null"  # value is a bool: True → IS NULL, False → IS NOT NULL
+
+
+# The FIXED aggregation set. COUNT applies to any groupable report; SUM/AVG/MIN/MAX apply only to
+# columns the registry marks ``is_aggregatable`` (numeric columns) — validated in the builder.
+class Aggregation(StrEnum):
+    COUNT = "count"
+    SUM = "sum"
+    AVG = "avg"
+    MIN = "min"
+    MAX = "max"
+
+
+# PERFORMANCE §3: the report builder CAPS result rows at 10k for the JSON grid; anything larger is
+# served by the streaming CSV export. The builder fetches CAP + 1 rows to detect+flag truncation.
+REPORT_ROW_CAP = 10_000
 
 
 # --- KPI catalog (D-058) ------------------------------------------------------
