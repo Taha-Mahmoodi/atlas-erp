@@ -34,6 +34,7 @@ from app.modules.hr.schemas import (
     DepartmentRead,
     DepartmentUpdate,
 )
+from app.modules.hr.timesheet_router import timesheet_router
 
 router = APIRouter(prefix="/api/v1/hr", tags=["hr"])
 _CursorParamsDep = Depends(cursor_params)
@@ -132,11 +133,11 @@ async def update_department(
 
 
 # The position surface (positions + ETag list), the employee surface (masked employee CRUD, the
-# compensation endpoint, the org chart) and the leave surface (leave types + balances +
-# accrual run +
-# leave requests with the approval flow, PLAN 10.2) are sibling sub-routers mounted here, so
-# the whole
-# module is ONE surface at /api/v1/hr.
+# compensation endpoint, the org chart), the leave surface (leave types + balances + accrual run +
+# leave requests with the approval flow, PLAN 10.2) and the timesheet surface (timesheets + nested
+# time entries + the submit/approve/reject/cancel flow + the allocation report, PLAN 10.3) are
+# sibling sub-routers mounted here, so the whole module is ONE surface at /api/v1/hr.
 router.include_router(position_router)
 router.include_router(employee_router)
 router.include_router(leave_router)
+router.include_router(timesheet_router)

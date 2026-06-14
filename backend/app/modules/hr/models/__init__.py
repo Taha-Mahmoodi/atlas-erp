@@ -2,9 +2,10 @@
 
 PLAN 10.1's HCM masters live in ``org`` (the ``Department``, ``Position`` and ``Employee`` masters
 with the D-009 masked compensation/PII). PLAN 10.2 adds ``leave`` (the ``LeaveType`` config, the
-running ``LeaveBalance`` per employee per type, and the ``LeaveRequest`` document). Re-exported here
-so call sites use one import (``from app.modules.hr.models import Employee``) and the
-alembic env.py /
+running ``LeaveBalance`` per employee per type, and the ``LeaveRequest`` document). PLAN 10.3 adds
+``time`` (the ``Timesheet`` header + its ``TimeEntry`` lines, with project/cost-centre allocation).
+Re-exported here so call sites use one import (``from app.modules.hr.models import Employee``) and
+the alembic env.py /
 tenancy mapper-enumeration suite see every model through this package.
 
 The package split (10.1 shipped a single ``models.py``) keeps each concern under the 400-line cap as
@@ -13,6 +14,7 @@ leave lands — a behaviour-preserving move, the manufacturing/inventory models/
 
 from app.modules.hr.models.leave import LeaveBalance, LeaveRequest, LeaveType
 from app.modules.hr.models.org import Department, Employee, Position
+from app.modules.hr.models.time import TimeEntry, Timesheet
 
 __all__ = [
     "Department",
@@ -21,4 +23,6 @@ __all__ = [
     "LeaveRequest",
     "LeaveType",
     "Position",
+    "TimeEntry",
+    "Timesheet",
 ]
