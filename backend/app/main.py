@@ -28,6 +28,7 @@ from app.modules.finance.router import router as finance_router
 from app.modules.inventory.router import router as inventory_router
 from app.modules.manufacturing.router import router as manufacturing_router
 from app.modules.procurement.router import router as procurement_router
+from app.modules.quality.router import router as quality_router
 from app.modules.sales.router import router as sales_router
 
 logger = logging.getLogger("atlas")
@@ -250,6 +251,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # D-029). 8.1 publishes no cross-module events (masters drive no effects; production orders in
     # 8.2 will).
     app.include_router(manufacturing_router)
+    # Quality module (PLAN 9): inspection lots at /api/v1/quality. Mounted after manufacturing, the
+    # D-011 handler-registration order; quality SUBSCRIBES to procurement's GoodsReceiptPosted to
+    # create inspection lots and reads inventory/queries downward (STRUCTURE §5 / D-029 / D-050). A
+    # reject disposition publishes InspectionDispositioned → inventory moves the rejected stock.
+    app.include_router(quality_router)
 
     # Cross-module event handlers (D-011): registered here, at the app factory, so registration
     # order
@@ -282,6 +288,7 @@ def register_event_handlers() -> None:
     )
     from app.modules.inventory.events import StockValued
     from app.modules.inventory.handlers import (
+        disposition_rejected_stock,
         issue_delivery_moves,
         issue_production_components,
         receive_finished_order_move,
@@ -295,6 +302,8 @@ def register_event_handlers() -> None:
     )
     from app.modules.procurement.events import GoodsReceiptPosted, InvoiceMatched
     from app.modules.procurement.handlers import create_requisition_for_planned_buy
+    from app.modules.quality.events import InspectionDispositioned
+    from app.modules.quality.handlers import create_inspection_lots_for_receipt
     from app.modules.sales.events import (
         BillingInvoiced,
         DeliveryShipped,
@@ -362,6 +371,23 @@ def register_event_handlers() -> None:
     # service, the billing → AR-invoice precedent).
     if create_requisition_for_planned_buy not in handlers_for(PlannedBuyConverted.key):
         subscribe(PlannedBuyConverted.key, create_requisition_for_planned_buy)
+    # GoodsReceiptPosted has TWO same-transaction subscribers (PLAN 9.1, D-050): inventory's
+    # receive_goods_receipt_moves (registered above) creates the RECEIPT moves, then quality's
+    # create_inspection_lots_for_receipt creates an OPEN inspection lot per requires_inspection
+    # line.
+    # Quality is subscribed AFTER inventory (registration order = dispatch order, D-011) so the
+    # lot/serial master instance the receipt creates already exists when quality resolves the GR
+    # line's code to a traceability id.
+    if create_inspection_lots_for_receipt not in handlers_for(GoodsReceiptPosted.key):
+        subscribe(GoodsReceiptPosted.key, create_inspection_lots_for_receipt)
+    # Quality reject-disposition → inventory stock-move bridge (PLAN 9.1, D-050): a REJECT usage
+    # decision publishes InspectionDispositioned and inventory's handler moves the rejected stock
+    # (SCRAP = an ADJUSTMENT-out write-off → Dr inventory-adjustment / Cr Inventory; BLOCK = a
+    # value-neutral TRANSFER to the blocked bin) in the SAME transaction. Quality publishes;
+    # inventory handles its own move (STRUCTURE §5). An ACCEPT publishes nothing — accepted stock is
+    # already received and usable.
+    if disposition_rejected_stock not in handlers_for(InspectionDispositioned.key):
+        subscribe(InspectionDispositioned.key, disposition_rejected_stock)
 
 
 app = create_app()
