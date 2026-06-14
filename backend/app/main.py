@@ -25,6 +25,7 @@ from app.core.schemas import ErrorBody, ErrorEnvelope
 from app.core.security_router import router as security_router
 from app.core.tenancy import current_tenant_id
 from app.modules.finance.router import router as finance_router
+from app.modules.hr.router import router as hr_router
 from app.modules.inventory.router import router as inventory_router
 from app.modules.maintenance.router import router as maintenance_router
 from app.modules.manufacturing.router import router as manufacturing_router
@@ -263,6 +264,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # D-051). It publishes/subscribes to NO cross-module event in v1 — a completed order records its
     # cost on the order row (record-only, no GL posting, D-051).
     app.include_router(maintenance_router)
+    # HR module (PLAN 10.1): employees (masked compensation/PII), departments, positions, org chart
+    # at /api/v1/hr. Mounted after maintenance, the D-011 module import order; hr reads
+    # finance/queries downward for a department's optional cost centre and probes core_users for an
+    # employee's optional login (STRUCTURE §5 / D-029 / D-052). It is the FIRST real use of the
+    # D-009
+    # field-masking serializer (compensation/PII behind hr.employee.read_compensation). HR
+    # publishes/
+    # subscribes to NO cross-module event in v1 — payroll (10.4) will post a journal through the
+    # bus.
+    app.include_router(hr_router)
 
     # Cross-module event handlers (D-011): registered here, at the app factory, so registration
     # order
