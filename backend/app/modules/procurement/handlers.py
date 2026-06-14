@@ -13,17 +13,29 @@ approval chain), and the MRP RUN document is linked to the requisition document
 DocFlowViewer. The planned order itself is not a document — the MRP run is — so the durable
 converted link is this docflow edge (the billing-side precedent, which stores no successor id).
 
-Registration: ``app.main.register_event_handlers`` subscribes this at the factory (the D-011 seam),
+``provision_procurement_for_template`` (PLAN 14.1, D-060) subscribes to the industry module's
+``IndustryTemplateApplying`` event and creates procurement's slice — the value-threshold approval
+presets — idempotently in the apply's transaction (skip-if-exists per document_type). The §5-clean
+provisioning seam: industry publishes, procurement creates its OWN ApprovalRule rows.
+
+Registration: ``app.main.register_event_handlers`` subscribes these at the factory (the D-011 seam),
 so the test harness re-registers after its per-test reset (D-025).
 """
 
 from __future__ import annotations
 
+from decimal import Decimal
+
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import docflow
+from app.core.tenancy import system_context
+from app.modules.industry.events import IndustryTemplateApplying
 from app.modules.manufacturing.constants import PLANNED_ORDER_CONVERTED_LINK
 from app.modules.manufacturing.events import PlannedBuyConverted
+from app.modules.procurement.constants import ApprovalDocumentType
+from app.modules.procurement.models import ApprovalRule
 from app.modules.procurement.schemas import RequisitionCreate, RequisitionLineCreate
 from app.modules.procurement.service.requisitions import create_requisition
 
@@ -58,3 +70,47 @@ async def create_requisition_for_planned_buy(
         successor=requisition.document_id,
         link_type=PLANNED_ORDER_CONVERTED_LINK,
     )
+
+
+async def provision_procurement_for_template(
+    session: AsyncSession, event: IndustryTemplateApplying
+) -> None:
+    """Create the procurement slice (value-threshold approval presets) of an applied industry
+    template (PLAN 14.1, D-060), idempotently, in the apply's transaction.
+
+    The template's ``approval_presets`` carry a purchase-order and/or requisition threshold + a
+    currency; this seeds one ``ApprovalRule`` per supplied threshold (UNIQUE(tenant, document_type),
+    so skip-if-exists). Thresholds are STRINGS in the template (D-015 no-float) parsed exactly via
+    ``Decimal``. No presets ⇒ no rules (a tenant then needs explicit approval below nothing).
+    Runs under ``system_context`` so tenant_id is stamped explicitly."""
+    presets = event.template.approval_presets
+    if presets is None or presets.currency_code is None:
+        return
+    tenant_id = event.tenant_id
+    wanted: list[tuple[ApprovalDocumentType, str | None]] = [
+        (ApprovalDocumentType.PURCHASE_ORDER, presets.purchase_order_threshold),
+        (ApprovalDocumentType.REQUISITION, presets.requisition_threshold),
+    ]
+    with system_context():
+        existing_types = {
+            doc_type
+            for (doc_type,) in (
+                await session.execute(
+                    select(ApprovalRule.document_type).where(
+                        ApprovalRule.tenant_id == tenant_id
+                    )
+                )
+            ).all()
+        }
+        for document_type, threshold in wanted:
+            if threshold is None or document_type.value in existing_types:
+                continue
+            session.add(
+                ApprovalRule(
+                    tenant_id=tenant_id,
+                    document_type=document_type.value,
+                    threshold_amount=Decimal(threshold),
+                    currency_code=presets.currency_code,
+                )
+            )
+        await session.flush()

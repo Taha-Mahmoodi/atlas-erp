@@ -39,10 +39,14 @@ from __future__ import annotations
 
 from datetime import date
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import docflow
-from app.modules.inventory.constants import MoveType
+from app.core.tenancy import system_context
+from app.modules.industry.events import IndustryTemplateApplying
+from app.modules.inventory.constants import CostingMethod, MoveType
+from app.modules.inventory.models import ItemCategory, Uom
 from app.modules.inventory.schemas import StockMoveCreate
 from app.modules.inventory.service.stock_moves import create_move
 from app.modules.manufacturing.constants import (
@@ -313,10 +317,61 @@ async def disposition_rejected_stock(
     )
 
 
+async def provision_inventory_for_template(
+    session: AsyncSession, event: IndustryTemplateApplying
+) -> None:
+    """Create the inventory slice (UoMs + item categories) of an applied industry template (PLAN
+    14.1, D-060), idempotently, in the apply's transaction — the §5-clean provisioning seam: the
+    industry module publishes ``IndustryTemplateApplying`` and inventory reacts here, creating ITS
+    OWN master rows through its own models (industry never imports inventory/service).
+
+    Idempotency (D-060): every create is SKIP-IF-EXISTS by code (the natural key), so re-applying
+    the same template never duplicates. Item categories carry the template's default costing method
+    (retail/healthcare FIFO, manufacturing/construction moving-average) but NO GL-account wiring —
+    that is wired later when stocked items post moves (D-029); a provisioning preset only seeds the
+    method. Runs under ``system_context`` so tenant_id is stamped explicitly. Registered via
+    ``app.main.register_event_handlers`` (the D-011 seam)."""
+    template = event.template
+    tenant_id = event.tenant_id
+    with system_context():
+        existing_uoms = {
+            code
+            for (code,) in (
+                await session.execute(select(Uom.code).where(Uom.tenant_id == tenant_id))
+            ).all()
+        }
+        for uom in template.uoms:
+            if uom.code not in existing_uoms:
+                session.add(Uom(tenant_id=tenant_id, code=uom.code, name=uom.name))
+        existing_categories = {
+            code
+            for (code,) in (
+                await session.execute(
+                    select(ItemCategory.code).where(ItemCategory.tenant_id == tenant_id)
+                )
+            ).all()
+        }
+        for category in template.item_categories:
+            if category.code in existing_categories:
+                continue
+            session.add(
+                ItemCategory(
+                    tenant_id=tenant_id,
+                    code=category.code,
+                    name=category.name,
+                    default_costing_method=CostingMethod(
+                        category.default_costing_method
+                    ).value,
+                )
+            )
+        await session.flush()
+
+
 __all__ = [
     "disposition_rejected_stock",
     "issue_delivery_moves",
     "issue_production_components",
+    "provision_inventory_for_template",
     "receive_finished_order_move",
     "receive_goods_receipt_moves",
     "receive_return_moves",

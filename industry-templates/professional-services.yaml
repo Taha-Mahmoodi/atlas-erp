@@ -1,0 +1,76 @@
+# Professional-services industry template (PLAN 14.1 / D-060).
+# Projects + timesheets emphasis, NO inventory/manufacturing, billable-rate custom fields,
+# "Engagement"/"Consultant" terminology. Validated against _schema.yaml.
+name: professional-services
+display_name: Professional Services
+description: >-
+  Consulting / agency operations: project-based engagements, timesheets and billable rates, no
+  physical inventory or manufacturing. COA centred on services revenue and labour cost.
+
+terminology:
+  project: Engagement
+  employee: Consultant
+  customer: Client
+  sales_order: Engagement Order
+  invoice: Fee Invoice
+
+chart_of_accounts:
+  groups:
+    - { code: "1", name: Assets, sort_order: 1 }
+    - { code: "2", name: Liabilities, sort_order: 2 }
+    - { code: "3", name: Equity, sort_order: 3 }
+    - { code: "4", name: Revenue, sort_order: 4 }
+    - { code: "5", name: Expenses, sort_order: 5 }
+  accounts:
+    - { code: "1000", name: Cash, account_type: ASSET, group_code: "1", cash_flow_category: OPERATING, is_cash_equivalent: true }
+    - { code: "1100", name: Accounts Receivable, account_type: ASSET, group_code: "1" }
+    - { code: "1150", name: Unbilled Receivables (WIP), account_type: ASSET, group_code: "1" }
+    - { code: "2000", name: Accounts Payable, account_type: LIABILITY, group_code: "2" }
+    - { code: "2100", name: Deferred Revenue, account_type: LIABILITY, group_code: "2" }
+    - { code: "2200", name: Tax Payable, account_type: LIABILITY, group_code: "2" }
+    - { code: "3000", name: Partner Equity, account_type: EQUITY, group_code: "3" }
+    - { code: "4000", name: Consulting Fees, account_type: REVENUE, group_code: "4" }
+    - { code: "4100", name: Reimbursable Expenses Revenue, account_type: REVENUE, group_code: "4" }
+    - { code: "5000", name: Consultant Salaries, account_type: EXPENSE, group_code: "5" }
+    - { code: "5100", name: Subcontractor Costs, account_type: EXPENSE, group_code: "5" }
+    - { code: "5200", name: Travel & Reimbursables, account_type: EXPENSE, group_code: "5" }
+
+tax_codes:
+  - { code: STD, name: Standard Service Tax, rate_percent: "20", is_inclusive: false }
+  - { code: ZERO, name: Zero-Rated, rate_percent: "0", is_inclusive: false }
+
+currencies:
+  - { code: USD, name: US Dollar, decimal_places: 2, is_functional: true }
+
+uoms:
+  - { code: HR, name: Hour }
+  - { code: DAY, name: Day }
+  - { code: EA, name: Each }
+
+modules:
+  finance: true
+  inventory: false
+  procurement: true
+  sales: true
+  manufacturing: false
+  quality: false
+  maintenance: false
+  hr: true
+  projects: true
+  crm: true
+  reporting: true
+
+custom_fields:
+  - { entity_key: hr.employee, field_key: billable_rate, label: Standard Billable Rate, type: DECIMAL }
+  - { entity_key: hr.employee, field_key: utilization_target, label: Utilization Target %, type: NUMBER }
+  - { entity_key: projects.project, field_key: engagement_partner, label: Engagement Partner, type: STRING }
+
+approval_presets:
+  purchase_order_threshold: "5000"
+  requisition_threshold: "2500"
+  currency_code: USD
+
+numbering_formats:
+  finance.journal: { prefix: JE, padding: 6, year_reset: true }
+  sales.order: { prefix: ENG, padding: 5, year_reset: true }
+  projects.project: { prefix: PRJ, padding: 4, year_reset: false }

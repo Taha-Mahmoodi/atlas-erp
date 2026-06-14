@@ -18,6 +18,7 @@ from app.core.security_router import router as security_router
 from app.modules.crm.router import router as crm_router
 from app.modules.finance.router import router as finance_router
 from app.modules.hr.router import router as hr_router
+from app.modules.industry.router import router as industry_router
 from app.modules.inventory.router import router as inventory_router
 from app.modules.maintenance.router import router as maintenance_router
 from app.modules.manufacturing.router import router as manufacturing_router
@@ -107,6 +108,12 @@ def mount_routers(app: FastAPI) -> None:
     # publishes/subscribes to NO cross-module event (D-058 / D-021 / STRUCTURE §5). finance,
     # inventory, sales, procurement are older and import nothing from reporting — one-way, no cycle.
     app.include_router(reporting_router)
+    # Industry module (PLAN 14.1): the INDUSTRY CONFIGURATION LAYER at /api/v1/industry — the YAML
+    # template catalog + the idempotent apply endpoint (D-060). Mounted last; it imports core +
+    # admin (it applies to a tenant + writes settings) and PUBLISHES IndustryTemplateApplying for
+    # the finance/inventory/procurement provisioning handlers — it never imports their services
+    # (STRUCTURE §5). finance/inventory/procurement import industry/events (declarative) only.
+    app.include_router(industry_router)
 
 
 def register_event_handlers() -> None:
@@ -128,13 +135,16 @@ def register_event_handlers() -> None:
         create_payroll_journal,
         post_production_variance,
         post_stock_valuation_journal,
+        provision_finance_for_template,
     )
     from app.modules.hr.events import PayrollPosted
+    from app.modules.industry.events import IndustryTemplateApplying
     from app.modules.inventory.events import StockValued
     from app.modules.inventory.handlers import (
         disposition_rejected_stock,
         issue_delivery_moves,
         issue_production_components,
+        provision_inventory_for_template,
         receive_finished_order_move,
         receive_goods_receipt_moves,
         receive_return_moves,
@@ -145,7 +155,10 @@ def register_event_handlers() -> None:
         PlannedBuyConverted,
     )
     from app.modules.procurement.events import GoodsReceiptPosted, InvoiceMatched
-    from app.modules.procurement.handlers import create_requisition_for_planned_buy
+    from app.modules.procurement.handlers import (
+        create_requisition_for_planned_buy,
+        provision_procurement_for_template,
+    )
     from app.modules.quality.events import InspectionDispositioned
     from app.modules.quality.handlers import create_inspection_lots_for_receipt
     from app.modules.sales.events import (
@@ -253,3 +266,17 @@ def register_event_handlers() -> None:
     # declaratively (events-only) — one-directional, no cycle (D-057).
     if create_customer_and_quote_for_conversion not in handlers_for(OpportunityConverted.key):
         subscribe(OpportunityConverted.key, create_customer_and_quote_for_conversion)
+    # Industry template-apply → per-module provisioning bridges (PLAN 14.1, D-060): the industry
+    # loader publishes IndustryTemplateApplying carrying the validated template, and the THREE
+    # owning modules each create their slice IDEMPOTENTLY in the same transaction — finance
+    # (currencies + COA + tax codes), inventory (UoMs + item categories), procurement (approval
+    # presets). Industry never imports their services (STRUCTURE §5); it applies the core/admin
+    # slices (custom-field defs, numbering sequences, terminology + module-toggle TenantSettings)
+    # directly. Registration order = dispatch order: finance first (the COA other slices
+    # conceptually sit on), then inventory, then procurement — the three slices are independent.
+    if provision_finance_for_template not in handlers_for(IndustryTemplateApplying.key):
+        subscribe(IndustryTemplateApplying.key, provision_finance_for_template)
+    if provision_inventory_for_template not in handlers_for(IndustryTemplateApplying.key):
+        subscribe(IndustryTemplateApplying.key, provision_inventory_for_template)
+    if provision_procurement_for_template not in handlers_for(IndustryTemplateApplying.key):
+        subscribe(IndustryTemplateApplying.key, provision_procurement_for_template)

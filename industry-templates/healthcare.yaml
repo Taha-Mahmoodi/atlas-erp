@@ -1,0 +1,83 @@
+# Healthcare industry template (PLAN 14.1 / D-060).
+# NO manufacturing; customer -> Patient + a payer/insurer custom field; "Patient"/"Encounter"
+# terminology; healthcare COA. Validated against _schema.yaml.
+name: healthcare
+display_name: Healthcare
+description: >-
+  Clinics and care providers: patients instead of customers, insurer/payer billing, medical
+  supplies inventory, no manufacturing. COA centred on patient and insurance revenue.
+
+terminology:
+  customer: Patient
+  sales_order: Encounter
+  invoice: Claim
+  item: Supply
+  warehouse: Storeroom
+  vendor: Supplier
+
+chart_of_accounts:
+  groups:
+    - { code: "1", name: Assets, sort_order: 1 }
+    - { code: "2", name: Liabilities, sort_order: 2 }
+    - { code: "3", name: Equity, sort_order: 3 }
+    - { code: "4", name: Revenue, sort_order: 4 }
+    - { code: "5", name: Expenses, sort_order: 5 }
+  accounts:
+    - { code: "1000", name: Cash, account_type: ASSET, group_code: "1", cash_flow_category: OPERATING, is_cash_equivalent: true }
+    - { code: "1100", name: Patient Receivables, account_type: ASSET, group_code: "1" }
+    - { code: "1110", name: Insurance Receivables, account_type: ASSET, group_code: "1" }
+    - { code: "1300", name: Medical Supplies Inventory, account_type: ASSET, group_code: "1" }
+    - { code: "2000", name: Accounts Payable, account_type: LIABILITY, group_code: "2" }
+    - { code: "2150", name: Patient Deposits, account_type: LIABILITY, group_code: "2" }
+    - { code: "2200", name: Tax Payable, account_type: LIABILITY, group_code: "2" }
+    - { code: "3000", name: Practice Equity, account_type: EQUITY, group_code: "3" }
+    - { code: "4000", name: Patient Service Revenue, account_type: REVENUE, group_code: "4" }
+    - { code: "4100", name: Insurance Reimbursement Revenue, account_type: REVENUE, group_code: "4" }
+    - { code: "4900", name: Contractual Allowances, account_type: REVENUE, group_code: "4" }
+    - { code: "5000", name: Medical Supplies Expense, account_type: EXPENSE, group_code: "5" }
+    - { code: "5100", name: Clinical Staff Salaries, account_type: EXPENSE, group_code: "5" }
+
+tax_codes:
+  - { code: EXEMPT, name: Healthcare Exempt, rate_percent: "0", is_inclusive: false }
+  - { code: STD, name: Standard Tax (Retail Items), rate_percent: "20", is_inclusive: false }
+
+currencies:
+  - { code: USD, name: US Dollar, decimal_places: 2, is_functional: true }
+
+uoms:
+  - { code: EA, name: Each }
+  - { code: BOX, name: Box }
+  - { code: VIAL, name: Vial }
+  - { code: ML, name: Millilitre }
+
+item_categories:
+  - { code: SUPPLY, name: Medical Supplies, default_costing_method: FIFO }
+  - { code: PHARMA, name: Pharmaceuticals, default_costing_method: FIFO }
+
+modules:
+  finance: true
+  inventory: true
+  procurement: true
+  sales: true
+  manufacturing: false
+  quality: true
+  maintenance: true
+  hr: true
+  projects: false
+  crm: false
+  reporting: true
+
+custom_fields:
+  - { entity_key: sales.customer, field_key: insurer, label: Primary Payer / Insurer, type: STRING, required: true }
+  - { entity_key: sales.customer, field_key: policy_number, label: Insurance Policy Number, type: STRING }
+  - { entity_key: sales.customer, field_key: date_of_birth, label: Date of Birth, type: DATE }
+
+approval_presets:
+  purchase_order_threshold: "7500"
+  requisition_threshold: "2000"
+  currency_code: USD
+
+numbering_formats:
+  finance.journal: { prefix: JE, padding: 6, year_reset: true }
+  sales.order: { prefix: ENC, padding: 6, year_reset: true }
+  procurement.purchase_order: { prefix: PO, padding: 5, year_reset: true }
