@@ -91,7 +91,7 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 ## Phase 9 — Quality & Maintenance
 
 - [x] 9.1 Quality: inspection flag on goods receipt → inspection lot → accept/reject with stock disposition
-- [ ] 9.2 Maintenance: equipment register, corrective + preventive (interval-based) maintenance orders
+- [x] 9.2 Maintenance: equipment register, corrective + preventive (interval-based) maintenance orders
 
 ## Phase 10 — Human Resources
 

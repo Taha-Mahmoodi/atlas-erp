@@ -26,6 +26,7 @@ from app.core.security_router import router as security_router
 from app.core.tenancy import current_tenant_id
 from app.modules.finance.router import router as finance_router
 from app.modules.inventory.router import router as inventory_router
+from app.modules.maintenance.router import router as maintenance_router
 from app.modules.manufacturing.router import router as manufacturing_router
 from app.modules.procurement.router import router as procurement_router
 from app.modules.quality.router import router as quality_router
@@ -256,6 +257,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # create inspection lots and reads inventory/queries downward (STRUCTURE §5 / D-029 / D-050). A
     # reject disposition publishes InspectionDispositioned → inventory moves the rejected stock.
     app.include_router(quality_router)
+    # Maintenance module (PLAN 9.2): equipment + corrective/preventive orders + interval plans at
+    # /api/v1/maintenance. Mounted after quality, the D-011 module import order; maintenance reads
+    # finance/queries downward for an equipment's optional cost centre (STRUCTURE §5 / D-029 /
+    # D-051). It publishes/subscribes to NO cross-module event in v1 — a completed order records its
+    # cost on the order row (record-only, no GL posting, D-051).
+    app.include_router(maintenance_router)
 
     # Cross-module event handlers (D-011): registered here, at the app factory, so registration
     # order
