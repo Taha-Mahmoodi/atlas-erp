@@ -111,7 +111,7 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 ## Phase 13 — Reporting & analytics
 
 - [x] 13.1 Role-based dashboard KPI endpoints: cash position, AR/AP aging, inventory value, open orders, OTD%, WIP
-- [ ] 13.2 Generic report builder: entity + columns + filters + group-by → JSON for the grid + CSV export
+- [x] 13.2 Generic report builder: entity + columns + filters + group-by → JSON for the grid + CSV export
 
 ## Phase 14 — Admin, industry layer & onboarding
 

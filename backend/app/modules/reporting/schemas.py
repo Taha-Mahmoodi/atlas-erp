@@ -16,11 +16,12 @@ string). ``percent`` is a plain number (it is a ratio, not money).
 """
 
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import PlainSerializer
 
 from app.core.schemas import ApiModel
+from app.modules.reporting.constants import Aggregation, FilterOperator
 
 # A money Decimal that serializes to its exact decimal STRING on the wire (build-spec §13.1). The
 # value remains a Decimal in Python; only JSON rendering differs from the number-valued money in the
@@ -81,3 +82,90 @@ class DashboardResponse(ApiModel):
     open_purchase_orders: CountValueKpi | None = None
     otd_percent: OtdKpi | None = None
     wip_value: MoneyKpi | None = None
+
+
+# --- Report builder (PLAN 13.2, D-059) ----------------------------------------
+# The AD-HOC report request + result. A ReportSpec names a WHITELISTED entity + a subset of its
+# whitelisted columns + filters + group-by + aggregations; the builder validates it against the
+# registry, builds the ORM select with TYPED BINDS (no SQL injection), runs it tenant-filtered, and
+# returns ReportResult. No persistence — define-and-run in one request (D-059, ad-hoc-only v1).
+
+
+class ReportFilter(ApiModel):
+    """One filter on a report (D-059): a whitelisted, filterable ``column``, an ``operator`` from
+    the fixed set, and a ``value`` the builder coerces to the column's Python type and BINDS (never
+    string-interpolates). ``value`` shape depends on the operator: a scalar for EQ/NE/GT/.../LIKE, a
+    list for IN, a [low, high] pair for BETWEEN, a bool for IS_NULL (True → IS NULL)."""
+
+    column: str
+    operator: FilterOperator
+    value: Any = None
+
+
+class ReportAggregation(ApiModel):
+    """One aggregation on a report (D-059): ``func`` over a whitelisted column (SUM/AVG/MIN/MAX
+    require the column be ``is_aggregatable``; COUNT may target any column or omit it via ``*``).
+    ``alias`` is the result column name the aggregate lands under (defaults to ``func_column``)."""
+
+    column: str | None = None
+    func: Aggregation
+    alias: str | None = None
+
+
+class ReportSpec(ApiModel):
+    """An ad-hoc report definition run in one request (D-059). ``entity`` is a registry key;
+    ``columns`` is the subset of plain columns to SELECT (used when there is no group-by);
+    ``filters`` scope the rows; ``group_by`` (whitelisted groupable columns) + ``aggregations``
+    produce a grouped result (when group_by is present the SELECT is the group-by columns + the
+    aggregates, not ``columns``). ``limit`` optionally lowers the 10k cap (never raises it)."""
+
+    entity: str
+    columns: list[str] = []
+    filters: list[ReportFilter] = []
+    group_by: list[str] = []
+    aggregations: list[ReportAggregation] = []
+    limit: int | None = None
+
+
+class ReportResult(ApiModel):
+    """The report grid payload (D-059): ``columns`` is the ordered result column-name list,
+    ``rows`` is a list of {column → JSON-safe value} dicts (money/qty as exact strings, dates as
+    ISO), ``row_count`` is len(rows), and ``truncated`` is True when the result hit the row cap (the
+    UI then offers the streaming CSV export for the full set, PERFORMANCE §3)."""
+
+    columns: list[str]
+    rows: list[dict[str, Any]]
+    row_count: int
+    truncated: bool
+
+
+# --- The entities catalog (D-059) — so a UI can build the report picker --------
+
+
+class ReportColumnDescriptor(ApiModel):
+    """One whitelisted column as the picker sees it (D-059): the request ``name``, display
+    ``label``, wire ``type``, and the per-column capability flags the builder enforces."""
+
+    name: str
+    label: str
+    type: str
+    filterable: bool
+    groupable: bool
+    is_aggregatable: bool
+
+
+class ReportEntityDescriptor(ApiModel):
+    """One whitelisted reportable entity as the picker sees it (D-059): the ``key`` a spec names,
+    its ``label``, and its allowed columns. The entities-list endpoint returns ONLY the entities the
+    caller's role permits (each gated by its source permission), so the catalog IS the caller's
+    role."""
+
+    key: str
+    label: str
+    columns: list[ReportColumnDescriptor]
+
+
+class ReportEntityList(ApiModel):
+    """The report-builder entities catalog the UI fetches to build its picker (D-059)."""
+
+    entities: list[ReportEntityDescriptor]
