@@ -65,6 +65,9 @@ class DocumentType(StrEnum):
     COGS = "COGS"
     FX_REVAL = "FX_REVAL"
     DEPRECIATION = "DEPRECIATION"
+    # The consolidated HR-payroll journal (PLAN 10.4): Dr salary-expense by cost centre / Cr
+    # payroll-tax-payable / Cr wages-payable, posted from the hr.payroll.posted event (D-055).
+    PAYROLL = "PAYROLL"
 
 
 class TaxDirection(StrEnum):

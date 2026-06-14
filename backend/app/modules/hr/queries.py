@@ -24,6 +24,8 @@ from app.modules.hr.models import (
     Employee,
     LeaveBalance,
     LeaveRequest,
+    PayrollRun,
+    PayrollRunLine,
     TimeEntry,
     Timesheet,
 )
@@ -238,6 +240,53 @@ async def approved_hours_for_project(
     if date_to is not None:
         stmt = stmt.where(TimeEntry.entry_date <= date_to)
     return (await session.execute(stmt)).scalar_one()
+
+
+# --- Payroll (PLAN 10.4, D-055) -----------------------------------------------
+
+
+async def get_payroll_run(
+    session: AsyncSession, tenant_id: uuid.UUID, run_id: uuid.UUID
+) -> PayrollRun | None:
+    """The payroll run with ``run_id`` in the tenant, or None. A point lookup on the PK."""
+    stmt = select(PayrollRun).where(
+        PayrollRun.tenant_id == tenant_id, PayrollRun.id == run_id
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def payroll_runs_for_period(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    period_from: date | None = None,
+    period_to: date | None = None,
+) -> list[PayrollRun]:
+    """Payroll runs whose ``period_start`` falls in [period_from, period_to], newest period first
+    (D-055). Index-served by (tenant, period_start). Both bounds optional (omit for all runs)."""
+    stmt = select(PayrollRun).where(PayrollRun.tenant_id == tenant_id)
+    if period_from is not None:
+        stmt = stmt.where(PayrollRun.period_start >= period_from)
+    if period_to is not None:
+        stmt = stmt.where(PayrollRun.period_start <= period_to)
+    stmt = stmt.order_by(PayrollRun.period_start.desc())
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def payroll_lines_for_run(
+    session: AsyncSession, tenant_id: uuid.UUID, run_id: uuid.UUID
+) -> list[PayrollRunLine]:
+    """The per-employee lines of one payroll run, ordered by employee_id then id (stable).
+    Index-served by (tenant, payroll_run_id)."""
+    stmt = (
+        select(PayrollRunLine)
+        .where(
+            PayrollRunLine.tenant_id == tenant_id,
+            PayrollRunLine.payroll_run_id == run_id,
+        )
+        .order_by(PayrollRunLine.employee_id, PayrollRunLine.id)
+    )
+    return list((await session.execute(stmt)).scalars().all())
 
 
 async def approved_hours_for_cost_center(

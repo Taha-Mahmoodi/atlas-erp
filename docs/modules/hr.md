@@ -283,23 +283,98 @@ pagination), `service/time_allocation.py` (the aggregates) — each under the 40
 paginated within the ≤3-query budget. **No cross-module events** — time is intra-HR; payroll (10.4)
 and project costing (11) READ approved time via `hr/queries`.
 
+## Payroll (PLAN 10.4 — D-055)
+
+> **⚠ NON-COMPLIANCE FLAG (read first).** Atlas v1 payroll is a **SIMPLISTIC, NOT
+> jurisdiction-compliant** gross→net calculation. It applies a **single flat withholding rate** and
+> nothing else: **no tax brackets, no social security / pension / Medicare, no employer-side taxes,
+> no deductions, no retro accounting, no payment files, no statutory reporting.** The
+> [parity doc HCM section](../research/s4hana-parity.md) explicitly scopes payroll to this reduced
+> form ("Payroll (localized gross-to-net with retro calculation)" = Partial). It is suitable for
+> demos and the payroll-to-GL integration ("Payroll posting to finance" = Full), **never** for paying
+> real employees under any jurisdiction's rules. A real engine needs certified country packs.
+
+### The gross→net flat-tax model
+
+A **payroll run** (`hr_payroll_runs`, `DocumentMixin`) computes one **line** (`hr_payroll_run_lines`)
+per covered active employee, in DRAFT:
+
+- `gross = base_salary` — **`base_salary` is taken AS the period gross with NO proration** (the
+  simplest v1 assumption: `base_salary` IS the per-period — e.g. monthly — gross; a mid-period
+  hire/termination is not prorated).
+- `tax = quantize(gross × tax_rate_percent / 100)` — the **flat** withholding rate, supplied **per
+  run** (a run carries its own `tax_rate_percent`); a run that omits it takes the per-tenant default
+  (`DEFAULT_PAYROLL_TAX_RATE_PERCENT = 20`).
+- `net = gross − tax`.
+
+So **`gross == tax + net` per line and at the header totals** — the balancing invariant the journal
+relies on. Employees with **no `base_salary` are skipped** (no line, not counted); a run matching no
+salaried employee is a 422. The run claims its gapless `PAY-` number **at posting** (NULL until then,
+the journal-entry precedent), so an abandoned/cancelled draft burns no number.
+
+### The consolidated journal, posted via the event bus
+
+Posting a run is the **§5-clean cross-module write** (the 6.4 invoice-match → AP-bill and 7.4
+sales-billing → AR-invoice precedents): the HR service **publishes `PayrollPosted`** carrying the
+resolved posting-account ids (read from `finance/queries`) + the per-cost-centre salary-expense
+allocation; **`finance/handlers.create_payroll_journal` posts ONE consolidated journal** in the SAME
+transaction. **HR never imports `finance/service`** — only `finance/queries` + the event.
+
+The journal (document type `PAYROLL`):
+
+- **Dr salary-expense** at total gross, **split per cost centre** (`salary_by_cost_center`) so each Dr
+  line carries the employee's department **cost-centre dimension** — CO cost-centre reports include
+  labour. A None bucket (employee whose department has no cost centre) posts with no dimension.
+- **Cr payroll-tax-payable** at total tax (the withheld flat-rate tax, an open liability — remittance
+  is out of v1 scope).
+- **Cr wages-payable** at total net (net pay owed to employees, an open liability — payout is out of
+  v1 scope).
+
+Balanced because `gross = tax + net`. The three accounts are per-tenant **posting defaults**
+(`salary_expense` / `payroll_tax_payable` / `wages_payable`); a tenant must map all three or the post
+is a 422. The handler links **payroll-run → 'posts' → journal** (docflow) and sets the run's
+`journal_entry_id`. **Closed-period rollback:** a `pay_date` in a closed fiscal period trips the
+journal's period trigger inside the same transaction, rolling the WHOLE post back — the run stays
+DRAFT, no number, no journal (the COGS / production-finish atomicity precedent). Re-posting a POSTED
+run is a conflict (a run posts once; correct it by reversing its journal in finance).
+
+### Endpoints + structure
+
+`payroll_router.py` is mounted into `router.py` (ONE surface at `/api/v1/hr`): `POST /payroll-runs`
+(compute a DRAFT run, idempotent), `GET /payroll-runs` (paginated, filter status / period range,
+≤3-query budget), `GET /payroll-runs/{id}` (run + lines), `POST /payroll-runs/{id}/post` (idempotent),
+`POST /payroll-runs/{id}/cancel`. RBAC: `hr.payroll.read` / `.manage` (create + cancel) / `.post` (the
+DISTINCT GL-posting authority — a manage holder is 403 on post). The schemas live in a sibling
+`payroll_schemas.py`; the service in `service/payroll.py` (create + reads + cancel) +
+`service/payroll_post.py` (the publish-the-event post flow); the event in `events.py` (HR's FIRST
+cross-module event); the models in `models/payroll.py` — each under the 400-line cap.
+
 ## Cross-module boundary (STRUCTURE §5)
 
-The only downward read is `finance/queries.cost_center_exists` (a department's optional cost centre
-and a time entry's optional cost centre) plus a core `core_users` probe for an employee's optional
-login. Finance is an older module and imports nothing from HR, so the import is one-directional (no
-cycle). `queries.py` is the only file a later module (payroll, projects) imports — including the
-`approved_hours_for_project`/`approved_hours_for_cost_center` time-allocation hooks.
+The downward reads are `finance/queries.cost_center_exists` (a department's optional cost centre and
+a time entry's optional cost centre) plus the payroll posting-account resolvers
+(`salary_expense_account` / `wages_payable_account` / `payroll_tax_payable_account`) +
+`functional_currency_or_none`, and a core `core_users` probe for an employee's optional login.
+**Payroll's one cross-module WRITE goes through the event bus** — HR publishes `PayrollPosted`,
+finance's handler posts the journal; HR never imports `finance/service`. Finance is an older module
+and imports nothing from HR at load (the handler imports `PayrollRun` lazily inside the function
+body), so the dependency is one-directional (no cycle). `queries.py` is the only file a later module
+(projects) imports — including the `approved_hours_for_project`/`approved_hours_for_cost_center`
+time-allocation hooks and the `get_payroll_run`/`payroll_runs_for_period`/`payroll_lines_for_run`
+payroll reads.
 
 ## What's out of scope (parity)
 
-Date-effective history and formal hire/transfer/terminate actions; jurisdiction-compliant payroll;
-pay-grade structures and comp-review cycles; talent (recruiting/onboarding/learning/performance/
-succession); benefits administration; and ESS/MSS screens. **Leave and absence management** (PLAN
-10.2) and **time recording with project & cost-centre allocation** (PLAN 10.3) are now in scope.
-Time-tracking "later" items: validating `project_id` once the projects module exists (Phase 11);
-work-schedule rules and overtime/premium evaluation; per-entry approval; and a maintenance-expense /
-labour-cost journal from approved time (payroll 10.4 + project costing 11 read approved time today).
+Date-effective history and formal hire/transfer/terminate actions; **jurisdiction-compliant payroll**
+(v1 ships only the flat-tax gross→net flagged above — no brackets, social security, deductions, retro
+accounting, payment files or statutory reporting); pay-grade structures and comp-review cycles;
+talent (recruiting/onboarding/learning/performance/succession); benefits administration; and ESS/MSS
+screens. **Leave and absence management** (PLAN 10.2), **time recording with project & cost-centre
+allocation** (PLAN 10.3) and **simplistic gross→net payroll posting to finance** (PLAN 10.4) are now
+in scope. Payroll "later" items: configurable wage-type-to-account mapping, accrual postings,
+employer-side contributions, deductions, retro calculation, proration, and certified country
+compliance packs. Time-tracking "later" items: validating `project_id` once the projects module
+exists (Phase 11); work-schedule rules and overtime/premium evaluation; per-entry approval.
 Leave-specific "later" items — work-schedule collision checks, quota carryover rules, business-day
 computation, allow-negative balances, and a HALF_DAY unit — are noted inline. See the
 [parity doc HCM section](../research/s4hana-parity.md) for the full reconciliation and the "later"

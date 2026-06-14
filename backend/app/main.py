@@ -269,10 +269,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # finance/queries downward for a department's optional cost centre and probes core_users for an
     # employee's optional login (STRUCTURE §5 / D-029 / D-052). It is the FIRST real use of the
     # D-009
-    # field-masking serializer (compensation/PII behind hr.employee.read_compensation). HR
-    # publishes/
-    # subscribes to NO cross-module event in v1 — payroll (10.4) will post a journal through the
-    # bus.
+    # field-masking serializer (compensation/PII behind hr.employee.read_compensation). PLAN 10.4
+    # adds payroll: HR PUBLISHES its first cross-module event (PayrollPosted) and finance posts the
+    # consolidated payroll journal through the bus (D-055).
     app.include_router(hr_router)
 
     # Cross-module event handlers (D-011): registered here, at the app factory, so registration
@@ -301,9 +300,11 @@ def register_event_handlers() -> None:
         create_bill_for_match,
         create_credit_note_for_return,
         create_invoice_for_billing,
+        create_payroll_journal,
         post_production_variance,
         post_stock_valuation_journal,
     )
+    from app.modules.hr.events import PayrollPosted
     from app.modules.inventory.events import StockValued
     from app.modules.inventory.handlers import (
         disposition_rejected_stock,
@@ -406,6 +407,14 @@ def register_event_handlers() -> None:
     # already received and usable.
     if disposition_rejected_stock not in handlers_for(InspectionDispositioned.key):
         subscribe(InspectionDispositioned.key, disposition_rejected_stock)
+    # HR payroll → finance consolidated-journal bridge (PLAN 10.4, D-055), HR's FIRST cross-module
+    # event: a payroll-run post publishes PayrollPosted and finance's create_payroll_journal posts
+    # the consolidated journal (Dr salary-expense by cost centre / Cr payroll-tax-payable / Cr
+    # wages-payable — balanced because gross = tax + net) in the SAME transaction, linking the run
+    # document → 'posts' → journal. HR publishes; finance handles its own journal posting (HR never
+    # imports finance/service — STRUCTURE §5), the match → AP-bill / billing → AR-invoice precedent.
+    if create_payroll_journal not in handlers_for(PayrollPosted.key):
+        subscribe(PayrollPosted.key, create_payroll_journal)
 
 
 app = create_app()
