@@ -24,6 +24,7 @@ from app.modules.manufacturing.router import router as manufacturing_router
 from app.modules.procurement.router import router as procurement_router
 from app.modules.projects.router import router as projects_router
 from app.modules.quality.router import router as quality_router
+from app.modules.reporting.router import router as reporting_router
 from app.modules.sales.router import router as sales_router
 
 
@@ -99,6 +100,13 @@ def mount_routers(app: FastAPI) -> None:
     # imports
     # sales/service); SALES imports crm/events declaratively (events-only, no cycle, D-057).
     app.include_router(crm_router)
+    # Reporting module (PLAN 13.1): the role-based KPI dashboard at /api/v1/reporting. Mounted last,
+    # the TOP of the dependency order — it is a READ-ONLY KPI aggregator that imports ONLY other
+    # modules' queries DOWNWARD (finance/inventory/sales/procurement) for cash / AR-AP-aging /
+    # inventory-value / open-orders / OTD / WIP, never their service/models, owns no tables, and
+    # publishes/subscribes to NO cross-module event (D-058 / D-021 / STRUCTURE §5). finance,
+    # inventory, sales, procurement are older and import nothing from reporting — one-way, no cycle.
+    app.include_router(reporting_router)
 
 
 def register_event_handlers() -> None:

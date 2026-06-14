@@ -50,6 +50,12 @@ from app.modules.sales.queries.customers import (
     get_customer_for_partner,
     resolve_price,
 )
+from app.modules.sales.queries.dashboards import (
+    OnTimeDelivery,
+    OpenOrders,
+    on_time_delivery,
+    open_sales_orders,
+)
 from app.modules.sales.queries.orders import (
     get_order_for_delivery,
     get_order_for_invoice,
@@ -61,6 +67,8 @@ from app.modules.sales.queries.orders import (
 
 __all__ = [
     "AtpResult",
+    "OnTimeDelivery",
+    "OpenOrders",
     "atp_check",
     "committed_quantity",
     "customer_credit_limit",
@@ -74,8 +82,10 @@ __all__ = [
     "get_order_for_delivery",
     "get_order_for_invoice",
     "get_sales_order",
+    "on_time_delivery",
     "open_confirmed_order_value",
     "open_demand_item_ids",
+    "open_sales_orders",
     "resolve_price",
     "so_line_open_to_deliver",
     "so_line_open_to_invoice",

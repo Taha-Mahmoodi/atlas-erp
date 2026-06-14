@@ -22,9 +22,10 @@ D-007 filter applies on top of the explicit predicate — ordinary tenant-scoped
 """
 
 import uuid
+from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.procurement.constants import PurchaseOrderStatus
@@ -322,3 +323,46 @@ async def open_po_lines_for_vendor(
         .order_by(PurchaseOrder.created_at, PurchaseOrderLine.line_number)
     )
     return list((await session.execute(stmt)).scalars().all())
+
+
+@dataclass(frozen=True)
+class OpenPurchaseOrders:
+    """The open-purchase-orders dashboard KPI (PLAN 13.1, D-058): the count of live POs committed to
+    a vendor + their summed ``total_amount`` (transaction currency). The reporting ``CountValueKpi``
+    schema maps from this."""
+
+    count: int
+    total: Decimal
+
+
+# OPEN purchase orders = committed to the vendor + still expecting goods: APPROVED (cleared to
+# send), SENT (live commitment), PARTIALLY_RECEIVED. A DRAFT/PENDING_APPROVAL/REJECTED order is not
+# yet a commitment; a fully-RECEIVED/CLOSED/CANCELLED one is off the open worklist (the
+# open_incoming_quantity precedent, D-044).
+_OPEN_PO_STATUSES = (
+    PurchaseOrderStatus.APPROVED.value,
+    PurchaseOrderStatus.SENT.value,
+    PurchaseOrderStatus.PARTIALLY_RECEIVED.value,
+)
+
+
+async def open_purchase_orders(
+    session: AsyncSession, tenant_id: uuid.UUID
+) -> OpenPurchaseOrders:
+    """The tenant's OPEN purchase orders — count + summed value (PLAN 13.1, D-058): POs committed
+    to a vendor and still expecting goods (APPROVED / SENT / PARTIALLY_RECEIVED), the open-PO
+    dashboard card. ONE aggregate over the (tenant, status) index — COUNT(*) + SUM(total_amount);
+    the sum rides MoneyType so the exact-decimal total round-trips on both engines (D-015). Returns
+    zeros for a tenant with no open POs. A SANCTIONED procurement/queries addition the reporting
+    module reads downward (no cycle — procurement never imports reporting)."""
+    stmt = select(
+        func.count(PurchaseOrder.id),
+        func.coalesce(func.sum(PurchaseOrder.total_amount), 0),
+    ).where(
+        PurchaseOrder.tenant_id == tenant_id,
+        PurchaseOrder.status.in_(_OPEN_PO_STATUSES),
+    )
+    count, total = (await session.execute(stmt)).one()
+    return OpenPurchaseOrders(
+        count=int(count), total=Decimal(str(total)) if total is not None else Decimal(0)
+    )
