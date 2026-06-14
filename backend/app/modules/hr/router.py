@@ -27,6 +27,7 @@ from app.modules.hr.constants import HR_DEPARTMENT_MANAGE, HR_DEPARTMENT_READ
 from app.modules.hr.employee_router import employee_router
 from app.modules.hr.leave_router import leave_router
 from app.modules.hr.models import Department
+from app.modules.hr.payroll_router import payroll_router
 from app.modules.hr.position_router import position_router
 from app.modules.hr.schemas import (
     DepartmentCreate,
@@ -134,10 +135,12 @@ async def update_department(
 
 # The position surface (positions + ETag list), the employee surface (masked employee CRUD, the
 # compensation endpoint, the org chart), the leave surface (leave types + balances + accrual run +
-# leave requests with the approval flow, PLAN 10.2) and the timesheet surface (timesheets + nested
-# time entries + the submit/approve/reject/cancel flow + the allocation report, PLAN 10.3) are
-# sibling sub-routers mounted here, so the whole module is ONE surface at /api/v1/hr.
+# leave requests with the approval flow, PLAN 10.2), the timesheet surface (timesheets + nested
+# time entries + the submit/approve/reject/cancel flow + the allocation report, PLAN 10.3) and the
+# payroll surface (gross→net payroll runs + the post-to-finance-journal flow, PLAN 10.4) are sibling
+# sub-routers mounted here, so the whole module is ONE surface at /api/v1/hr.
 router.include_router(position_router)
 router.include_router(employee_router)
 router.include_router(leave_router)
 router.include_router(timesheet_router)
+router.include_router(payroll_router)

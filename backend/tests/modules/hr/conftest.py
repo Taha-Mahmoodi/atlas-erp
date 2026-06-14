@@ -24,8 +24,9 @@ from tests.modules.hr.factories import (
     build_hr_setup,
     create_hr_principal,
 )
+from tests.modules.hr.payroll_factories import PayrollSetup, build_payroll_setup
 
-__all__ = ["HrApi", "HrPrincipal", "HrSetup"]
+__all__ = ["HrApi", "HrPrincipal", "HrSetup", "PayrollApi", "PayrollSetup"]
 
 
 @pytest.fixture(autouse=True)
@@ -42,6 +43,13 @@ def _register_event_handlers(clear_event_subscriptions: Callable[[], None]) -> N
 async def hr_setup(db_session: AsyncSession, tenant_a: uuid.UUID) -> HrSetup:
     """A cost centre + a root department in tenant A, ready to author positions and employees."""
     return await build_hr_setup(db_session, tenant_a)
+
+
+@pytest.fixture
+async def payroll_setup(db_session: AsyncSession, tenant_a: uuid.UUID) -> PayrollSetup:
+    """A tenant wired for the payroll flow (PLAN 10.4): functional USD + open 2026 year + the three
+    payroll posting defaults + a department (with a cost centre) and two salaried employees."""
+    return await build_payroll_setup(db_session, tenant_a)
 
 
 # --- HR-permissioned HTTP clients ---------------------------------------------
@@ -105,6 +113,30 @@ async def hr_api(
     access_token = await _login(client, principal)
     client.headers["Authorization"] = f"Bearer {access_token}"
     yield HrApi(client=client, setup=setup)
+
+
+@dataclass(frozen=True)
+class PayrollApi:
+    """A logged-in full-rights client plus a PayrollSetup seeded in THAT client's tenant — so the
+    payroll endpoints can be driven over the wire against a tenant wired for the gross→net flow."""
+
+    client: AsyncClient
+    setup: PayrollSetup
+
+
+@pytest.fixture
+async def payroll_api(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    hr_user_factory: Callable[..., AsyncIterator[HrPrincipal]],
+) -> AsyncIterator[PayrollApi]:
+    """A bearer-token client holding all hr keys, with the payroll setup (functional currency + open
+    year + posting defaults + a department and two salaried employees) seeded in its tenant."""
+    principal = await hr_user_factory()
+    setup = await build_payroll_setup(db_session, principal.tenant_id)
+    access_token = await _login(client, principal)
+    client.headers["Authorization"] = f"Bearer {access_token}"
+    yield PayrollApi(client=client, setup=setup)
 
 
 @pytest.fixture

@@ -196,9 +196,30 @@ WIP_CLEARING = "wip_clearing"
 # whose finish carries a residual can complete.
 PRODUCTION_VARIANCE = "production_variance"
 
+# --- HR payroll gross→net posting (PLAN 10.4, hr payroll run → consolidated journal, D-055) -----
+# The three per-tenant posting defaults the HR-payroll-posted handler resolves to build the
+# consolidated payroll journal (HR holds no GL account — STRUCTURE §5 — so it carries the three
+# purpose KEYS on the event and finance resolves the accounts):
+# - SALARY_EXPENSE — the EXPENSE account the run DEBITS at total gross (the labour cost), carrying
+#   the per-line cost-centre dimension so CO cost-centre reports include labour.
+# - WAGES_PAYABLE — the LIABILITY account the run CREDITS at total net (net pay owed to employees,
+#   cleared when payroll is actually paid out — payment is out of v1 scope, the clearing account is
+#   the liability that stands open). Named "net pay clearing" in the parity doc; "wages payable" is
+#   the GL term.
+# - PAYROLL_TAX_PAYABLE — the LIABILITY account the run CREDITS at total withheld tax (the flat-rate
+#   withholding remitted to the authority — also out of v1 scope, so it stands as an open
+#   liability).
+# A tenant MUST map all three before a payroll run can post (it has nowhere to route the legs);
+# resolved via finance/queries.salary_expense_account / wages_payable_account /
+# payroll_tax_payable_account, RAISING 422 (finance.posting_default_unmapped) when unmapped.
+SALARY_EXPENSE = "salary_expense"
+WAGES_PAYABLE = "wages_payable"
+PAYROLL_TAX_PAYABLE = "payroll_tax_payable"
+
 # Every known posting-default purpose: FX + the CO/bank/asset clearing accounts + GR-IR + PPV + AP +
 # the AR control + sales-revenue defaults the 7.4 sales billing / credit-note flow resolves + the
-# WIP clearing + production-variance defaults the 8.2 production-order flow resolves.
+# WIP clearing + production-variance defaults the 8.2 production-order flow resolves + the three
+# payroll defaults the 10.4 payroll-run → consolidated-journal flow resolves.
 POSTING_PURPOSES: frozenset[str] = FX_POSTING_PURPOSES | frozenset(
     {
         CO_ALLOCATION_CLEARING,
@@ -211,6 +232,9 @@ POSTING_PURPOSES: frozenset[str] = FX_POSTING_PURPOSES | frozenset(
         SALES_REVENUE,
         WIP_CLEARING,
         PRODUCTION_VARIANCE,
+        SALARY_EXPENSE,
+        WAGES_PAYABLE,
+        PAYROLL_TAX_PAYABLE,
     }
 )
 

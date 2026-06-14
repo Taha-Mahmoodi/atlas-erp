@@ -24,9 +24,13 @@ HR sits ABOVE finance in the dependency order (STRUCTURE §5 / D-052). It:
   probe when set, never a hard FK from a module table to ``core_users``). An EMPLOYEE is a person
   who
   MAY also be a system user; not every employee has a login, and not every user is an employee.
-- Publishes/subscribes to NO cross-module event in v1 (HR masters drive no cross-module effect;
-  payroll in 10.4 will post a journal through the bus). So there is NO events.py / handlers.py here
-  (an empty event file would be a dead file — STRUCTURE §8.3).
+- PUBLISHES one cross-module event (``events.py``, PLAN 10.4 / D-055): ``PayrollPosted``, HR's
+  FIRST cross-module event. A payroll-run POST publishes it and finance's
+  ``create_payroll_journal`` handler posts the consolidated payroll journal in the SAME transaction
+  (the 6.4 invoice-match → AP-bill / 7.4 sales-billing → AR-invoice precedent). HR carries the
+  resolved posting-account ids on the event (read from ``finance/queries``) — it NEVER imports
+  finance/service. There is no ``handlers.py`` here (HR subscribes to nothing; finance is the
+  subscriber).
 
 The DEPARTMENT↔MANAGER circular reference (a department has a manager employee; an employee belongs
 to a department) is resolved by making ``Department.manager_employee_id`` a PLAIN nullable

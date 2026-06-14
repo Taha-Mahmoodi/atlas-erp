@@ -1,11 +1,17 @@
 """Finance's cross-module read interface (STRUCTURE §5).
 
 Finance is the bottom of the dependency order: every other module (inventory, sales, ...)
-may import THIS file to read finance state synchronously, and finance imports no other
+may import THIS package to read finance state synchronously, and finance imports no other
 module's queries. Keep this surface thin and stable — it is a contract. The journal posting
 flow (4.2) calls ``find_period_for_date`` to resolve an entry's period from its posting_date;
 inventory/sales call ``get_period_status`` to refuse stock/sales documents dated into a closed
 period before they reach the GL.
+
+The single ``queries.py`` reached the 400-line cap, so it split along the §8.4 package rule: the
+per-tenant posting-default ACCOUNT resolvers (gr_ir / ppv / ap / ar / sales-revenue / wip /
+production-variance / salary-expense / wages-payable / payroll-tax-payable) live in
+``posting_accounts.py`` and are re-exported here, so every ``from app.modules.finance.queries import
+X`` import keeps working from one surface.
 
 Every function takes an explicit ``tenant_id`` and runs under the caller's tenant context, so
 the D-007 filter applies on top of the explicit predicate — these are ordinary tenant-scoped
@@ -20,13 +26,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.finance.constants import (
-    AP_CONTROL,
-    AR_CONTROL,
-    GR_IR_CLEARING,
-    PRODUCTION_VARIANCE,
-    PURCHASE_PRICE_VARIANCE,
-    SALES_REVENUE,
-    WIP_CLEARING,
     BillStatus,
     InvoiceStatus,
     PeriodStatus,
@@ -44,10 +43,34 @@ from app.modules.finance.models import (
     TaxCode,
     VendorBill,
 )
+from app.modules.finance.queries.posting_accounts import (
+    ap_control_account,
+    ar_control_account,
+    gr_ir_clearing_account,
+    payroll_tax_payable_account,
+    production_variance_account,
+    purchase_price_variance_account,
+    salary_expense_account,
+    sales_revenue_account,
+    wages_payable_account,
+    wip_clearing_account,
+)
 from app.modules.finance.service import fx as _fx
-from app.modules.finance.service import posting_defaults as _posting_defaults
 from app.modules.finance.service import tax as _tax
 from app.modules.finance.service.tax import TaxCalculation
+
+__all__ = [
+    "ap_control_account",
+    "ar_control_account",
+    "gr_ir_clearing_account",
+    "payroll_tax_payable_account",
+    "production_variance_account",
+    "purchase_price_variance_account",
+    "salary_expense_account",
+    "sales_revenue_account",
+    "wages_payable_account",
+    "wip_clearing_account",
+]
 
 
 async def find_period_for_date(
@@ -148,69 +171,6 @@ async def functional_currency_or_none(
     default — D-019). Exposed so other modules (inventory costing, 5.3) can pick the currency the
     valuation journal posts in without raising when no currency is set up."""
     return await _fx.functional_currency_or_none(session, tenant_id)
-
-
-async def gr_ir_clearing_account(
-    session: AsyncSession, tenant_id: uuid.UUID
-) -> uuid.UUID:
-    """The tenant's GR/IR clearing account id (PLAN 6.3, D-041): a goods receipt credits it (the
-    costing valuation-offset override), the matched vendor bill (6.4) debits it. Resolves the
-    ``gr_ir_clearing`` posting default; RAISES 422 (``finance.posting_default_unmapped``) when
-    unmapped. Exposed for procurement (STRUCTURE §5; no finance/service import)."""
-    return await _posting_defaults.get_posting_default(session, tenant_id, GR_IR_CLEARING)
-
-
-async def purchase_price_variance_account(
-    session: AsyncSession, tenant_id: uuid.UUID
-) -> uuid.UUID:
-    """The tenant's PPV account id (PLAN 6.4, D-042): an in-tolerance price difference on a matched
-    bill posts here so GR/IR clears at exactly the PO cost. Resolves the ``purchase_price_variance``
-    posting default; RAISES 422 when unmapped. Exposed for procurement (STRUCTURE §5)."""
-    return await _posting_defaults.get_posting_default(
-        session, tenant_id, PURCHASE_PRICE_VARIANCE
-    )
-
-
-async def ap_control_account(session: AsyncSession, tenant_id: uuid.UUID) -> uuid.UUID:
-    """The tenant's AP control account id (PLAN 6.4, D-042): the match-triggered vendor bill CREDITS
-    it at the invoiced total (partner-keyed by the opaque vendor id, D-029). Resolves the
-    ``ap_control`` posting default; RAISES 422 when unmapped. Exposed for procurement (STRUCTURE
-    §5)."""
-    return await _posting_defaults.get_posting_default(session, tenant_id, AP_CONTROL)
-
-
-async def ar_control_account(session: AsyncSession, tenant_id: uuid.UUID) -> uuid.UUID:
-    """The tenant's AR control account id (PLAN 7.4, D-046): the billing-triggered customer invoice
-    DEBITS it at the invoiced total (partner-keyed by the opaque customer id, D-029), a return's
-    credit note CREDITS it. Resolves the ``ar_control`` posting default; RAISES 422 when unmapped.
-    Exposed for SALES (STRUCTURE §5; the AP_CONTROL mirror)."""
-    return await _posting_defaults.get_posting_default(session, tenant_id, AR_CONTROL)
-
-
-async def sales_revenue_account(session: AsyncSession, tenant_id: uuid.UUID) -> uuid.UUID:
-    """The tenant's sales-revenue account id (PLAN 7.4, D-046): each billing-triggered invoice line
-    CREDITS it at its net, a return's credit note DEBITS it. Resolves the ``sales_revenue`` posting
-    default; RAISES 422 when unmapped. Exposed for SALES (STRUCTURE §5; v1 single revenue
-    account)."""
-    return await _posting_defaults.get_posting_default(session, tenant_id, SALES_REVENUE)
-
-
-async def wip_clearing_account(session: AsyncSession, tenant_id: uuid.UUID) -> uuid.UUID:
-    """The tenant's WIP clearing account id (PLAN 8.2, D-048): a component ISSUE debits it (Dr WIP /
-    Cr Inventory, the valuation-offset OVERRIDE), the finished RECEIPT credits it, WIP nets to ZERO.
-    Resolves the ``wip_clearing`` posting default; RAISES 422 when unmapped (for MANUFACTURING,
-    STRUCTURE §5; the GR/IR mirror)."""
-    return await _posting_defaults.get_posting_default(session, tenant_id, WIP_CLEARING)
-
-
-async def production_variance_account(
-    session: AsyncSession, tenant_id: uuid.UUID
-) -> uuid.UUID:
-    """The tenant's production-variance account id (PLAN 8.2, D-048): a finished order's residual
-    WIP (over/under-absorption) flushes here so WIP nets to ZERO. Resolves the
-    ``production_variance`` posting default; RAISES 422 when unmapped. Exposed for manufacturing
-    (STRUCTURE §5; PPV mirror)."""
-    return await _posting_defaults.get_posting_default(session, tenant_id, PRODUCTION_VARIANCE)
 
 
 async def get_tax_code(

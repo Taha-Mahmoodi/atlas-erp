@@ -97,6 +97,27 @@ class TimesheetStatus(StrEnum):
     REJECTED = "REJECTED"
 
 
+class PayrollRunStatus(StrEnum):
+    """Lifecycle of a PAYROLL RUN (PLAN 10.4, D-055). A run computes gross→net per employee in
+    DRAFT, then POSTS one consolidated finance journal through the event bus (the value-bearing
+    transition). The simplistic flat-tax model (see ``DEFAULT_PAYROLL_TAX_RATE_PERCENT``) is
+    explicitly NOT jurisdiction-compliant (s4hana-parity §HCM "Payroll": no brackets, no social
+    security, no deductions beyond a single flat withholding rate).
+
+    - **DRAFT** — created, lines computed (gross/tax/net per employee), no GL effect yet. The
+      default at creation; the ONLY state a run can be cancelled from.
+    - **POSTED** — the consolidated payroll journal has been posted (Dr salary-expense by cost
+      centre / Cr payroll-tax-payable / Cr wages-payable). ``journal_entry_id`` links the journal,
+      ``posted_at`` is set. Terminal — a posted run is corrected only by reversing its journal in
+      finance (the D-017 reversal-only correction principle), never re-posted.
+    - **CANCELLED** — a DRAFT run withdrawn before posting. Terminal; no GL effect.
+    """
+
+    DRAFT = "DRAFT"
+    POSTED = "POSTED"
+    CANCELLED = "CANCELLED"
+
+
 class LeaveUnit(StrEnum):
     """The unit a leave type / request tracks in (PLAN 10.2, D-053). v1 tracks leave in **DAYS**
     only. Half-day granularity is expressible WITHOUT a new unit — ``days`` is a ``QuantityType``
@@ -161,6 +182,20 @@ HR_TIMESHEET_READ = "hr.timesheet.read"
 HR_TIMESHEET_MANAGE = "hr.timesheet.manage"
 HR_TIMESHEET_APPROVE = "hr.timesheet.approve"
 
+# Payroll (PLAN 10.4, D-055). A payroll RUN computes gross→net per employee and posts a consolidated
+# finance journal. ``.read`` reads runs + their lines; ``.manage`` creates a DRAFT run + cancels it
+# (the filing/authoring authority); ``.post`` is the DISTINCT authority that posts the run's journal
+# (the value-bearing transition that hits the GL — the leave/timesheet ``.approve`` split precedent,
+# D-053/D-054). A ``.manage`` holder can compute a run but is 403 on post. ``.read`` exposes
+# compensation-derived figures (gross/tax/net), so it is granted alongside (not instead of) the
+# sensitive ``read_compensation`` key in practice — but the payroll figures are aggregate run
+# output, not the per-employee compensation record the Masked serializer guards, so a separate
+# run-read key keeps payroll-administrator and compensation-viewer authorities independently
+# grantable.
+HR_PAYROLL_READ = "hr.payroll.read"
+HR_PAYROLL_MANAGE = "hr.payroll.manage"
+HR_PAYROLL_POST = "hr.payroll.post"
+
 register_permissions(
     HR_EMPLOYEE_READ,
     HR_EMPLOYEE_MANAGE,
@@ -177,6 +212,9 @@ register_permissions(
     HR_TIMESHEET_READ,
     HR_TIMESHEET_MANAGE,
     HR_TIMESHEET_APPROVE,
+    HR_PAYROLL_READ,
+    HR_PAYROLL_MANAGE,
+    HR_PAYROLL_POST,
     descriptions={
         HR_EMPLOYEE_READ: "Read employees (compensation/PII masked)",
         HR_EMPLOYEE_MANAGE: "Create and edit employees (non-compensation fields)",
@@ -193,6 +231,9 @@ register_permissions(
         HR_TIMESHEET_READ: "Read timesheets, time entries and the allocation report",
         HR_TIMESHEET_MANAGE: "Create timesheets, record time entries, submit and cancel",
         HR_TIMESHEET_APPROVE: "Approve or reject submitted timesheets",
+        HR_PAYROLL_READ: "Read payroll runs and their lines",
+        HR_PAYROLL_MANAGE: "Create and cancel draft payroll runs",
+        HR_PAYROLL_POST: "Post a payroll run's consolidated finance journal",
     },
 )
 
@@ -218,6 +259,42 @@ TIMESHEET_NUMBER_PADDING = 5
 LEAVE_REQUEST_SEQUENCE_NAME = "hr.leave_request"
 LEAVE_REQUEST_NUMBER_PREFIX = "LV"
 LEAVE_REQUEST_NUMBER_PADDING = 5
+
+# The payroll-run document (PLAN 10.4, D-055). A payroll run IS a posted document in the D-012 sense
+# (unlike the leave/timesheet records): it registers in core_documents at creation, claims a gapless
+# ``PAY-`` number AT POSTING (the journal-entry / production-order claim-at-permanence precedent,
+# D-012), and links payroll-run → 'posts' → finance-journal in the docflow chain. So the run mixes
+# in DocumentMixin; the gapless ``run_number`` lives in a NULLABLE column (NULL until posted, the
+# journal-entry entry_number precedent). ``year_reset`` keeps the counter per calendar year
+# (PAY-2026-00001 style).
+PAYROLL_RUN_DOC_TYPE = "hr.payroll_run"
+PAYROLL_RUN_SEQUENCE_NAME = "hr.payroll_run"
+PAYROLL_RUN_NUMBER_PREFIX = "PAY"
+PAYROLL_RUN_NUMBER_PADDING = 5
+
+# The docflow link joining a posted payroll run to the consolidated finance journal it produced
+# (D-012 'posts' edge — the COGS/AP/AR posting convention). Finance's handler writes this edge after
+# posting the journal, so the run's document chain shows the GL posting.
+PAYROLL_RUN_POSTS_LINK = "posts"
+
+# The event HR publishes when a payroll run posts (PLAN 10.4, D-055). Finance's
+# ``create_payroll_journal`` handler subscribes and posts the consolidated journal in the SAME
+# transaction (D-011) — HR's FIRST cross-module event (it never imports finance/service; STRUCTURE
+# §5).
+PAYROLL_POSTED_EVENT_KEY = "hr.payroll.posted"
+
+# THE FLAT-TAX MODEL (PLAN 10.4, D-055) — SIMPLISTIC AND NOT JURISDICTION-COMPLIANT. v1 payroll
+# computes withholding as ``gross × tax_rate_percent / 100`` and ``net = gross − withholding``.
+# There are NO tax brackets, NO social-security / pension / Medicare contributions, NO employer-side
+# taxes, and NO deductions beyond the single flat withholding rate. The rate is supplied PER RUN (a
+# run carries its own ``tax_rate_percent``); when a run omits it, this per-tenant default applies.
+# The s4hana-parity §HCM "Payroll (localized gross-to-net with retro calculation)" entry explicitly
+# flags this reduced scope — a real engine needs country legal rules, retro accounting, payment
+# files and
+# statutory reporting, all deferred (see docs/modules/hr.md). ``base_salary`` is taken AS the PERIOD
+# gross with NO proration (the simplest assumption: base_salary IS the per-period — e.g. monthly —
+# gross; a hire/termination mid-period is not prorated in v1).
+DEFAULT_PAYROLL_TAX_RATE_PERCENT = "20"
 
 # The default currency code stamped on a new employee's compensation when none is supplied. A plain
 # ISO 4217 alpha-3 (not validated against finance currencies in v1 — compensation currency is
