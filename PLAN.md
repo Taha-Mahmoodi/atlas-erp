@@ -102,7 +102,7 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 
 ## Phase 11 — Projects
 
-- [ ] 11.1 Projects with WBS elements as costing objects; time + purchases postable to WBS; project cost report
+- [x] 11.1 Projects with WBS elements as costing objects; time + purchases postable to WBS; project cost report
 
 ## Phase 12 — CRM
 

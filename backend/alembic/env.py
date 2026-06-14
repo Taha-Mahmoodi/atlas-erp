@@ -18,6 +18,7 @@ import app.modules.inventory.models  # noqa: F401
 import app.modules.maintenance.models  # noqa: F401
 import app.modules.manufacturing.models  # noqa: F401
 import app.modules.procurement.models  # noqa: F401
+import app.modules.projects.models  # noqa: F401
 import app.modules.quality.models  # noqa: F401
 import app.modules.sales.models  # noqa: F401
 from app.core.db import enable_sqlite_foreign_keys

@@ -317,6 +317,54 @@ async def cost_center_balance(
     return Decimal(str(result)) if result is not None else Decimal(0)
 
 
+async def costs_by_project_dimension(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    project_dimension_ids: list[uuid.UUID],
+    *,
+    date_to: date | None = None,
+) -> dict[uuid.UUID, Decimal]:
+    """Net functional cost per project dimension over the POSTED journal (PLAN 11.1, D-056).
+
+    The journal projection the PROJECT COST REPORT reads for actuals: SUM over POSTED journal lines
+    whose ``project_id`` dimension (the OPAQUE WBS-element tag a posting carries when work/purchases
+    are "posted to a WBS", D-017/D-029) is one of ``project_dimension_ids``, of (functional debit
+    minus functional credit), grouped by that dimension. ONE set-based aggregate over all the ids
+    (PERFORMANCE §6: no per-WBS N+1) — the cost report passes a project's whole WBS-id list at once.
+    CO is a projection of the journal (D-021), so the cost is derived from journal lines, never a
+    stored total; MoneyType type propagation keeps the SUM exact on both engines (D-015).
+
+    Returns a dict keyed only by the dimension ids that actually have postings; a WBS id with no
+    postings is ABSENT (the caller defaults it to zero). An empty ``project_dimension_ids`` returns
+    ``{}`` with no query. ``date_to`` bounds the actuals cumulatively to that posting date (the cost
+    report's optional as-of); omit it for all postings.
+
+    This is a SANCTIONED finance/queries addition (STRUCTURE §5 / D-056): finance owns the journal
+    projection, and projects reads it DOWNWARD by the opaque dimension — finance never imports
+    projects, so finance stays at the bottom of the dependency order (D-029)."""
+    if not project_dimension_ids:
+        return {}
+    debit = func.coalesce(func.sum(JournalLine.functional_debit_amount), 0)
+    credit = func.coalesce(func.sum(JournalLine.functional_credit_amount), 0)
+    stmt = (
+        select(JournalLine.project_id, (debit - credit))
+        .where(
+            JournalLine.tenant_id == tenant_id,
+            JournalLine.project_id.in_(project_dimension_ids),
+            JournalLine.is_posted.is_(True),
+        )
+        .group_by(JournalLine.project_id)
+    )
+    if date_to is not None:
+        stmt = stmt.where(JournalLine.posting_date <= date_to)
+    rows = (await session.execute(stmt)).all()
+    return {
+        dimension_id: Decimal(str(net))
+        for dimension_id, net in rows
+        if dimension_id is not None
+    }
+
+
 # --- Statements: the base aggregate, exposed for reporting reuse (PLAN 4.8, D-021) -----------
 
 

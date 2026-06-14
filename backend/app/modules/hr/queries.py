@@ -242,6 +242,43 @@ async def approved_hours_for_project(
     return (await session.execute(stmt)).scalar_one()
 
 
+async def approved_hours_by_project(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    project_ids: list[uuid.UUID],
+    *,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> dict[uuid.UUID, Decimal]:
+    """Total APPROVED time hours grouped by project dimension, for the given ``project_ids``
+    (D-054).
+
+    The SET-BASED companion to ``approved_hours_for_project``: Phase 11's project cost report passes
+    a project's whole WBS-id list and gets every element's approved hours in ONE query (PERFORMANCE
+    §6: no per-WBS N+1). A single SUM over time entries of APPROVED timesheets whose ``project_id``
+    is in the set, grouped by that id, optionally bounded by the entry-date range. Returns a dict
+    keyed only by the ids that have approved hours; a WBS id with none is ABSENT (the caller
+    defaults it to zero). An empty ``project_ids`` returns ``{}`` with no query."""
+    if not project_ids:
+        return {}
+    stmt = (
+        select(TimeEntry.project_id, func.coalesce(func.sum(TimeEntry.hours), 0))
+        .join(Timesheet, Timesheet.id == TimeEntry.timesheet_id)
+        .where(
+            TimeEntry.tenant_id == tenant_id,
+            TimeEntry.project_id.in_(project_ids),
+            Timesheet.status == TimesheetStatus.APPROVED.value,
+        )
+        .group_by(TimeEntry.project_id)
+    )
+    if date_from is not None:
+        stmt = stmt.where(TimeEntry.entry_date >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(TimeEntry.entry_date <= date_to)
+    rows = (await session.execute(stmt)).all()
+    return {pid: Decimal(str(hours)) for pid, hours in rows if pid is not None}
+
+
 # --- Payroll (PLAN 10.4, D-055) -----------------------------------------------
 
 
