@@ -15,25 +15,13 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.audit import actor_user_id_ctx, request_id_ctx, request_ip_ctx
+from app.core.bootstrap import mount_routers, register_event_handlers
 from app.core.config import Settings, get_settings
-from app.core.docflow_router import router as docflow_router
 from app.core.exceptions import AtlasError, translate_db_guard_error
 from app.core.idempotency import REPLAYED_HEADER, IdempotencyReplay
-from app.core.jobs_router import router as jobs_router
 from app.core.rbac import current_permissions
 from app.core.schemas import ErrorBody, ErrorEnvelope
-from app.core.security_router import router as security_router
 from app.core.tenancy import current_tenant_id
-from app.modules.crm.router import router as crm_router
-from app.modules.finance.router import router as finance_router
-from app.modules.hr.router import router as hr_router
-from app.modules.inventory.router import router as inventory_router
-from app.modules.maintenance.router import router as maintenance_router
-from app.modules.manufacturing.router import router as manufacturing_router
-from app.modules.procurement.router import router as procurement_router
-from app.modules.projects.router import router as projects_router
-from app.modules.quality.router import router as quality_router
-from app.modules.sales.router import router as sales_router
 
 logger = logging.getLogger("atlas")
 
@@ -227,229 +215,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def health() -> dict[str, str]:
         return {"status": "ok", "env": settings.env}
 
-    # Core platform auth endpoints (D-008): login/refresh/logout/me at /api/v1/auth.
-    app.include_router(security_router)
-    # Core platform document-flow read endpoint (D-012): GET /api/v1/documents/{id}/chain.
-    app.include_router(docflow_router)
-    # Core platform background-job polling (PLAN 4P.5/D-032): GET /api/v1/jobs[/{id}].
-    app.include_router(jobs_router)
-    # Finance module (PLAN 4): chart of accounts + fiscal years/periods at /api/v1/finance.
-    # First business module mounted; the fixed import order here is also the D-011 handler
-    # registration order (finance, then inventory, ...) once modules publish/subscribe events.
-    app.include_router(finance_router)
-    # Inventory module (PLAN 5): item masters at /api/v1/inventory. Mounted after finance, the
-    # D-011 handler-registration order; inventory reads finance/queries downward (STRUCTURE §5).
-    app.include_router(inventory_router)
-    # Procurement module (PLAN 6): vendor master at /api/v1/procurement. Mounted after inventory,
-    # the D-011 handler-registration order; procurement OWNS the vendor entity and reads
-    # finance/queries + inventory/queries downward (STRUCTURE §5 / D-029).
-    app.include_router(procurement_router)
-    # Sales module (PLAN 7): customer master + condition-style pricing at /api/v1/sales. Mounted
-    # after procurement, the D-011 handler-registration order; sales OWNS the customer entity and
-    # reads finance/queries + inventory/queries downward (STRUCTURE §5 / D-029). 7.1 publishes no
-    # cross-module events (masters + pricing drive no effects; orders in 7.2 will).
-    app.include_router(sales_router)
-    # Manufacturing module (PLAN 8): PP master data (work centres, multi-level versioned BOMs,
-    # routings) at /api/v1/manufacturing. Mounted after sales, the D-011 handler-registration
-    # order; manufacturing reads finance/queries + inventory/queries downward (STRUCTURE §5 /
-    # D-029). 8.1 publishes no cross-module events (masters drive no effects; production orders in
-    # 8.2 will).
-    app.include_router(manufacturing_router)
-    # Quality module (PLAN 9): inspection lots at /api/v1/quality. Mounted after manufacturing, the
-    # D-011 handler-registration order; quality SUBSCRIBES to procurement's GoodsReceiptPosted to
-    # create inspection lots and reads inventory/queries downward (STRUCTURE §5 / D-029 / D-050). A
-    # reject disposition publishes InspectionDispositioned → inventory moves the rejected stock.
-    app.include_router(quality_router)
-    # Maintenance module (PLAN 9.2): equipment + corrective/preventive orders + interval plans at
-    # /api/v1/maintenance. Mounted after quality, the D-011 module import order; maintenance reads
-    # finance/queries downward for an equipment's optional cost centre (STRUCTURE §5 / D-029 /
-    # D-051). It publishes/subscribes to NO cross-module event in v1 — a completed order records its
-    # cost on the order row (record-only, no GL posting, D-051).
-    app.include_router(maintenance_router)
-    # HR module (PLAN 10.1): employees (masked compensation/PII), departments, positions, org chart
-    # at /api/v1/hr. Mounted after maintenance, the D-011 module import order; hr reads
-    # finance/queries downward for a department's optional cost centre and probes core_users for an
-    # employee's optional login (STRUCTURE §5 / D-029 / D-052). It is the FIRST real use of the
-    # D-009
-    # field-masking serializer (compensation/PII behind hr.employee.read_compensation). PLAN 10.4
-    # adds payroll: HR PUBLISHES its first cross-module event (PayrollPosted) and finance posts the
-    # consolidated payroll journal through the bus (D-055).
-    app.include_router(hr_router)
-    # Projects module (PLAN 11.1): projects + a WBS-element tree as COSTING OBJECTS + the project
-    # cost report at /api/v1/projects. Mounted after hr, the D-011 module import order; projects is
-    # the TOP of the dependency order — it reads finance/queries (cost-centre existence +
-    # costs_by_project_dimension, the journal projection of actuals by the opaque WBS dimension),
-    # hr/queries (approved hours by WBS), and sales/queries (customer existence) DOWNWARD (STRUCTURE
-    # §5 / D-029 / D-056). It publishes/subscribes to NO cross-module event — projects is masters +
-    # a READ report; "posting time/purchases to a WBS" means a journal line / timesheet tags the WBS
-    # id as its opaque project dimension, projects posts nothing itself (D-056).
-    app.include_router(projects_router)
-    # CRM module (PLAN 12.1): leads → opportunities kanban + activities + convert-to-customer+quote
-    # at
-    # /api/v1/crm. Mounted after projects, the D-011 module import order; CRM is the TOP of the
-    # dependency order — it reads finance/queries (currency existence), hr/queries (owner-employee
-    # existence), inventory/queries (opportunity-line item existence + base UoM), and sales/queries
-    # (existing-customer existence) DOWNWARD (STRUCTURE §5 / D-029 / D-057). The convert action
-    # PUBLISHES OpportunityConverted and SALES' handler creates the customer + quote (CRM never
-    # imports
-    # sales/service); SALES imports crm/events declaratively (events-only, no cycle, D-057).
-    app.include_router(crm_router)
-
-    # Cross-module event handlers (D-011): registered here, at the app factory, so registration
-    # order
-    # is the deterministic module import order. Importing the module runs its ``@on`` subscriptions.
-    # finance/handlers posts the COGS/inventory journal for an inventory ``stock.valued`` event in
-    # the
-    # SAME transaction as the move (PLAN 5.3, D-020) — the first real cross-module handler.
+    # Router mounting + cross-module event-handler registration (D-011) live in core/bootstrap.py
+    # (the two wiring blocks that grow with every module). mount_routers includes every module
+    # router in the fixed import order; register_event_handlers subscribes the cross-module handlers
+    # in that same deterministic order — importing each module runs its ``@on`` subscriptions.
+    mount_routers(app)
     register_event_handlers()
 
     return app
-
-
-def register_event_handlers() -> None:
-    """Register the cross-module domain-event handlers (D-011), in the deterministic module order.
-
-    Called from ``create_app`` (the registration seam) and available to seed/CLI flows that build
-    the
-    bus without the HTTP app. IDEMPOTENT and re-runnable: each handler is (re)subscribed only if not
-    already present for its key, so building several apps in one process — or re-registering after
-    the
-    test harness's ``clear_subscriptions`` reset (D-025) — yields exactly one subscription per
-    handler, never a duplicate that would double-post."""
-    from app.core.events import handlers_for, subscribe
-    from app.modules.crm.events import OpportunityConverted
-    from app.modules.finance.handlers import (
-        create_bill_for_match,
-        create_credit_note_for_return,
-        create_invoice_for_billing,
-        create_payroll_journal,
-        post_production_variance,
-        post_stock_valuation_journal,
-    )
-    from app.modules.hr.events import PayrollPosted
-    from app.modules.inventory.events import StockValued
-    from app.modules.inventory.handlers import (
-        disposition_rejected_stock,
-        issue_delivery_moves,
-        issue_production_components,
-        receive_finished_order_move,
-        receive_goods_receipt_moves,
-        receive_return_moves,
-    )
-    from app.modules.manufacturing.events import (
-        ComponentsIssued,
-        OrderFinished,
-        PlannedBuyConverted,
-    )
-    from app.modules.procurement.events import GoodsReceiptPosted, InvoiceMatched
-    from app.modules.procurement.handlers import create_requisition_for_planned_buy
-    from app.modules.quality.events import InspectionDispositioned
-    from app.modules.quality.handlers import create_inspection_lots_for_receipt
-    from app.modules.sales.events import (
-        BillingInvoiced,
-        DeliveryShipped,
-        ReturnCredited,
-        ReturnReceived,
-    )
-    from app.modules.sales.handlers import create_customer_and_quote_for_conversion
-
-    if post_stock_valuation_journal not in handlers_for(StockValued.key):
-        subscribe(StockValued.key, post_stock_valuation_journal)
-    # Procurement goods-receipt → inventory stock-move bridge (PLAN 6.3, D-041): inventory's
-    # handler creates the RECEIPT moves (Cr GR-IR) when a GR posts, which in turn publish
-    # StockValued for the finance handler above — a two-hop same-transaction chain
-    # (procurement → inventory → finance).
-    if receive_goods_receipt_moves not in handlers_for(GoodsReceiptPosted.key):
-        subscribe(GoodsReceiptPosted.key, receive_goods_receipt_moves)
-    # Sales delivery → inventory stock-move bridge (PLAN 7.3, D-045): the OUTBOUND twin of the GR
-    # bridge — inventory's handler creates the ISSUE moves (Dr COGS / Cr Inventory, COGS the default
-    # issue offset — no override) when a delivery posts, which in turn publish StockValued for the
-    # finance handler above — the same two-hop same-transaction chain (sales → inventory → finance).
-    if issue_delivery_moves not in handlers_for(DeliveryShipped.key):
-        subscribe(DeliveryShipped.key, issue_delivery_moves)
-    # Procurement invoice-match → finance AP-bill bridge (PLAN 6.4, D-042): finance's handler
-    # creates + posts the matched vendor bill (Dr GR/IR + PPV / Cr AP) when a match posts, clearing
-    # the GR/IR account the goods receipt credited — closing the procure-to-pay loop. Procurement
-    # publishes; finance handles its own bill posting (STRUCTURE §5).
-    if create_bill_for_match not in handlers_for(InvoiceMatched.key):
-        subscribe(InvoiceMatched.key, create_bill_for_match)
-    # Sales billing → finance AR-invoice bridge (PLAN 7.4, D-046): the MIRROR of the invoice-match →
-    # AP-bill bridge, sign-flipped — finance's handler creates + posts the AR customer invoice (Dr
-    # AR
-    # control / Cr revenue + tax) when a billing posts. Sales publishes; finance handles its own
-    # invoice posting (STRUCTURE §5).
-    if create_invoice_for_billing not in handlers_for(BillingInvoiced.key):
-        subscribe(BillingInvoiced.key, create_invoice_for_billing)
-    # Sales return → inventory RECEIPT bridge (PLAN 7.4, D-046): inventory's handler receives the
-    # goods back (Dr Inventory / Cr COGS via the COGS-offset override — reversing the delivery's
-    # issue) when a return posts, which publishes StockValued for the finance COGS handler above.
-    if receive_return_moves not in handlers_for(ReturnReceived.key):
-        subscribe(ReturnReceived.key, receive_return_moves)
-    # Sales return → finance AR-credit-note bridge (PLAN 7.4, D-046): finance's handler creates +
-    # posts the AR credit note (Dr revenue / Cr AR + reverse tax — reversing the billing) when a
-    # return posts. The second leg of an atomic return post (the first is the stock receipt above).
-    if create_credit_note_for_return not in handlers_for(ReturnCredited.key):
-        subscribe(ReturnCredited.key, create_credit_note_for_return)
-    # Manufacturing production-order → inventory stock-move bridges (PLAN 8.2, D-048), the
-    # manufacturing↔inventory↔finance seam. A component ISSUE posts Dr WIP / Cr Inventory (the
-    # valuation-offset OVERRIDE to the WIP account — the 6.3 GR/IR-override pattern applied to an
-    # ISSUE) and a finished RECEIPT posts Dr Inventory / Cr WIP, both via inventory's handlers
-    # creating the moves which in turn publish StockValued for the finance handler above — the same
-    # two-hop same-transaction chain (manufacturing → inventory → finance). WIP nets to zero per
-    # fully-issued + finished order; the variance flush is posted by manufacturing's finish flow.
-    if issue_production_components not in handlers_for(ComponentsIssued.key):
-        subscribe(ComponentsIssued.key, issue_production_components)
-    # OrderFinished has TWO same-transaction subscribers: inventory's handler creates the finished
-    # RECEIPT move (Dr Inventory / Cr WIP) and finance's handler posts the residual WIP variance (so
-    # WIP nets to zero). Both drain in the finish's uow; either failure rolls the whole finish back.
-    if receive_finished_order_move not in handlers_for(OrderFinished.key):
-        subscribe(OrderFinished.key, receive_finished_order_move)
-    if post_production_variance not in handlers_for(OrderFinished.key):
-        subscribe(OrderFinished.key, post_production_variance)
-    # Manufacturing planned-BUY → procurement DRAFT-requisition bridge (PLAN 8.3, D-049): a planned
-    # BUY order's conversion publishes PlannedBuyConverted and procurement's handler creates the
-    # requisition in the SAME transaction, linking the MRP run document → 'planned_to' → requisition
-    # (the §5-clean planned-BUY → requisition mechanism — manufacturing never imports procurement
-    # service, the billing → AR-invoice precedent).
-    if create_requisition_for_planned_buy not in handlers_for(PlannedBuyConverted.key):
-        subscribe(PlannedBuyConverted.key, create_requisition_for_planned_buy)
-    # GoodsReceiptPosted has TWO same-transaction subscribers (PLAN 9.1, D-050): inventory's
-    # receive_goods_receipt_moves (registered above) creates the RECEIPT moves, then quality's
-    # create_inspection_lots_for_receipt creates an OPEN inspection lot per requires_inspection
-    # line.
-    # Quality is subscribed AFTER inventory (registration order = dispatch order, D-011) so the
-    # lot/serial master instance the receipt creates already exists when quality resolves the GR
-    # line's code to a traceability id.
-    if create_inspection_lots_for_receipt not in handlers_for(GoodsReceiptPosted.key):
-        subscribe(GoodsReceiptPosted.key, create_inspection_lots_for_receipt)
-    # Quality reject-disposition → inventory stock-move bridge (PLAN 9.1, D-050): a REJECT usage
-    # decision publishes InspectionDispositioned and inventory's handler moves the rejected stock
-    # (SCRAP = an ADJUSTMENT-out write-off → Dr inventory-adjustment / Cr Inventory; BLOCK = a
-    # value-neutral TRANSFER to the blocked bin) in the SAME transaction. Quality publishes;
-    # inventory handles its own move (STRUCTURE §5). An ACCEPT publishes nothing — accepted stock is
-    # already received and usable.
-    if disposition_rejected_stock not in handlers_for(InspectionDispositioned.key):
-        subscribe(InspectionDispositioned.key, disposition_rejected_stock)
-    # HR payroll → finance consolidated-journal bridge (PLAN 10.4, D-055), HR's FIRST cross-module
-    # event: a payroll-run post publishes PayrollPosted and finance's create_payroll_journal posts
-    # the consolidated journal (Dr salary-expense by cost centre / Cr payroll-tax-payable / Cr
-    # wages-payable — balanced because gross = tax + net) in the SAME transaction, linking the run
-    # document → 'posts' → journal. HR publishes; finance handles its own journal posting (HR never
-    # imports finance/service — STRUCTURE §5), the match → AP-bill / billing → AR-invoice precedent.
-    if create_payroll_journal not in handlers_for(PayrollPosted.key):
-        subscribe(PayrollPosted.key, create_payroll_journal)
-    # CRM opportunity-convert → sales customer + quote bridge (PLAN 12.1, D-057), CRM's FIRST (and
-    # only) cross-module event: a convert publishes OpportunityConverted and SALES'
-    # create_customer_and_quote_for_conversion creates the customer (if the opportunity is not
-    # already
-    # linked to one) + the quote through SALES' OWN service in the SAME transaction, linking the
-    # opportunity document → 'converted_to_quote' → quote document. CRM publishes; SALES handles its
-    # own customer/quote creation (CRM never imports sales/service — STRUCTURE §5), the billing →
-    # AR-invoice / planned-buy → requisition precedent with the roles flipped. SALES imports
-    # crm/events
-    # declaratively (events-only) — one-directional, no cycle (D-057).
-    if create_customer_and_quote_for_conversion not in handlers_for(OpportunityConverted.key):
-        subscribe(OpportunityConverted.key, create_customer_and_quote_for_conversion)
 
 
 app = create_app()
