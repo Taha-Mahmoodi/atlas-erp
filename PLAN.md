@@ -106,7 +106,7 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 
 ## Phase 12 — CRM
 
-- [ ] 12.1 Leads → opportunities kanban, activities, convert to customer + quote
+- [x] 12.1 Leads → opportunities kanban, activities, convert to customer + quote (Phase 12 / CRM COMPLETE)
 
 ## Phase 13 — Reporting & analytics
 

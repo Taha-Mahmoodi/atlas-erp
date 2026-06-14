@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 # Module model imports keep Base.metadata complete for autogenerate (every
 # autogen revision is still hand-reviewed per D-022).
 import app.modules.admin.models  # noqa: F401
+import app.modules.crm.models  # noqa: F401
 import app.modules.finance.models  # noqa: F401
 import app.modules.hr.models  # noqa: F401
 import app.modules.inventory.models  # noqa: F401
