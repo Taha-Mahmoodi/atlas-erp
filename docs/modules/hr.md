@@ -19,26 +19,32 @@ operator/contributor map.
 
 ## Status
 
-**PLAN 10.1 is COMPLETE** — this opens Phase 10 (Human Resources). Department/position/employee CRUD,
-the masked compensation/PII read with a dedicated compensation-write endpoint, the department
-hierarchy + employee org-chart reporting line with cycle guards, and an org-chart endpoint are all
-live.
+**PLAN 10.1 and 10.2 are COMPLETE** — this opens Phase 10 (Human Resources). 10.1: department/
+position/employee CRUD, the masked compensation/PII read with a dedicated compensation-write
+endpoint, the department hierarchy + employee org-chart reporting line with cycle guards, and an
+org-chart endpoint. 10.2: leave types with periodic accrual, a per-employee-per-type running balance,
+and the leave-request approval flow (see [Leave](#leave-plan-102--d-053) below).
 
 | File | Concern | Key decision |
 |---|---|---|
-| `constants.py` | `EmploymentStatus`, `EmploymentType` enums + permission keys (registered at import), incl. the sensitive `hr.employee.read_compensation` | D-052, D-009 |
-| `models.py` | `Department` (`hr_departments`), `Position` (`hr_positions`), `Employee` (`hr_employees`) | D-029, D-015, D-009 |
-| `schemas.py` | Create/Update/Read/Filter for the three entities + `EmployeeCompensationUpdate` + the org-chart response; **`EmployeeRead` carries the `Masked(...)` fields** | D-009, D-015 |
+| `constants.py` | `EmploymentStatus`, `EmploymentType`, `LeaveRequestStatus`, `LeaveUnit`, `AccrualFrequency` enums + permission keys (registered at import), incl. the sensitive `hr.employee.read_compensation` + the `LV-` sequence | D-052, D-053, D-009 |
+| `models/org.py` | `Department` (`hr_departments`), `Position` (`hr_positions`), `Employee` (`hr_employees`) | D-029, D-015, D-009 |
+| `models/leave.py` | `LeaveType` (`hr_leave_types`), `LeaveBalance` (`hr_leave_balances`), `LeaveRequest` (`hr_leave_requests`) | D-053, D-015 |
+| `schemas.py` | Create/Update/Read/Filter for all six entities + `EmployeeCompensationUpdate` + the org-chart response + the leave action payloads; **`EmployeeRead` carries the `Masked(...)` fields** | D-009, D-015 |
 | `service/departments.py` | department CRUD + cost-centre/manager validation + the **hierarchy cycle guard** | D-029, D-052 |
 | `service/positions.py` | position CRUD + department validation | D-052 |
 | `service/employees.py` | employee CRUD + reference validation + the **manager-cycle guard** + `set_compensation` (the dedicated masked-write path) | D-009, D-052 |
 | `service/org_chart.py` | the bounded recursive org-chart build | D-052 |
-| `queries.py` | `get_employee`/`employee_exists`, `get_department`/`department_employees`, `employee_manager_chain`, `org_chart_for` — the only file a later module imports | STRUCTURE §5 |
-| `router.py` + `position_router.py` + `employee_router.py` | REST under `/api/v1/hr` (one surface; sub-routers mounted in `router.py`) | D-009, D-014, D-035 |
+| `service/leave_config.py` | leave-type CRUD + balance reads | D-053 |
+| `service/leave.py` | the leave-request lifecycle + the **approve-decrements / cancel-restores** balance logic | D-053, D-040 |
+| `service/leave_accrual.py` | the **period-keyed idempotent accrual run** | D-053 |
+| `queries.py` | `get_employee`/`employee_exists`, `get_department`/`department_employees`, `employee_manager_chain`, `org_chart_for`, `get_leave_request`/`leave_requests_for_employee`/`get_leave_balance`/`leave_balances_for_employee` — the only file a later module imports | STRUCTURE §5 |
+| `router.py` + `position_router.py` + `employee_router.py` + `leave_router.py` | REST under `/api/v1/hr` (one surface; sub-routers mounted in `router.py`) | D-009, D-014, D-035 |
 
-Migration: `0037_hr` (three tables + indexes, no triggers, down_revision 0036). There is **no**
-`events.py` / `handlers.py`: HR publishes/subscribes to no cross-module event in v1 (an empty event
-file would be a dead file — STRUCTURE §8.3); payroll (10.4) will post a journal through the bus.
+Migrations: `0037_hr` (org masters) and `0038_hr_leave` (leave — three tables + indexes, no triggers,
+down_revision 0037). There is **no** `events.py` / `handlers.py`: HR publishes/subscribes to no
+cross-module event in v1 (an empty event file would be a dead file — STRUCTURE §8.3); payroll (10.4)
+will post a journal through the bus and may **read** leave via `queries.py`.
 
 ## Compensation masking (the headline of 10.1 — D-009)
 
@@ -129,8 +135,76 @@ name/code/title only — no compensation — so any `hr.employee.read` holder ma
 ## Permissions (D-009)
 
 `hr.employee.read` / `.manage` / **`.read_compensation`** (the sensitive gate);
-`hr.department.read` / `.manage`; `hr.position.read` / `.manage`. Registered into the code-owned
-catalog at import.
+`hr.department.read` / `.manage`; `hr.position.read` / `.manage`; `hr.leave_type.read` / `.manage`
+(config + the accrual run); `hr.leave.read` (requests + balances); `hr.leave.request` (file/submit/
+cancel) / **`.approve`** (the distinct approval authority). Registered into the code-owned catalog at
+import.
+
+## Leave (PLAN 10.2 — D-053)
+
+Leave types with periodic accrual, a per-employee-per-type running balance, and a leave-request
+approval flow. All intra-HR (no cross-module event); payroll (10.4) may **read** balances/requests
+via `queries.py`. REST under `/api/v1/hr` (leave-types, leave-balances, leave-requests).
+
+### Leave types and accrual
+
+A **`LeaveType`** (`hr_leave_types`, user `code` unique per tenant) defines how a kind of leave
+accrues: `accrual_frequency` (**MONTHLY|ANNUAL**), `accrual_amount` (days per period, a
+`QuantityType` so 1.67/month is exact — D-015), an optional `max_balance` accrual cap, `is_paid`, and
+`is_active`. The tracking `unit` is **DAYS** in v1; a half day is expressible as a fractional
+`days = 0.5` with no new unit (a dedicated HALF_DAY unit + shift math is the documented later).
+`accrual_amount >= 0` and, when a cap is set, `max_balance >= accrual_amount` (a cap below one
+period's grant is a misconfiguration, rejected).
+
+The **accrual run** `POST /leave-balances/accrue?frequency=&as_of=` (gated by `hr.leave_type.manage`;
+default `as_of` today) is set-based (the maintenance preventive-generation analogue — PERFORMANCE §2):
+it derives the **period key** (`YYYY-MM` for MONTHLY, `YYYY` for ANNUAL), loads the ACTIVE employees
+and the ACTIVE leave types of that frequency in two queries, and grants `accrual_amount` to each
+(employee × type) balance, opening a `LeaveBalance` row on first accrual.
+
+- **Idempotency guard.** Each balance carries `last_accrual_period`. The run grants a pair only when
+  its `last_accrual_period` differs from the run period, then stamps it — so a **same-period re-run
+  grants nothing** (the generate-once-per-period guarantee). The endpoint is also D-013 idempotent
+  (Idempotency-Key replay).
+- **Cap.** When `max_balance` is set the grant is clamped so `balance_days` never exceeds the cap (0
+  when already at/over, a partial grant to lift exactly to the cap). A capped balance is still
+  stamped so it is not re-granted later; `accrued_to_date` records only what was actually granted.
+
+### Balances
+
+A **`LeaveBalance`** (`hr_leave_balances`, UNIQUE(tenant, employee, leave type)) is the running
+balance: `balance_days` (available now), `accrued_to_date` and `taken_to_date` (running totals for
+traceability), and `last_accrual_period` (the guard above). Read-only over the API
+(`GET /employees/{id}/leave-balances`, gated by `hr.leave.read`) — written only by the accrual run
+and the request approve/cancel transitions.
+
+### The request approval flow
+
+A **`LeaveRequest`** (`hr_leave_requests`) claims a gapless **`LV-`** `request_number` at creation
+(the procurement-requisition claim-at-create precedent — D-040) but is not a docflow document (no
+successor in v1). It carries `days` (caller-supplied, validated `> 0`; `start_date`/`end_date` stored
+for reference with `end >= start` enforced — business-day computation from the dates is the
+documented later), `status`, `reason`/`notes`, and on decision `approved_by` + `decided_at`.
+
+Lifecycle (mirrors the procurement requisition submit→approve→reject precedent, **without** a value
+threshold — every submitted request awaits an approver):
+
+`DRAFT` (create + edit, `hr.leave.request`) → `SUBMITTED` (submit) → `APPROVED` / `REJECTED`
+(`hr.leave.approve`), or `DRAFT`/`SUBMITTED`/`APPROVED` → `CANCELLED`.
+
+- **APPROVE decrements the balance** by `days` (raising `taken_to_date`). If the available balance is
+  below `days` → **422 `hr.insufficient_leave_balance`** — v1 **blocks** negative balances (an
+  allow-negative leave type is the documented later); a missing balance row counts as 0 available.
+- **REJECT** has no balance effect.
+- **CANCEL of an APPROVED request restores the balance** (adds `days` back, lowers `taken_to_date`);
+  cancelling from DRAFT/SUBMITTED has no balance effect; a terminal (REJECTED/CANCELLED) request
+  cannot be cancelled.
+
+The **`hr.leave.request` vs `hr.leave.approve` split** is the distinct-approval-authority pattern
+(D-040): a `.request` holder files and submits but is 403 on approve; the value-bearing transition
+(the one that moves the balance) requires `.approve`. Create/submit/approve/reject are D-013
+idempotent; the leave-type list carries the D-035 conditional-GET ETag (config = reference data);
+lists are paginated within the ≤3-query budget.
 
 ## Cross-module boundary (STRUCTURE §5)
 
@@ -141,8 +215,11 @@ module (payroll, projects) imports.
 
 ## What's out of scope (parity)
 
-Date-effective history and formal hire/transfer/terminate actions, leave/absence, timesheet/CATS,
-jurisdiction-compliant payroll, pay-grade structures and comp-review cycles, talent (recruiting/
-onboarding/learning/performance/succession), benefits administration, and ESS/MSS screens. See the
+Date-effective history and formal hire/transfer/terminate actions; timesheet/CATS;
+jurisdiction-compliant payroll; pay-grade structures and comp-review cycles; talent (recruiting/
+onboarding/learning/performance/succession); benefits administration; and ESS/MSS screens. **Leave
+and absence management is now in scope** (PLAN 10.2 above); leave-specific "later" items —
+work-schedule collision checks, quota carryover rules, business-day computation, allow-negative
+balances, and a HALF_DAY unit — are noted inline. See the
 [parity doc HCM section](../research/s4hana-parity.md) for the full reconciliation and the "later"
 notes.

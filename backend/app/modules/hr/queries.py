@@ -17,7 +17,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.hr.constants import MAX_HIERARCHY_DEPTH
-from app.modules.hr.models import Department, Employee
+from app.modules.hr.models import (
+    Department,
+    Employee,
+    LeaveBalance,
+    LeaveRequest,
+)
 
 
 async def get_employee(
@@ -108,3 +113,58 @@ async def org_chart_for(
     else:
         roots = [e for e in employees if e.manager_id is None]
     return roots, children
+
+
+# --- Leave (PLAN 10.2, D-053) -------------------------------------------------
+
+
+async def get_leave_request(
+    session: AsyncSession, tenant_id: uuid.UUID, request_id: uuid.UUID
+) -> LeaveRequest | None:
+    """The leave request with ``request_id`` in the tenant, or None. A point lookup on the PK."""
+    stmt = select(LeaveRequest).where(
+        LeaveRequest.tenant_id == tenant_id, LeaveRequest.id == request_id
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def leave_requests_for_employee(
+    session: AsyncSession, tenant_id: uuid.UUID, employee_id: uuid.UUID
+) -> list[LeaveRequest]:
+    """One employee's leave requests, newest first. Index-served by (tenant, employee_id,
+    status)."""
+    stmt = (
+        select(LeaveRequest)
+        .where(LeaveRequest.tenant_id == tenant_id, LeaveRequest.employee_id == employee_id)
+        .order_by(LeaveRequest.created_at.desc())
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def get_leave_balance(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    employee_id: uuid.UUID,
+    leave_type_id: uuid.UUID,
+) -> LeaveBalance | None:
+    """The running balance for one (employee, leave type), or None if none exists yet. Served by the
+    UNIQUE(tenant, employee, type) index."""
+    stmt = select(LeaveBalance).where(
+        LeaveBalance.tenant_id == tenant_id,
+        LeaveBalance.employee_id == employee_id,
+        LeaveBalance.leave_type_id == leave_type_id,
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def leave_balances_for_employee(
+    session: AsyncSession, tenant_id: uuid.UUID, employee_id: uuid.UUID
+) -> list[LeaveBalance]:
+    """All of one employee's leave balances, ordered by leave_type_id for a stable response.
+    Index-served by (tenant, employee_id)."""
+    stmt = (
+        select(LeaveBalance)
+        .where(LeaveBalance.tenant_id == tenant_id, LeaveBalance.employee_id == employee_id)
+        .order_by(LeaveBalance.leave_type_id)
+    )
+    return list((await session.execute(stmt)).scalars().all())
