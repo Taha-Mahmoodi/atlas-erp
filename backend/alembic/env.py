@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 import app.modules.admin.models  # noqa: F401
 import app.modules.finance.models  # noqa: F401
 import app.modules.inventory.models  # noqa: F401
+import app.modules.maintenance.models  # noqa: F401
 import app.modules.manufacturing.models  # noqa: F401
 import app.modules.procurement.models  # noqa: F401
 import app.modules.quality.models  # noqa: F401
