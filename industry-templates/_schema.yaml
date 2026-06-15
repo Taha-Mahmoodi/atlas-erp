@@ -1,0 +1,225 @@
+# Atlas ERP industry-template schema (PLAN 14.1 / D-060) — the single source of truth.
+#
+# A JSON-Schema (Draft 2020-12) expressed in YAML. The industry loader
+# (backend/app/modules/industry/loader.py) validates EVERY shipped template in this directory
+# against this document before it is parsed into the Pydantic models in
+# industry/schemas.py and applied to a tenant. The Pydantic models mirror these fields;
+# this file is the declarative contract both the loader and a template author read.
+#
+# Sections (all keys snake_case, mirroring the canonical terminology lock in STRUCTURE §7):
+#   name             — stable machine key, one of the five shipped names.
+#   display_name     — human label shown in the onboarding wizard (14.2).
+#   description      — one-line summary of the template's intent.
+#   terminology      — canonical-term -> display-label overrides (customer -> Patient). Keys are a
+#                      CLOSED whitelist (a template may only override terms Atlas knows about) so a
+#                      typo never silently does nothing; values are the per-tenant display labels.
+#   chart_of_accounts — the COA preset (groups + accounts). finance applies this slice via its
+#                      provisioning handler (D-060).
+#   tax_codes        — the default tax codes. finance slice.
+#   currencies       — the currency catalog + which is functional. finance slice.
+#   uoms             — the units of measure. inventory slice.
+#   item_categories  — optional item categories with a default costing method. inventory slice.
+#   modules          — enabled/disabled toggle per business module. admin TenantSetting slice.
+#   custom_fields    — typed custom-field defs registered in core_custom_field_defs (D-016). The
+#                      industry loader applies this slice directly (core-owned).
+#   approval_presets — purchase-order / requisition value thresholds. procurement slice.
+#   numbering_formats — sequence -> {prefix, padding, year_reset?}. core/numbering slice, applied
+#                      directly by the loader.
+#
+# The loader applies the cross-module slices (finance/inventory/procurement) via the EVENT BUS
+# (IndustryTemplateApplying), and the core/admin slices (custom_fields, numbering_formats,
+# terminology, modules) directly. See docs/industry-templates.md and DECISIONS.md D-060.
+
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://atlas-erp.dev/schemas/industry-template.json"
+title: "Atlas industry template"
+type: object
+additionalProperties: false
+required:
+  - name
+  - display_name
+  - description
+  - terminology
+  - chart_of_accounts
+  - currencies
+  - modules
+
+properties:
+  name:
+    type: string
+    description: "Stable machine key; must equal the file stem and be a shipped template name."
+    enum:
+      - manufacturing
+      - retail
+      - professional-services
+      - healthcare
+      - construction
+
+  display_name:
+    type: string
+    minLength: 1
+    maxLength: 100
+
+  description:
+    type: string
+    minLength: 1
+    maxLength: 500
+
+  terminology:
+    type: object
+    description: "canonical term -> display label. Keys restricted to the known canonical terms."
+    additionalProperties: false
+    properties:
+      customer: { type: string, minLength: 1, maxLength: 100 }
+      vendor: { type: string, minLength: 1, maxLength: 100 }
+      item: { type: string, minLength: 1, maxLength: 100 }
+      warehouse: { type: string, minLength: 1, maxLength: 100 }
+      production_order: { type: string, minLength: 1, maxLength: 100 }
+      project: { type: string, minLength: 1, maxLength: 100 }
+      sales_order: { type: string, minLength: 1, maxLength: 100 }
+      employee: { type: string, minLength: 1, maxLength: 100 }
+      invoice: { type: string, minLength: 1, maxLength: 100 }
+
+  chart_of_accounts:
+    type: object
+    additionalProperties: false
+    required: [groups, accounts]
+    properties:
+      groups:
+        type: array
+        items:
+          type: object
+          additionalProperties: false
+          required: [code, name]
+          properties:
+            code: { type: string, minLength: 1, maxLength: 40 }
+            name: { type: string, minLength: 1, maxLength: 200 }
+            parent_code: { type: [string, "null"], maxLength: 40 }
+            sort_order: { type: integer, minimum: 0 }
+      accounts:
+        type: array
+        minItems: 1
+        items:
+          type: object
+          additionalProperties: false
+          required: [code, name, account_type]
+          properties:
+            code: { type: string, minLength: 1, maxLength: 40 }
+            name: { type: string, minLength: 1, maxLength: 200 }
+            account_type:
+              type: string
+              enum: [ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE]
+            group_code: { type: [string, "null"], maxLength: 40 }
+            is_postable: { type: boolean }
+            cash_flow_category:
+              type: [string, "null"]
+              enum: [OPERATING, INVESTING, FINANCING, null]
+            is_cash_equivalent: { type: boolean }
+
+  tax_codes:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [code, name, rate_percent]
+      properties:
+        code: { type: string, minLength: 1, maxLength: 40 }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        # rate_percent is a STRING (D-015 no-float): "20" means 20%.
+        rate_percent: { type: string, pattern: "^[0-9]+(\\.[0-9]+)?$" }
+        jurisdiction: { type: [string, "null"], maxLength: 20 }
+        is_inclusive: { type: boolean }
+
+  currencies:
+    type: array
+    minItems: 1
+    items:
+      type: object
+      additionalProperties: false
+      required: [code, name]
+      properties:
+        code: { type: string, minLength: 3, maxLength: 3 }
+        name: { type: string, minLength: 1, maxLength: 100 }
+        decimal_places: { type: integer, minimum: 0, maximum: 6 }
+        is_functional: { type: boolean }
+
+  uoms:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [code, name]
+      properties:
+        code: { type: string, minLength: 1, maxLength: 20 }
+        name: { type: string, minLength: 1, maxLength: 100 }
+
+  item_categories:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required: [code, name]
+      properties:
+        code: { type: string, minLength: 1, maxLength: 40 }
+        name: { type: string, minLength: 1, maxLength: 200 }
+        default_costing_method:
+          type: string
+          enum: [MOVING_AVERAGE, FIFO]
+
+  modules:
+    type: object
+    description: "module key -> enabled flag. Closed whitelist of the platform's business modules."
+    additionalProperties: false
+    minProperties: 1
+    properties:
+      finance: { type: boolean }
+      inventory: { type: boolean }
+      procurement: { type: boolean }
+      sales: { type: boolean }
+      manufacturing: { type: boolean }
+      quality: { type: boolean }
+      maintenance: { type: boolean }
+      hr: { type: boolean }
+      projects: { type: boolean }
+      crm: { type: boolean }
+      reporting: { type: boolean }
+
+  custom_fields:
+    type: array
+    description: "Typed custom-field defs (D-016) registered into core_custom_field_defs."
+    items:
+      type: object
+      additionalProperties: false
+      required: [entity_key, field_key, label, type]
+      properties:
+        # entity_key is the dotted module.entity the owning module passes, e.g. inventory.item.
+        entity_key: { type: string, pattern: "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$" }
+        field_key: { type: string, pattern: "^[a-z][a-z0-9_]{0,49}$" }
+        label: { type: string, minLength: 1, maxLength: 200 }
+        type:
+          type: string
+          enum: [STRING, NUMBER, DECIMAL, BOOL, DATE]
+        required: { type: boolean }
+        # default stored portably as a string (DECIMAL/DATE rendered as strings), per D-016.
+        default: { type: [string, "null"], maxLength: 500 }
+
+  approval_presets:
+    type: object
+    additionalProperties: false
+    description: "Value-threshold approval presets (D-040). Thresholds are STRINGS (D-015)."
+    properties:
+      purchase_order_threshold: { type: string, pattern: "^[0-9]+(\\.[0-9]+)?$" }
+      requisition_threshold: { type: string, pattern: "^[0-9]+(\\.[0-9]+)?$" }
+      currency_code: { type: string, minLength: 3, maxLength: 3 }
+
+  numbering_formats:
+    type: object
+    description: "sequence name -> format. Configures core number sequences (D-012)."
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      required: [prefix, padding]
+      properties:
+        prefix: { type: string, minLength: 1, maxLength: 20 }
+        padding: { type: integer, minimum: 1, maximum: 12 }
+        year_reset: { type: boolean }

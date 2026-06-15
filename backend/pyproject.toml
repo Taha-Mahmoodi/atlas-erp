@@ -15,6 +15,7 @@ dependencies = [
     "greenlet",
     "pyjwt>=2.13.0",
     "argon2-cffi>=25.1.0",
+    "pyyaml>=6",
 ]
 
 [dependency-groups]

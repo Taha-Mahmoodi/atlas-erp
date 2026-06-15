@@ -1,0 +1,79 @@
+# Retail industry template (PLAN 14.1 / D-060).
+# Store-centric: barcode custom field on the item, FIFO costing default, NO manufacturing module,
+# simple COA, "Store" terminology for the warehouse. Validated against _schema.yaml.
+name: retail
+display_name: Retail
+description: >-
+  Multi-store retail: point-of-sale style sales, barcode-tagged items, FIFO inventory costing,
+  no manufacturing. Simple COA centred on merchandise.
+
+terminology:
+  warehouse: Store
+  item: Product
+  customer: Shopper
+  vendor: Supplier
+  sales_order: Sale
+
+chart_of_accounts:
+  groups:
+    - { code: "1", name: Assets, sort_order: 1 }
+    - { code: "2", name: Liabilities, sort_order: 2 }
+    - { code: "3", name: Equity, sort_order: 3 }
+    - { code: "4", name: Revenue, sort_order: 4 }
+    - { code: "5", name: Expenses, sort_order: 5 }
+  accounts:
+    - { code: "1000", name: Cash Register, account_type: ASSET, group_code: "1", cash_flow_category: OPERATING, is_cash_equivalent: true }
+    - { code: "1010", name: Bank, account_type: ASSET, group_code: "1", cash_flow_category: OPERATING, is_cash_equivalent: true }
+    - { code: "1100", name: Accounts Receivable, account_type: ASSET, group_code: "1" }
+    - { code: "1300", name: Merchandise Inventory, account_type: ASSET, group_code: "1" }
+    - { code: "1400", name: GR/IR Clearing, account_type: ASSET, group_code: "1" }
+    - { code: "2000", name: Accounts Payable, account_type: LIABILITY, group_code: "2" }
+    - { code: "2200", name: Sales Tax Payable, account_type: LIABILITY, group_code: "2" }
+    - { code: "3000", name: Owner Equity, account_type: EQUITY, group_code: "3" }
+    - { code: "4000", name: Merchandise Sales, account_type: REVENUE, group_code: "4" }
+    - { code: "5000", name: Cost of Goods Sold, account_type: EXPENSE, group_code: "5" }
+    - { code: "5200", name: Inventory Shrinkage, account_type: EXPENSE, group_code: "5" }
+
+tax_codes:
+  - { code: STD, name: Standard Sales Tax, rate_percent: "8.5", is_inclusive: false }
+  - { code: EXEMPT, name: Tax Exempt, rate_percent: "0", is_inclusive: false }
+
+currencies:
+  - { code: USD, name: US Dollar, decimal_places: 2, is_functional: true }
+
+uoms:
+  - { code: EA, name: Each }
+  - { code: PK, name: Pack }
+  - { code: BOX, name: Box }
+  - { code: KG, name: Kilogram }
+
+item_categories:
+  - { code: MERCH, name: Merchandise, default_costing_method: FIFO }
+  - { code: SVC, name: Services, default_costing_method: FIFO }
+
+modules:
+  finance: true
+  inventory: true
+  procurement: true
+  sales: true
+  manufacturing: false
+  quality: false
+  maintenance: false
+  hr: true
+  projects: false
+  crm: true
+  reporting: true
+
+custom_fields:
+  - { entity_key: inventory.item, field_key: barcode, label: Barcode (UPC/EAN), type: STRING }
+  - { entity_key: inventory.item, field_key: shelf_location, label: Shelf Location, type: STRING }
+
+approval_presets:
+  purchase_order_threshold: "5000"
+  requisition_threshold: "2000"
+  currency_code: USD
+
+numbering_formats:
+  finance.journal: { prefix: JE, padding: 6, year_reset: true }
+  sales.order: { prefix: SALE, padding: 6, year_reset: true }
+  procurement.purchase_order: { prefix: PO, padding: 5, year_reset: true }

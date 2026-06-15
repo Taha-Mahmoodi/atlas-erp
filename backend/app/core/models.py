@@ -293,6 +293,7 @@ class AuditLog(UuidPKMixin, TenantMixin, TimestampMixin, Base):
 # bootstrap via core/db.py, the tenancy mapper-enumeration suite) sees them. Importing at the
 # END — after Base and the mixins are defined — breaks the cycle (those modules import from
 # here), the same trailing-import pattern core/schemas.py uses for Masked.
+from app.core import custom_fields as _custom_fields  # noqa: E402,F401
 from app.core import docflow as _docflow  # noqa: E402,F401
 from app.core import numbering as _numbering  # noqa: E402,F401
 

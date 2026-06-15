@@ -15,6 +15,10 @@ along the §3/§8.4 package rule (the models/ + service/ precedent), one file pe
   production-order finish (PLAN 8.2, D-048).
 - ``payroll``: ``create_payroll_journal`` — the consolidated payroll journal for a posted HR
   payroll run (PLAN 10.4, D-055).
+- ``provisioning``: ``provision_finance_for_template`` — the finance slice (currencies + COA + tax
+  codes) of an applied industry template (PLAN 14.1, D-060). Unlike the journal-posting handlers
+  above, this one creates MASTER/config rows (it provisions, not posts), so it writes through the
+  finance models directly with skip-if-exists idempotency rather than the posting service.
 - ``_shared``: ``_lines_from_postings`` — the signed-postings → balanced one-sided journal-lines
   helper the inventory-COGS and production handlers share.
 
@@ -34,6 +38,7 @@ from app.modules.finance.handlers.order_to_cash import (
 from app.modules.finance.handlers.payroll import create_payroll_journal
 from app.modules.finance.handlers.procure_to_pay import create_bill_for_match
 from app.modules.finance.handlers.production import post_production_variance
+from app.modules.finance.handlers.provisioning import provision_finance_for_template
 
 __all__ = [
     "create_bill_for_match",
@@ -42,4 +47,5 @@ __all__ = [
     "create_payroll_journal",
     "post_production_variance",
     "post_stock_valuation_journal",
+    "provision_finance_for_template",
 ]

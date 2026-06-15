@@ -1,0 +1,84 @@
+# Manufacturing industry template (PLAN 14.1 / D-060).
+# The full-platform baseline: every module on, production terminology, moving-average costing.
+# Validated against _schema.yaml by the loader at tenant creation.
+name: manufacturing
+display_name: Manufacturing
+description: >-
+  Discrete/process manufacturing with full production planning, multi-level BOMs, work centres,
+  quality inspection and maintenance. Standard COA, moving-average costing.
+
+terminology:
+  production_order: Production Order
+  item: Material
+  warehouse: Plant
+  customer: Customer
+  vendor: Vendor
+
+chart_of_accounts:
+  groups:
+    - { code: "1", name: Assets, sort_order: 1 }
+    - { code: "2", name: Liabilities, sort_order: 2 }
+    - { code: "3", name: Equity, sort_order: 3 }
+    - { code: "4", name: Revenue, sort_order: 4 }
+    - { code: "5", name: Expenses, sort_order: 5 }
+  accounts:
+    - { code: "1000", name: Cash, account_type: ASSET, group_code: "1", cash_flow_category: OPERATING, is_cash_equivalent: true }
+    - { code: "1100", name: Accounts Receivable, account_type: ASSET, group_code: "1" }
+    - { code: "1300", name: Raw Materials Inventory, account_type: ASSET, group_code: "1" }
+    - { code: "1310", name: Work In Progress, account_type: ASSET, group_code: "1" }
+    - { code: "1320", name: Finished Goods Inventory, account_type: ASSET, group_code: "1" }
+    - { code: "1400", name: GR/IR Clearing, account_type: ASSET, group_code: "1" }
+    - { code: "2000", name: Accounts Payable, account_type: LIABILITY, group_code: "2" }
+    - { code: "2200", name: Tax Payable, account_type: LIABILITY, group_code: "2" }
+    - { code: "3000", name: Owner Equity, account_type: EQUITY, group_code: "3" }
+    - { code: "4000", name: Product Sales Revenue, account_type: REVENUE, group_code: "4" }
+    - { code: "5000", name: Cost of Goods Sold, account_type: EXPENSE, group_code: "5" }
+    - { code: "5100", name: Production Variance, account_type: EXPENSE, group_code: "5" }
+    - { code: "5200", name: Inventory Price Difference, account_type: EXPENSE, group_code: "5" }
+
+tax_codes:
+  - { code: STD, name: Standard Sales Tax, rate_percent: "20", is_inclusive: false }
+  - { code: IN, name: Input Tax, rate_percent: "20", is_inclusive: false }
+
+currencies:
+  - { code: USD, name: US Dollar, decimal_places: 2, is_functional: true }
+
+uoms:
+  - { code: EA, name: Each }
+  - { code: KG, name: Kilogram }
+  - { code: M, name: Metre }
+  - { code: L, name: Litre }
+  - { code: HR, name: Hour }
+  - { code: BOX, name: Box }
+
+item_categories:
+  - { code: RAW, name: Raw Materials, default_costing_method: MOVING_AVERAGE }
+  - { code: FG, name: Finished Goods, default_costing_method: MOVING_AVERAGE }
+  - { code: SVC, name: Services, default_costing_method: MOVING_AVERAGE }
+
+modules:
+  finance: true
+  inventory: true
+  procurement: true
+  sales: true
+  manufacturing: true
+  quality: true
+  maintenance: true
+  hr: true
+  projects: true
+  crm: true
+  reporting: true
+
+custom_fields:
+  - { entity_key: inventory.item, field_key: revision, label: Engineering Revision, type: STRING }
+
+approval_presets:
+  purchase_order_threshold: "10000"
+  requisition_threshold: "5000"
+  currency_code: USD
+
+numbering_formats:
+  finance.journal: { prefix: JE, padding: 6, year_reset: true }
+  sales.order: { prefix: SO, padding: 5, year_reset: true }
+  procurement.purchase_order: { prefix: PO, padding: 5, year_reset: true }
+  manufacturing.production_order: { prefix: PRD, padding: 5, year_reset: true }
