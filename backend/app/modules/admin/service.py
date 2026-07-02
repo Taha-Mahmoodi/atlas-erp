@@ -13,6 +13,7 @@ from app.core.exceptions import ValidationFailedError
 from app.core.models import Permission, Role, RolePermission, User, UserRole
 from app.core.rbac import (
     ADMIN_AUDIT_READ,
+    ADMIN_NUMBERING_READ,
     ADMIN_ROLE_MANAGE,
     ADMIN_TENANT_MANAGE,
     ADMIN_USER_MANAGE,
@@ -21,12 +22,13 @@ from app.core.rbac import (
 from app.core.tenancy import system_context
 from app.modules.admin.models import Tenant
 
-# The four keys a tenant's first user (the admin) gets via grant_admin_role.
+# The admin keys a tenant's first user (the admin) gets via grant_admin_role.
 _ADMIN_PERMISSION_KEYS = (
     ADMIN_USER_MANAGE,
     ADMIN_ROLE_MANAGE,
     ADMIN_AUDIT_READ,
     ADMIN_TENANT_MANAGE,
+    ADMIN_NUMBERING_READ,
 )
 
 

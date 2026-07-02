@@ -117,7 +117,7 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 
 - [x] 14.1 Industry template schema (`industry-templates/_schema.yaml`) + validating idempotent loader + the five templates (manufacturing, retail, professional-services, healthcare, construction) with terminology overrides, COA presets, tax codes, UoMs, module toggles, typed custom fields, approval presets, numbering formats
 - [x] 14.2 Tenant onboarding wizard: company info → industry template → COA/units/tax/workflows/numbering instantiated automatically
-- [ ] 14.3 Admin endpoints: user/role management, audit viewer, exchange rates, tax codes, per-tenant number sequences
+- [x] 14.3 Admin endpoints: user/role management, audit viewer, exchange rates, tax codes, per-tenant number sequences
 
 **Promotion → `main` as v0.3.0 (all backend modules complete).**
 
