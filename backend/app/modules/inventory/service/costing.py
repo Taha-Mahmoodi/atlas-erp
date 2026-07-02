@@ -299,12 +299,15 @@ async def _apply_transfer(
     # Cross-warehouse: remove value from the source and add it to the destination at the SAME cost,
     # so the value follows the stock between warehouses while the net GL effect is nil.
     if method == CostingMethod.MOVING_AVERAGE:
-        cost, _residual = await costing_mav.mav_issue(
+        cost, residual = await costing_mav.mav_issue(
             session, tenant_id, item.id, from_warehouse_id, qty, currency_code
         )
         unit_cost = (cost / qty) if qty > 0 else Decimal(0)
+        # #84: when the issue empties the source, mav_issue flushes the rounding residual out of
+        # the source valuation. A transfer posts no journal to absorb it, so fold it into the
+        # destination receipt — total value is conserved and the subledger stays on the GL.
         await costing_mav.mav_receive(
-            session, tenant_id, item.id, to_warehouse_id, qty, unit_cost
+            session, tenant_id, item.id, to_warehouse_id, qty, unit_cost, extra_value=residual
         )
     else:
         cost = await costing_fifo.consume_layers(
