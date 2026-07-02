@@ -123,6 +123,35 @@ async def test_create_rejects_over_billing(
     assert exc.value.code == "procurement.over_billing"
 
 
+async def test_partial_invoice_within_tolerance_is_matched(
+    db_session: AsyncSession, invoice_match_setup: InvoiceMatchSetup
+) -> None:
+    """Regression for #74: a partial invoice (less than the open-to-bill quantity, PO price)
+    used to be flagged as a quantity-variance EXCEPTION; billing less than expected is a normal
+    partial invoice, not a variance."""
+    match = await build_invoice_match(
+        db_session,
+        invoice_match_setup.tenant_id,
+        po_id=invoice_match_setup.po_id,
+        lines=[_line(invoice_match_setup, "4", "5")],  # received 10, bill only 4 @ PO price
+    )
+    assert match.status == MatchStatus.MATCHED.value
+
+
+async def test_partial_invoice_against_gr_line_is_matched(
+    db_session: AsyncSession, invoice_match_setup: InvoiceMatchSetup
+) -> None:
+    """#74 GR-line flavor: a partial invoice drawing from a specific goods-receipt line is
+    matched when at-or-below that receipt's quantity."""
+    match = await build_invoice_match(
+        db_session,
+        invoice_match_setup.tenant_id,
+        po_id=invoice_match_setup.po_id,
+        lines=[_line(invoice_match_setup, "4", "5", with_gr=True)],  # GR line received 10
+    )
+    assert match.status == MatchStatus.MATCHED.value
+
+
 async def test_price_outside_tolerance_is_exception(
     db_session: AsyncSession, tenant_a: uuid.UUID
 ) -> None:
