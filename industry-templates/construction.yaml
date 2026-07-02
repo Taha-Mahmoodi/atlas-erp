@@ -1,0 +1,88 @@
+# Construction industry template (PLAN 14.1 / D-060).
+# Job costing (projects), AR retainage (a retainage account + a retainage custom field), "Job" vs
+# production-order terminology, equipment/maintenance emphasis. Validated against _schema.yaml.
+name: construction
+display_name: Construction
+description: >-
+  Contractors and builders: job-costed projects, AR retainage withholding, heavy equipment with
+  maintenance, no factory manufacturing. COA centred on jobs, retainage and equipment.
+
+terminology:
+  project: Job
+  production_order: Job
+  customer: Owner
+  vendor: Subcontractor
+  warehouse: Yard
+  invoice: Progress Billing
+
+chart_of_accounts:
+  groups:
+    - { code: "1", name: Assets, sort_order: 1 }
+    - { code: "2", name: Liabilities, sort_order: 2 }
+    - { code: "3", name: Equity, sort_order: 3 }
+    - { code: "4", name: Revenue, sort_order: 4 }
+    - { code: "5", name: Expenses, sort_order: 5 }
+  accounts:
+    - { code: "1000", name: Cash, account_type: ASSET, group_code: "1", cash_flow_category: OPERATING, is_cash_equivalent: true }
+    - { code: "1100", name: Accounts Receivable, account_type: ASSET, group_code: "1" }
+    - { code: "1150", name: Retainage Receivable, account_type: ASSET, group_code: "1" }
+    - { code: "1200", name: Costs in Excess of Billings, account_type: ASSET, group_code: "1" }
+    - { code: "1300", name: Materials Inventory, account_type: ASSET, group_code: "1" }
+    - { code: "1500", name: Construction Equipment, account_type: ASSET, group_code: "1", cash_flow_category: INVESTING }
+    - { code: "2000", name: Accounts Payable, account_type: LIABILITY, group_code: "2" }
+    - { code: "2150", name: Retainage Payable, account_type: LIABILITY, group_code: "2" }
+    - { code: "2200", name: Billings in Excess of Costs, account_type: LIABILITY, group_code: "2" }
+    - { code: "2250", name: Tax Payable, account_type: LIABILITY, group_code: "2" }
+    - { code: "3000", name: Owner Equity, account_type: EQUITY, group_code: "3" }
+    - { code: "4000", name: Contract Revenue, account_type: REVENUE, group_code: "4" }
+    - { code: "5000", name: Job Costs - Materials, account_type: EXPENSE, group_code: "5" }
+    - { code: "5100", name: Job Costs - Labour, account_type: EXPENSE, group_code: "5" }
+    - { code: "5200", name: Job Costs - Subcontractors, account_type: EXPENSE, group_code: "5" }
+    - { code: "5300", name: Equipment Operating Costs, account_type: EXPENSE, group_code: "5" }
+
+tax_codes:
+  - { code: STD, name: Standard Sales Tax, rate_percent: "20", is_inclusive: false }
+  - { code: REV, name: Reverse Charge (Subcontractor), rate_percent: "0", is_inclusive: false }
+
+currencies:
+  - { code: USD, name: US Dollar, decimal_places: 2, is_functional: true }
+
+uoms:
+  - { code: EA, name: Each }
+  - { code: M, name: Metre }
+  - { code: M2, name: Square Metre }
+  - { code: M3, name: Cubic Metre }
+  - { code: T, name: Tonne }
+  - { code: HR, name: Hour }
+
+item_categories:
+  - { code: MAT, name: Construction Materials, default_costing_method: MOVING_AVERAGE }
+  - { code: SUB, name: Subcontract Services, default_costing_method: MOVING_AVERAGE }
+
+modules:
+  finance: true
+  inventory: true
+  procurement: true
+  sales: true
+  manufacturing: false
+  quality: true
+  maintenance: true
+  hr: true
+  projects: true
+  crm: true
+  reporting: true
+
+custom_fields:
+  - { entity_key: sales.customer, field_key: retainage_percent, label: Retainage Withholding %, type: DECIMAL, default: "10" }
+  - { entity_key: projects.project, field_key: contract_number, label: Contract Number, type: STRING }
+  - { entity_key: projects.project, field_key: bond_required, label: Performance Bond Required, type: BOOL }
+
+approval_presets:
+  purchase_order_threshold: "25000"
+  requisition_threshold: "10000"
+  currency_code: USD
+
+numbering_formats:
+  finance.journal: { prefix: JE, padding: 6, year_reset: true }
+  projects.project: { prefix: JOB, padding: 4, year_reset: false }
+  procurement.purchase_order: { prefix: PO, padding: 5, year_reset: true }

@@ -63,61 +63,61 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 
 ## Phase 5 — Inventory & Warehouse
 
-- [ ] 5.1 Items (stocked/non-stocked/service), item categories, multi-UoM with conversions, lot & serial masters
-- [ ] 5.2 Warehouses + bins; stock moves as single source of truth; on-hand/availability projections
-- [ ] 5.3 Costing: moving average AND FIFO (layer consumption) per item category; COGS auto-posted via events to finance
-- [ ] 5.4 Physical/cycle counts with variance posting (stock move + journal)
+- [x] 5.1 Items (stocked/non-stocked/service), item categories, multi-UoM with conversions, lot & serial masters
+- [x] 5.2 Warehouses + bins; stock moves as single source of truth; on-hand/availability projections
+- [x] 5.3 Costing: moving average AND FIFO (layer consumption) per item category; COGS auto-posted via events to finance
+- [x] 5.4 Physical/cycle counts with variance posting (stock move + journal) — **Phase 5 / Inventory COMPLETE**
 
 ## Phase 6 — Procurement
 
-- [ ] 6.1 Vendor master: payment terms, currencies, approved items; vendor queries interface
-- [ ] 6.2 Requisition → RFQ → PO flow with configurable approval threshold rules stored as data
-- [ ] 6.3 Goods receipt: stock move + GR/IR journal via events, docflow links, optional inspection hook (flag only until Phase 9)
-- [ ] 6.4 3-way match (PO/receipt/bill with tolerances) → AP bill; reorder points → auto-draft requisitions
+- [x] 6.1 Vendor master: payment terms, currencies, approved items; vendor queries interface
+- [x] 6.2 Requisition → RFQ → PO flow with configurable approval threshold rules stored as data
+- [x] 6.3 Goods receipt: stock move + GR/IR journal via events, docflow links, optional inspection hook (flag only until Phase 9)
+- [x] 6.4 3-way match (PO/receipt/bill with tolerances) → AP bill; reorder points → auto-draft requisitions — **Phase 6 / Procurement COMPLETE**
 
 ## Phase 7 — Sales & Distribution
 
-- [ ] 7.1 Customer master with credit limits; condition-style pricing (price lists per currency/customer group/date range, discounts)
-- [ ] 7.2 Quote → Order with ATP check (on-hand + on-order) and credit-limit block at confirmation
-- [ ] 7.3 Delivery with partial shipments + backorders → stock issue + COGS via events
-- [ ] 7.4 Billing: invoice from delivery, revenue journals; RMA returns with credit notes
+- [x] 7.1 Customer master with credit limits; condition-style pricing (price lists per currency/customer group/date range, discounts)
+- [x] 7.2 Quote → Order with ATP check (on-hand + on-order) and credit-limit block at confirmation
+- [x] 7.3 Delivery with partial shipments + backorders → stock issue + COGS via events
+- [x] 7.4 Billing: invoice from delivery, revenue journals; RMA returns with credit notes — **Phase 7 / Sales COMPLETE** (the order-to-cash loop closes: quote → order → delivery → billing → AR invoice; RMA returns reverse both COGS and revenue)
 
 ## Phase 8 — Manufacturing
 
-- [ ] 8.1 Multi-level versioned BOMs, work centers, routings with setup/run times
-- [ ] 8.2 Production orders: material reservation, issue to WIP, finish to stock, WIP journals feeding product costing
-- [ ] 8.3 MRP run (explode sales demand + reorder points vs supply → planned orders) + rough capacity check (load vs available hours)
+- [x] 8.1 Multi-level versioned BOMs, work centers, routings with setup/run times
+- [x] 8.2 Production orders: material reservation, issue to WIP, finish to stock, WIP journals feeding product costing
+- [x] 8.3 MRP run (explode sales demand + reorder points vs supply → planned orders) + rough capacity check (load vs available hours) — **COMPLETES Phase 8 / Manufacturing**
 
 ## Phase 9 — Quality & Maintenance
 
-- [ ] 9.1 Quality: inspection flag on goods receipt → inspection lot → accept/reject with stock disposition
-- [ ] 9.2 Maintenance: equipment register, corrective + preventive (interval-based) maintenance orders
+- [x] 9.1 Quality: inspection flag on goods receipt → inspection lot → accept/reject with stock disposition
+- [x] 9.2 Maintenance: equipment register, corrective + preventive (interval-based) maintenance orders
 
 ## Phase 10 — Human Resources
 
-- [ ] 10.1 Employees (masked compensation fields), departments, positions, org chart
-- [ ] 10.2 Leave: types, accruals, approval flow
-- [ ] 10.3 Time tracking with project & cost-center allocation
-- [ ] 10.4 Simple gross→net payroll posting a journal, explicitly flagged as not jurisdiction-compliant
+- [x] 10.1 Employees (masked compensation fields), departments, positions, org chart
+- [x] 10.2 Leave: types, accruals, approval flow
+- [x] 10.3 Time tracking with project & cost-center allocation
+- [x] 10.4 Simple gross→net payroll posting a journal, explicitly flagged as not jurisdiction-compliant
 
 ## Phase 11 — Projects
 
-- [ ] 11.1 Projects with WBS elements as costing objects; time + purchases postable to WBS; project cost report
+- [x] 11.1 Projects with WBS elements as costing objects; time + purchases postable to WBS; project cost report
 
 ## Phase 12 — CRM
 
-- [ ] 12.1 Leads → opportunities kanban, activities, convert to customer + quote
+- [x] 12.1 Leads → opportunities kanban, activities, convert to customer + quote (Phase 12 / CRM COMPLETE)
 
 ## Phase 13 — Reporting & analytics
 
-- [ ] 13.1 Role-based dashboard KPI endpoints: cash position, AR/AP aging, inventory value, open orders, OTD%, WIP
-- [ ] 13.2 Generic report builder: entity + columns + filters + group-by → JSON for the grid + CSV export
+- [x] 13.1 Role-based dashboard KPI endpoints: cash position, AR/AP aging, inventory value, open orders, OTD%, WIP
+- [x] 13.2 Generic report builder: entity + columns + filters + group-by → JSON for the grid + CSV export
 
 ## Phase 14 — Admin, industry layer & onboarding
 
-- [ ] 14.1 Industry template schema (`industry-templates/_schema.yaml`) + validating idempotent loader + the five templates (manufacturing, retail, professional-services, healthcare, construction) with terminology overrides, COA presets, tax codes, UoMs, module toggles, typed custom fields, approval presets, numbering formats
-- [ ] 14.2 Tenant onboarding wizard: company info → industry template → COA/units/tax/workflows/numbering instantiated automatically
-- [ ] 14.3 Admin endpoints: user/role management, audit viewer, exchange rates, tax codes, per-tenant number sequences
+- [x] 14.1 Industry template schema (`industry-templates/_schema.yaml`) + validating idempotent loader + the five templates (manufacturing, retail, professional-services, healthcare, construction) with terminology overrides, COA presets, tax codes, UoMs, module toggles, typed custom fields, approval presets, numbering formats
+- [x] 14.2 Tenant onboarding wizard: company info → industry template → COA/units/tax/workflows/numbering instantiated automatically
+- [x] 14.3 Admin endpoints: user/role management, audit viewer, exchange rates, tax codes, per-tenant number sequences
 
 **Promotion → `main` as v0.3.0 (all backend modules complete).**
 

@@ -45,6 +45,21 @@ AR_INVOICE_POSTS_LINK = "posts"
 AR_RECEIPT_RECEIPTS_LINK = "receipts"
 AR_PARTNER_TYPE = "CUSTOMER"
 
+# --- AR credit note (PLAN 7.4, sales RMA returns) -----------------------------
+# A credit note is the SIGN-FLIPPED customer invoice: it registers in core_documents at creation,
+# claims a gapless CN- number AT POSTING (the AR-invoice precedent), and posts the REVERSING AR
+# journal (Dr revenue net / Dr output tax / Cr AR control gross) so it reduces what the customer
+# owes. Modeled as a CustomerInvoice row whose journal carries document_type AR_CREDIT_NOTE —
+# finance
+# had no credit-note path before 7.4 (4.6 shipped invoices/receipts/dunning only), so this is the
+# minimal credit-memo entrypoint the sales return handler calls. open_amount stays 0 (a credit note
+# is not an open receivable to dun — it is a reduction, documented).
+AR_CREDIT_NOTE_DOC_TYPE = "finance.customer_credit_note"
+AR_CREDIT_NOTE_SEQUENCE_NAME = "finance.customer_credit_note"
+AR_CREDIT_NOTE_NUMBER_PREFIX = "CN"
+AR_CREDIT_NOTE_NUMBER_PADDING = 5
+AR_CREDIT_NOTE_POSTS_LINK = "posts"
+
 # Dunning day-thresholds (PLAN 4.6): highest crossed bound wins; level 0 = no notice yet.
 DUNNING_THRESHOLDS: tuple[int, ...] = (7, 30, 60)
 
@@ -126,9 +141,101 @@ DEPRECIATION_POSTS_LINK = "posts"
 DEPRECIATION_RUN_JOB = "finance.depreciation_run"
 DEPRECIATION_RUN_SYNC_MAX_ASSETS = 100
 
-# Every known posting-default purpose: FX + the CO/bank/asset clearing accounts.
+# --- Procurement goods-receipt / GR-IR clearing (PLAN 6.3, D-041) -------------
+# The GR/IR (goods-received / invoice-received) clearing account is a per-tenant posting default
+# (a LIABILITY/clearing account). A goods receipt (6.3) posts Dr Inventory / Cr GR-IR via the
+# inventory costing event's valuation-offset OVERRIDE; the matched vendor bill (6.4) posts
+# Dr GR-IR / Cr AP, clearing the account. A tenant MUST map this purpose before a GR can post —
+# the GR has nowhere to credit otherwise (resolved via finance/queries.gr_ir_clearing_account).
+GR_IR_CLEARING = "gr_ir_clearing"
+
+# --- Purchase price variance + AP control (PLAN 6.4, D-042) -------------------
+# When the matched vendor bill's invoiced unit price differs from the PO price (within tolerance),
+# the difference posts to this per-tenant posting default (an EXPENSE/income variance account) so
+# GR/IR clears at EXACTLY the PO cost it was credited at receipt, and the price difference is
+# recognized separately. Resolved via finance/queries.purchase_price_variance_account; a tenant MUST
+# map it before a match carrying a price variance can post (it has nowhere to route the difference).
+PURCHASE_PRICE_VARIANCE = "purchase_price_variance"
+
+# The AP control (trade-payables) account the matched vendor bill CREDITS at the invoiced total
+# (D-029: the open item is partner-keyed by the opaque vendor id on that line). A bill created
+# DIRECTLY in finance (4.5) supplies its own ap_account_id per bill; the 3-way-match-triggered bill
+# resolves it from this per-tenant posting default (procurement holds no AP account), so a tenant
+# MUST map it before a match can post — resolved via finance/queries.ap_control_account.
+AP_CONTROL = "ap_control"
+
+# --- AR control + sales revenue (PLAN 7.4, sales billing → AR, D-046) ---------
+# The AR control (trade-receivables) account the billing-triggered customer invoice DEBITS at the
+# invoiced total, and the SALES_REVENUE account each invoice line CREDITS at its net. A customer
+# invoice created DIRECTLY in finance (4.6) supplies its own ar_account_id + per-line revenue
+# account
+# per invoice; the sales-billing-triggered invoice resolves them from these per-tenant posting
+# defaults (sales holds no GL account), so a tenant MUST map both before a billing can post —
+# resolved via finance/queries.ar_control_account + finance/queries.sales_revenue_account. The AR
+# control mirrors AP_CONTROL; SALES_REVENUE mirrors the way PPV is a per-tenant default line
+# account.
+AR_CONTROL = "ar_control"
+SALES_REVENUE = "sales_revenue"
+
+# --- WIP clearing + production variance (PLAN 8.2, manufacturing production orders, D-048) -----
+# The WIP (work-in-process) clearing account is a per-tenant posting default (an ASSET/clearing
+# account). A production order's component ISSUE posts Dr WIP / Cr Inventory and its finished
+# RECEIPT posts Dr Inventory / Cr WIP, both via the inventory costing event's valuation-offset
+# OVERRIDE to this account (the GR/IR-override pattern, 6.3). WIP nets to ZERO per fully-issued +
+# finished order — the issue debits equal the finished credit plus any variance flush. A tenant
+# MUST map this purpose before a production order can issue/finish (it has nowhere to clear WIP);
+# resolved via finance/queries.wip_clearing_account.
+WIP_CLEARING = "wip_clearing"
+
+# The production-variance account (an EXPENSE/income variance account) absorbs the residual when an
+# order's accumulated WIP debit (issued component cost) differs from its finished-goods credit (the
+# value entering stock at the WIP-per-unit cost × finished quantity) — over/under-absorption, the
+# MAV zero-quantity flush analogue — so WIP still nets to ZERO at completion. The finish flow posts
+# the variance as a separate entry (Dr/Cr WIP / Cr/Dr variance) AFTER the finished RECEIPT.
+# Resolved via finance/queries.production_variance_account; a tenant MUST map it before an order
+# whose finish carries a residual can complete.
+PRODUCTION_VARIANCE = "production_variance"
+
+# --- HR payroll gross→net posting (PLAN 10.4, hr payroll run → consolidated journal, D-055) -----
+# The three per-tenant posting defaults the HR-payroll-posted handler resolves to build the
+# consolidated payroll journal (HR holds no GL account — STRUCTURE §5 — so it carries the three
+# purpose KEYS on the event and finance resolves the accounts):
+# - SALARY_EXPENSE — the EXPENSE account the run DEBITS at total gross (the labour cost), carrying
+#   the per-line cost-centre dimension so CO cost-centre reports include labour.
+# - WAGES_PAYABLE — the LIABILITY account the run CREDITS at total net (net pay owed to employees,
+#   cleared when payroll is actually paid out — payment is out of v1 scope, the clearing account is
+#   the liability that stands open). Named "net pay clearing" in the parity doc; "wages payable" is
+#   the GL term.
+# - PAYROLL_TAX_PAYABLE — the LIABILITY account the run CREDITS at total withheld tax (the flat-rate
+#   withholding remitted to the authority — also out of v1 scope, so it stands as an open
+#   liability).
+# A tenant MUST map all three before a payroll run can post (it has nowhere to route the legs);
+# resolved via finance/queries.salary_expense_account / wages_payable_account /
+# payroll_tax_payable_account, RAISING 422 (finance.posting_default_unmapped) when unmapped.
+SALARY_EXPENSE = "salary_expense"
+WAGES_PAYABLE = "wages_payable"
+PAYROLL_TAX_PAYABLE = "payroll_tax_payable"
+
+# Every known posting-default purpose: FX + the CO/bank/asset clearing accounts + GR-IR + PPV + AP +
+# the AR control + sales-revenue defaults the 7.4 sales billing / credit-note flow resolves + the
+# WIP clearing + production-variance defaults the 8.2 production-order flow resolves + the three
+# payroll defaults the 10.4 payroll-run → consolidated-journal flow resolves.
 POSTING_PURPOSES: frozenset[str] = FX_POSTING_PURPOSES | frozenset(
-    {CO_ALLOCATION_CLEARING, BANK_UNMATCHED_CLEARING, ASSET_ACQUISITION_CLEARING}
+    {
+        CO_ALLOCATION_CLEARING,
+        BANK_UNMATCHED_CLEARING,
+        ASSET_ACQUISITION_CLEARING,
+        GR_IR_CLEARING,
+        PURCHASE_PRICE_VARIANCE,
+        AP_CONTROL,
+        AR_CONTROL,
+        SALES_REVENUE,
+        WIP_CLEARING,
+        PRODUCTION_VARIANCE,
+        SALARY_EXPENSE,
+        WAGES_PAYABLE,
+        PAYROLL_TAX_PAYABLE,
+    }
 )
 
 # Background-job registry keys (PLAN 4P.5/D-032, closes #26): long-running finance operations

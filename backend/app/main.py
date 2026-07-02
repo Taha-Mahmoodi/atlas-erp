@@ -15,16 +15,13 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.core.audit import actor_user_id_ctx, request_id_ctx, request_ip_ctx
+from app.core.bootstrap import mount_routers, register_event_handlers
 from app.core.config import Settings, get_settings
-from app.core.docflow_router import router as docflow_router
 from app.core.exceptions import AtlasError, translate_db_guard_error
 from app.core.idempotency import REPLAYED_HEADER, IdempotencyReplay
-from app.core.jobs_router import router as jobs_router
 from app.core.rbac import current_permissions
 from app.core.schemas import ErrorBody, ErrorEnvelope
-from app.core.security_router import router as security_router
 from app.core.tenancy import current_tenant_id
-from app.modules.finance.router import router as finance_router
 
 logger = logging.getLogger("atlas")
 
@@ -218,16 +215,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def health() -> dict[str, str]:
         return {"status": "ok", "env": settings.env}
 
-    # Core platform auth endpoints (D-008): login/refresh/logout/me at /api/v1/auth.
-    app.include_router(security_router)
-    # Core platform document-flow read endpoint (D-012): GET /api/v1/documents/{id}/chain.
-    app.include_router(docflow_router)
-    # Core platform background-job polling (PLAN 4P.5/D-032): GET /api/v1/jobs[/{id}].
-    app.include_router(jobs_router)
-    # Finance module (PLAN 4): chart of accounts + fiscal years/periods at /api/v1/finance.
-    # First business module mounted; the fixed import order here is also the D-011 handler
-    # registration order (finance, then inventory, ...) once modules publish/subscribe events.
-    app.include_router(finance_router)
+    # Router mounting + cross-module event-handler registration (D-011) live in core/bootstrap.py
+    # (the two wiring blocks that grow with every module). mount_routers includes every module
+    # router in the fixed import order; register_event_handlers subscribes the cross-module handlers
+    # in that same deterministic order — importing each module runs its ``@on`` subscriptions.
+    mount_routers(app)
+    register_event_handlers()
 
     return app
 

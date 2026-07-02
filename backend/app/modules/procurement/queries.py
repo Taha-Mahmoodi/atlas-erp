@@ -1,0 +1,368 @@
+"""Procurement's cross-module read interface (STRUCTURE §5).
+
+Procurement sits above inventory (and finance) in the dependency order: the P2P documents in
+6.2–6.4 (requisition → RFQ → PO → goods receipt → 3-way match) and finance AP reporting read THIS
+file to resolve vendor state synchronously; procurement imports finance/queries + inventory/queries
+downward. Keep this surface thin and stable — it is a contract; it is the ONLY procurement file
+other modules import.
+
+The central D-029 link: finance AP stores a vendor on each bill/payment as an opaque ``partner_id``
+(no FK). ``get_vendor_for_partner`` resolves that ``partner_id`` back to a ``Vendor`` so AP aging /
+reporting can render the vendor's name and payment terms — the ``partner_id`` IS the ``Vendor.id``,
+so it is a thin alias over ``get_vendor`` named for the reporting intent.
+
+PLAN 6.2 adds the PURCHASE-ORDER reads 6.3 (goods receipts) and 6.4 (the 3-way match) call:
+``get_purchase_order``, ``po_line_open_quantity`` (ordered − received), ``get_po_for_receipt`` (the
+header + lines a receipt needs) and ``open_po_lines_for_vendor`` (the awaiting-receipt worklist).
+PLAN 7.2 adds ``open_incoming_quantity`` (ordered − received summed per item over live POs) — the
+on-order side of sales ATP (D-044), a SANCTIONED cross-module read sales calls.
+
+Every function takes an explicit ``tenant_id`` and runs under the caller's tenant context, so the
+D-007 filter applies on top of the explicit predicate — ordinary tenant-scoped reads, not a bypass.
+"""
+
+import uuid
+from dataclasses import dataclass
+from decimal import Decimal
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.modules.procurement.constants import PurchaseOrderStatus
+from app.modules.procurement.models import (
+    GoodsReceipt,
+    InvoiceMatch,
+    PurchaseOrder,
+    PurchaseOrderLine,
+    Vendor,
+    VendorApprovedItem,
+)
+
+
+async def get_vendor(
+    session: AsyncSession, tenant_id: uuid.UUID, vendor_id: uuid.UUID
+) -> Vendor | None:
+    """The vendor with ``vendor_id`` in the tenant, or None. Lets another module read a vendor's
+    master fields (name, status, default currency, payment terms) without importing procurement
+    models directly — the analogue of inventory's ``get_item``."""
+    stmt = select(Vendor).where(Vendor.tenant_id == tenant_id, Vendor.id == vendor_id)
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def get_vendor_for_partner(
+    session: AsyncSession, tenant_id: uuid.UUID, partner_id: uuid.UUID
+) -> Vendor | None:
+    """The vendor an AP document's opaque ``partner_id`` refers to (D-029), or None. AP aging /
+    reporting calls this to resolve a bill's ``partner_id`` to a vendor name + payment terms. The
+    ``partner_id`` IS the ``Vendor.id`` (finance stores it without an FK), so this is ``get_vendor``
+    named for the reporting intent — kept as its own function so AP call sites read intent-first and
+    the alias survives any future indirection."""
+    return await get_vendor(session, tenant_id, partner_id)
+
+
+async def vendor_exists(
+    session: AsyncSession, tenant_id: uuid.UUID, vendor_id: uuid.UUID
+) -> bool:
+    """Whether a vendor with ``vendor_id`` exists in the tenant. The cheap existence check a
+    requisition / PO line uses to validate its vendor_id (the procurement analogue of inventory's
+    ``item_exists``)."""
+    stmt = select(Vendor.id).where(Vendor.tenant_id == tenant_id, Vendor.id == vendor_id)
+    return (await session.execute(stmt)).first() is not None
+
+
+async def vendor_payment_terms_days(
+    session: AsyncSession, tenant_id: uuid.UUID, vendor_id: uuid.UUID
+) -> int | None:
+    """The vendor's net-days payment terms (e.g. 30 = NET30), or None if the vendor does not exist.
+    The PO→bill flow (6.4) reads this to default a bill's due date (bill_date + days), the same
+    math AP uses today — exposed so the chain need not import procurement models."""
+    stmt = select(Vendor.payment_terms_days).where(
+        Vendor.tenant_id == tenant_id, Vendor.id == vendor_id
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def vendor_default_currency(
+    session: AsyncSession, tenant_id: uuid.UUID, vendor_id: uuid.UUID
+) -> str | None:
+    """The vendor's default currency code (ISO alpha-3), or None if the vendor does not exist. The
+    PO flow (6.2) defaults a PO's currency from this; exposed so the chain need not import
+    procurement models."""
+    stmt = select(Vendor.default_currency_code).where(
+        Vendor.tenant_id == tenant_id, Vendor.id == vendor_id
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def is_item_approved_for_vendor(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    vendor_id: uuid.UUID,
+    item_id: uuid.UUID,
+) -> bool:
+    """Whether ``item_id`` is an ACTIVE approved item for ``vendor_id`` (PLAN 6.1, the
+    info-record-lite).
+    The PO flow (6.2) calls this to enforce "only approved sources" when a tenant opts into it (a
+    soft policy hook); an inactive approval reads False so a deactivated source is treated as not
+    approved. Index-served by ``(tenant_id, vendor_id)``."""
+    stmt = select(VendorApprovedItem.id).where(
+        VendorApprovedItem.tenant_id == tenant_id,
+        VendorApprovedItem.vendor_id == vendor_id,
+        VendorApprovedItem.item_id == item_id,
+        VendorApprovedItem.is_active.is_(True),
+    )
+    return (await session.execute(stmt)).first() is not None
+
+
+# --- Purchase orders (PLAN 6.2 → consumed by 6.3 goods receipts + 6.4 3-way match) ------------
+
+
+async def get_purchase_order(
+    session: AsyncSession, tenant_id: uuid.UUID, po_id: uuid.UUID
+) -> PurchaseOrder | None:
+    """The PO with ``po_id`` in the tenant, or None. Lets 6.3 (goods receipts) and 6.4 (the bill
+    match) read a PO header — vendor, currency, status, totals — without importing procurement
+    service internals. A point lookup on the PK."""
+    stmt = select(PurchaseOrder).where(
+        PurchaseOrder.tenant_id == tenant_id, PurchaseOrder.id == po_id
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def po_line_open_quantity(
+    session: AsyncSession, tenant_id: uuid.UUID, po_line_id: uuid.UUID
+) -> Decimal | None:
+    """The still-open quantity on a PO line — ordered minus received — or None if the line does not
+    exist. 6.3 reads this to cap a goods receipt at the outstanding quantity; 6.4 reads it for the
+    three-way match. Computed from the maintained ``received_quantity`` (raised by 6.3), so it is a
+    point lookup, not a SUM over receipts."""
+    line = (
+        await session.execute(
+            select(PurchaseOrderLine).where(
+                PurchaseOrderLine.tenant_id == tenant_id,
+                PurchaseOrderLine.id == po_line_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if line is None:
+        return None
+    return Decimal(str(line.quantity)) - Decimal(str(line.received_quantity))
+
+
+async def get_po_for_receipt(
+    session: AsyncSession, tenant_id: uuid.UUID, po_id: uuid.UUID
+) -> tuple[PurchaseOrder, list[PurchaseOrderLine]] | None:
+    """The PO header + its lines (item, ordered/received quantities, unit cost, tax code) — the data
+    a goods receipt (6.3) needs to build receipt lines and a 3-way match (6.4) needs to compare.
+    None when the PO is unknown to this tenant. Two indexed reads (header by PK, lines by
+    (tenant, po_id)); no N+1 over lines."""
+    po = await get_purchase_order(session, tenant_id, po_id)
+    if po is None:
+        return None
+    lines = list(
+        (
+            await session.execute(
+                select(PurchaseOrderLine)
+                .where(
+                    PurchaseOrderLine.tenant_id == tenant_id,
+                    PurchaseOrderLine.po_id == po_id,
+                )
+                .order_by(PurchaseOrderLine.line_number)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return po, lines
+
+
+async def get_goods_receipt(
+    session: AsyncSession, tenant_id: uuid.UUID, gr_id: uuid.UUID
+) -> GoodsReceipt | None:
+    """The goods receipt with ``gr_id`` in the tenant, or None (PLAN 6.3). Lets 6.4 (the bill match)
+    read a GR header — PO, vendor, status, receipt date — without importing procurement service
+    internals. A point lookup on the PK."""
+    stmt = select(GoodsReceipt).where(
+        GoodsReceipt.tenant_id == tenant_id, GoodsReceipt.id == gr_id
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def goods_receipts_for_po(
+    session: AsyncSession, tenant_id: uuid.UUID, po_id: uuid.UUID
+) -> list[GoodsReceipt]:
+    """Every goods receipt raised against a PO (PLAN 6.3), newest first — the per-PO receipt history
+    the 6.4 three-way match reads to find what has been received. Index-served by
+    (tenant, purchase_order_id)."""
+    stmt = (
+        select(GoodsReceipt)
+        .where(
+            GoodsReceipt.tenant_id == tenant_id,
+            GoodsReceipt.purchase_order_id == po_id,
+        )
+        .order_by(GoodsReceipt.created_at.desc())
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def po_line_open_to_bill(
+    session: AsyncSession, tenant_id: uuid.UUID, po_line_id: uuid.UUID
+) -> Decimal | None:
+    """The still-open-to-bill quantity on a PO line — RECEIVED minus BILLED — or None if the line
+    does not exist (PLAN 6.4, D-042). The 3-way over-billing constraint caps a match line at this:
+    you can never bill beyond what was physically received (received_quantity is raised by 6.3
+    goods receipts; billed_quantity by 6.4 matches). A point lookup on the maintained columns, not a
+    SUM over matches."""
+    line = (
+        await session.execute(
+            select(PurchaseOrderLine).where(
+                PurchaseOrderLine.tenant_id == tenant_id,
+                PurchaseOrderLine.id == po_line_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if line is None:
+        return None
+    return Decimal(str(line.received_quantity)) - Decimal(str(line.billed_quantity))
+
+
+async def get_invoice_match(
+    session: AsyncSession, tenant_id: uuid.UUID, match_id: uuid.UUID
+) -> InvoiceMatch | None:
+    """The invoice match with ``match_id`` in the tenant, or None (PLAN 6.4). A point lookup on the
+    PK; lets another module (or reporting) read a match header without importing procurement service
+    internals."""
+    stmt = select(InvoiceMatch).where(
+        InvoiceMatch.tenant_id == tenant_id, InvoiceMatch.id == match_id
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def matches_for_po(
+    session: AsyncSession, tenant_id: uuid.UUID, po_id: uuid.UUID
+) -> list[InvoiceMatch]:
+    """Every invoice match raised against a PO (PLAN 6.4), newest first — the per-PO match history.
+    Index-served by (tenant, purchase_order_id)."""
+    stmt = (
+        select(InvoiceMatch)
+        .where(
+            InvoiceMatch.tenant_id == tenant_id,
+            InvoiceMatch.purchase_order_id == po_id,
+        )
+        .order_by(InvoiceMatch.created_at.desc())
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def open_incoming_quantity(
+    session: AsyncSession, tenant_id: uuid.UUID, item_id: uuid.UUID
+) -> Decimal:
+    """The total OPEN-INCOMING (on-order) quantity of an item across all live POs (PLAN 7.2, D-044)
+    — the on-order side of sales ATP. Sums ``ordered − received`` over PO lines for ``item_id`` on
+    SENT / APPROVED / PARTIALLY_RECEIVED orders (orders that are committed to the vendor and still
+    expect goods). A DRAFT / PENDING / CANCELLED / fully-RECEIVED / CLOSED order contributes
+    nothing.
+
+    SET-BASED (no per-PO N+1, PERFORMANCE §2): one join over PO lines filtered by the PO's status
+    and
+    a positive open quantity, summed in PYTHON over the (small) open set so the exact-decimal
+    QuantityType round-trips identically on both engines (D-015: SQL never subtracts two scaled
+    quantity columns for the result value). Exposed so sales reads the on-order figure without
+    importing procurement models — the bottom-up cross-module read (STRUCTURE §5)."""
+    stmt = (
+        select(PurchaseOrderLine.quantity, PurchaseOrderLine.received_quantity)
+        .join(
+            PurchaseOrder,
+            (PurchaseOrderLine.tenant_id == PurchaseOrder.tenant_id)
+            & (PurchaseOrderLine.po_id == PurchaseOrder.id),
+        )
+        .where(
+            PurchaseOrderLine.tenant_id == tenant_id,
+            PurchaseOrderLine.item_id == item_id,
+            PurchaseOrder.status.in_(
+                [
+                    PurchaseOrderStatus.APPROVED.value,
+                    PurchaseOrderStatus.SENT.value,
+                    PurchaseOrderStatus.PARTIALLY_RECEIVED.value,
+                ]
+            ),
+            PurchaseOrderLine.received_quantity < PurchaseOrderLine.quantity,
+        )
+    )
+    rows = (await session.execute(stmt)).all()
+    return sum(
+        (Decimal(str(ordered)) - Decimal(str(received)) for ordered, received in rows),
+        Decimal(0),
+    )
+
+
+async def open_po_lines_for_vendor(
+    session: AsyncSession, tenant_id: uuid.UUID, vendor_id: uuid.UUID
+) -> list[PurchaseOrderLine]:
+    """The still-open PO lines (ordered > received) on SENT / PARTIALLY_RECEIVED orders for a vendor
+    — the receivable-against-vendor worklist 6.3 / 6.4 use to find what is awaiting receipt. Filters
+    on the (tenant, vendor_id, status) index; the open-quantity test is a column comparison."""
+    stmt = (
+        select(PurchaseOrderLine)
+        .join(
+            PurchaseOrder,
+            (PurchaseOrderLine.tenant_id == PurchaseOrder.tenant_id)
+            & (PurchaseOrderLine.po_id == PurchaseOrder.id),
+        )
+        .where(
+            PurchaseOrder.tenant_id == tenant_id,
+            PurchaseOrder.vendor_id == vendor_id,
+            PurchaseOrder.status.in_(
+                [
+                    PurchaseOrderStatus.SENT.value,
+                    PurchaseOrderStatus.PARTIALLY_RECEIVED.value,
+                ]
+            ),
+            PurchaseOrderLine.received_quantity < PurchaseOrderLine.quantity,
+        )
+        .order_by(PurchaseOrder.created_at, PurchaseOrderLine.line_number)
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+@dataclass(frozen=True)
+class OpenPurchaseOrders:
+    """The open-purchase-orders dashboard KPI (PLAN 13.1, D-058): the count of live POs committed to
+    a vendor + their summed ``total_amount`` (transaction currency). The reporting ``CountValueKpi``
+    schema maps from this."""
+
+    count: int
+    total: Decimal
+
+
+# OPEN purchase orders = committed to the vendor + still expecting goods: APPROVED (cleared to
+# send), SENT (live commitment), PARTIALLY_RECEIVED. A DRAFT/PENDING_APPROVAL/REJECTED order is not
+# yet a commitment; a fully-RECEIVED/CLOSED/CANCELLED one is off the open worklist (the
+# open_incoming_quantity precedent, D-044).
+_OPEN_PO_STATUSES = (
+    PurchaseOrderStatus.APPROVED.value,
+    PurchaseOrderStatus.SENT.value,
+    PurchaseOrderStatus.PARTIALLY_RECEIVED.value,
+)
+
+
+async def open_purchase_orders(
+    session: AsyncSession, tenant_id: uuid.UUID
+) -> OpenPurchaseOrders:
+    """The tenant's OPEN purchase orders — count + summed value (PLAN 13.1, D-058): POs committed
+    to a vendor and still expecting goods (APPROVED / SENT / PARTIALLY_RECEIVED), the open-PO
+    dashboard card. ONE aggregate over the (tenant, status) index — COUNT(*) + SUM(total_amount);
+    the sum rides MoneyType so the exact-decimal total round-trips on both engines (D-015). Returns
+    zeros for a tenant with no open POs. A SANCTIONED procurement/queries addition the reporting
+    module reads downward (no cycle — procurement never imports reporting)."""
+    stmt = select(
+        func.count(PurchaseOrder.id),
+        func.coalesce(func.sum(PurchaseOrder.total_amount), 0),
+    ).where(
+        PurchaseOrder.tenant_id == tenant_id,
+        PurchaseOrder.status.in_(_OPEN_PO_STATUSES),
+    )
+    count, total = (await session.execute(stmt)).one()
+    return OpenPurchaseOrders(
+        count=int(count), total=Decimal(str(total)) if total is not None else Decimal(0)
+    )

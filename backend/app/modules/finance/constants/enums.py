@@ -58,10 +58,16 @@ class DocumentType(StrEnum):
     JOURNAL = "JOURNAL"
     AP_INVOICE = "AP_INVOICE"
     AR_INVOICE = "AR_INVOICE"
+    # The sign-flipped AR_INVOICE: a sales-return credit note (PLAN 7.4) whose journal posts
+    # Dr revenue / Dr output tax / Cr AR control — reducing what the customer owes.
+    AR_CREDIT_NOTE = "AR_CREDIT_NOTE"
     PAYMENT = "PAYMENT"
     COGS = "COGS"
     FX_REVAL = "FX_REVAL"
     DEPRECIATION = "DEPRECIATION"
+    # The consolidated HR-payroll journal (PLAN 10.4): Dr salary-expense by cost centre / Cr
+    # payroll-tax-payable / Cr wages-payable, posted from the hr.payroll.posted event (D-055).
+    PAYROLL = "PAYROLL"
 
 
 class TaxDirection(StrEnum):
