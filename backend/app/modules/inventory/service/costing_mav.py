@@ -47,11 +47,14 @@ async def mav_receive(
     warehouse_id: uuid.UUID,
     qty: Decimal,
     unit_cost: Decimal,
+    extra_value: Decimal = Decimal(0),
 ) -> None:
-    """Moving-average RECEIPT (D-020): total_value += qty × unit_cost; on_hand += qty; avg =
-    total_value / on_hand UNROUNDED (full precision, so issues don't drift)."""
+    """Moving-average RECEIPT (D-020): total_value += qty × unit_cost (+ ``extra_value``);
+    on_hand += qty; avg = total_value / on_hand UNROUNDED (full precision, so issues don't
+    drift). ``extra_value`` carries a cross-warehouse transfer's issue rounding residual into
+    the destination so total value is conserved across the two valuation rows (#84)."""
     valuation = await locked_valuation(session, tenant_id, item_id, warehouse_id)
-    receipt_value = qty * unit_cost
+    receipt_value = qty * unit_cost + extra_value
     if valuation is None:
         session.add(
             ItemValuation(
@@ -59,7 +62,7 @@ async def mav_receive(
                 item_id=item_id,
                 warehouse_id=warehouse_id,
                 on_hand_qty=qty,
-                avg_unit_cost=unit_cost,
+                avg_unit_cost=receipt_value / qty if qty > 0 else unit_cost,
                 total_value=receipt_value,
             )
         )

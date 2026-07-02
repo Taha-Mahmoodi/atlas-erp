@@ -144,6 +144,44 @@ async def test_moving_average_non_terminating_average_flushes_to_zero(
     assert valuation.total_value == Decimal(0), "residual must flush to exactly zero"
 
 
+async def test_cross_warehouse_transfer_conserves_total_value(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    """Regression for #84: a cross-warehouse MAV transfer that empties the source used to DROP
+    the issue rounding residual (mav_issue's zero-qty flush), so the destination received only
+    the quantized cost and the subledger drifted from the GL. The residual must move with the
+    stock: source flushes to exactly 0, destination holds the exact received value."""
+    from tests.modules.inventory.factories import build_bin, build_warehouse
+
+    setup = await build_stock_setup(db_session, tenant_a, costing=CostingMethod.MOVING_AVERAGE)
+    # 1.5 units @ 2.01 → total_value 3.015 (three decimals): issuing all 1.5 quantizes COGS to
+    # 3.02 and flushes a -0.005 residual out of the source.
+    await build_stock(
+        db_session, tenant_a, setup.item_id, setup.bin_a_id, Decimal("1.5"),
+        unit_cost=Decimal("2.01"),
+    )
+    warehouse_b = await build_warehouse(db_session, tenant_a, code="WH-B", name="B")
+    bin_b = await build_bin(db_session, tenant_a, warehouse_b.id, code="B1", name="B1")
+    await build_move(
+        db_session,
+        tenant_a,
+        StockMoveCreate(
+            move_type=MoveType.TRANSFER,
+            item_id=setup.item_id,
+            quantity=Decimal("1.5"),
+            from_bin_id=setup.bin_a_id,
+            to_bin_id=bin_b.id,
+        ),
+    )
+    source = await _valuation(db_session, setup, warehouse_id=setup.warehouse_id)
+    destination = await _valuation(db_session, setup, warehouse_id=warehouse_b.id)
+    assert source.on_hand_qty == Decimal(0)
+    assert source.total_value == Decimal(0)
+    assert destination.on_hand_qty == Decimal("1.5")
+    # The exact value received into stock — NOT the 3.02 quantized issue cost.
+    assert Decimal(destination.total_value) == Decimal("3.015")
+
+
 # --- FIFO ---------------------------------------------------------------------
 
 
