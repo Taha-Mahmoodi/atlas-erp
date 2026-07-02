@@ -1,4 +1,4 @@
-"""Margin-by-product: revenue - COGS grouped by the item_id line dimension (D-021).
+"""Margin-by-item: revenue - COGS grouped by the item_id line dimension (D-021).
 
 Another projection of the universal journal: revenue and COGS postings tagged with ``item_id`` are
 read straight off the line and netted per item. This is sparse until inventory posts COGS with an
@@ -43,8 +43,8 @@ class ItemMargin:
 
 
 @dataclass
-class MarginByProduct:
-    """The margin-by-product report for a period (D-021): one row per item with revenue/COGS/margin.
+class MarginByItem:
+    """The margin-by-item report for a period (D-021): one row per item with revenue/COGS/margin.
 
     ``items`` are sorted by descending margin so the most profitable items surface first; the
     unassigned (item_id None) bucket, if present, sorts among them by its margin."""
@@ -54,12 +54,12 @@ class MarginByProduct:
     items: list[ItemMargin] = field(default_factory=list)
 
 
-async def margin_by_product(
+async def margin_by_item(
     session: AsyncSession,
     tenant_id: uuid.UUID,
     date_from: date,
     date_to: date,
-) -> MarginByProduct:
+) -> MarginByItem:
     """Revenue - COGS per item over ``[date_from, date_to]`` (D-021).
 
     Uses the dimension aggregate on ``JournalLine.item_id``, splitting each (item, account) balance
@@ -112,4 +112,4 @@ async def margin_by_product(
         )
 
     items.sort(key=lambda row: row.margin, reverse=True)
-    return MarginByProduct(date_from=date_from, date_to=date_to, items=items)
+    return MarginByItem(date_from=date_from, date_to=date_to, items=items)

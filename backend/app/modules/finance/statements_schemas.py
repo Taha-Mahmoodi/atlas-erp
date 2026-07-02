@@ -130,7 +130,7 @@ class CostCenterReportRead(ApiModel):
     sections: list[CostCenterSectionRead]
 
 
-# --- Margin by product --------------------------------------------------------
+# --- Margin by item -----------------------------------------------------------
 
 
 class ItemMarginRead(ApiModel):
@@ -141,7 +141,7 @@ class ItemMarginRead(ApiModel):
     margin_percent: Decimal | None
 
 
-class MarginByProductRead(ApiModel):
+class MarginByItemRead(ApiModel):
     date_from: date
     date_to: date
     items: list[ItemMarginRead]
