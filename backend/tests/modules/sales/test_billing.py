@@ -133,6 +133,25 @@ async def test_create_rejects_over_billing(
     assert exc.value.code == "sales.over_billing"
 
 
+async def test_post_rejects_over_billing_via_second_draft(
+    db_session: AsyncSession, billing_setup: BillingSetup
+) -> None:
+    """Regression for #75: two DRAFT billings created before either posts both pass the
+    create-time check; posting the second used to over-bill past the delivered quantity."""
+    order = await build_delivered_order(db_session, billing_setup, quantity="5")
+    line_id = await _order_line_id(db_session, billing_setup.order.tenant_id, order.id)
+    b1 = await build_billing(
+        db_session, billing_setup, order_id=order.id, lines=[_line(line_id, "5")]
+    )
+    b2 = await build_billing(
+        db_session, billing_setup, order_id=order.id, lines=[_line(line_id, "5")]
+    )
+    await post_billing(db_session, billing_setup.order.tenant_id, b1.id)
+    with pytest.raises(ValidationFailedError) as exc:
+        await post_billing(db_session, billing_setup.order.tenant_id, b2.id)
+    assert exc.value.code == "sales.over_billing"
+
+
 async def test_create_rejects_undelivered_order(
     db_session: AsyncSession, billing_setup: BillingSetup
 ) -> None:

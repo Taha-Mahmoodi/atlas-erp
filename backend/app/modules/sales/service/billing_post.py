@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import docflow
 from app.core.events import publish
-from app.core.exceptions import ConflictError
+from app.core.exceptions import ConflictError, ValidationFailedError
 from app.modules.finance import queries as finance_queries
 from app.modules.sales import queries as sales_queries
 from app.modules.sales.constants import (
@@ -143,9 +143,23 @@ def _raise_invoiced_and_build_invoice_lines(
     invoice_lines: list[BillingInvoiceLine] = []
     for line in lines:
         order_line = order_lines[line.sales_order_line_id]
-        order_line.invoiced_quantity = Decimal(str(order_line.invoiced_quantity)) + Decimal(
+        new_invoiced = Decimal(str(order_line.invoiced_quantity)) + Decimal(
             str(line.quantity)
         )
+        # #75: the create-path check reads the persisted column, which another document may
+        # have raised since this DRAFT was created — re-check the cap at post time.
+        if new_invoiced > Decimal(str(order_line.delivered_quantity)):
+            raise ValidationFailedError(
+                message="Posting this billing would exceed the order line's delivered quantity",
+                code="sales.over_billing",
+                details={
+                    "sales_order_line_id": str(order_line.id),
+                    "delivered_quantity": str(order_line.delivered_quantity),
+                    "invoiced_quantity": str(order_line.invoiced_quantity),
+                    "quantity": str(line.quantity),
+                },
+            )
+        order_line.invoiced_quantity = new_invoiced
         invoice_lines.append(
             BillingInvoiceLine(
                 item_id=line.item_id,

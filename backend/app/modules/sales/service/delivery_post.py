@@ -75,9 +75,23 @@ async def post_delivery(
     moves: list[DeliveryMove] = []
     for line in lines:
         order_line = order_lines[line.sales_order_line_id]
-        order_line.delivered_quantity = Decimal(str(order_line.delivered_quantity)) + Decimal(
+        new_delivered = Decimal(str(order_line.delivered_quantity)) + Decimal(
             str(line.quantity)
         )
+        # #75: the create-path check reads the persisted column, which another document may
+        # have raised since this DRAFT was created — re-check the cap at post time.
+        if new_delivered > Decimal(str(order_line.ordered_quantity)):
+            raise ValidationFailedError(
+                message="Posting this delivery would exceed the order line's ordered quantity",
+                code="sales.over_delivery",
+                details={
+                    "sales_order_line_id": str(order_line.id),
+                    "ordered_quantity": str(order_line.ordered_quantity),
+                    "delivered_quantity": str(order_line.delivered_quantity),
+                    "quantity": str(line.quantity),
+                },
+            )
+        order_line.delivered_quantity = new_delivered
         # An ISSUE references an EXISTING lot/serial BY ID (it creates none), so resolve the line's
         # human lot/serial code to the inventory id through inventory/queries (D-029) — the move
         # would otherwise reject a code on an outbound issue. A tracked line with no resolvable
