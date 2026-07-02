@@ -290,6 +290,29 @@ async def test_cannot_overpay_a_bill(
     assert exc.value.code == "finance.payment_overallocated"
 
 
+async def test_payment_amount_must_equal_allocation_sum(
+    db_session: AsyncSession, ap_setup: ApSetup
+) -> None:
+    """Regression for #73 (AP mirror): a same-currency underpayment (amount < sum of
+    allocations) used to post the difference as a phantom realized-FX loss."""
+    bill = await _create_and_post_bill(db_session, ap_setup, _bill_payload(ap_setup))
+    with tenant_context(ap_setup.tenant_id), pytest.raises(ValidationFailedError) as exc:
+        await service.create_and_post_payment(
+            db_session,
+            ap_setup.tenant_id,
+            VendorPaymentCreate(
+                partner_id=bill.partner_id,
+                partner_name=bill.partner_name,
+                payment_date=_PAY_DATE,
+                currency_code="USD",
+                bank_account_id=ap_setup.accounts["1000"],
+                amount=Decimal("90.00"),
+                allocations=[PaymentAllocationCreate(bill_id=bill.id, amount=Decimal("100.00"))],
+            ),
+        )
+    assert exc.value.code == "finance.payment_allocation_sum_mismatch"
+
+
 # --- payment run --------------------------------------------------------------
 
 

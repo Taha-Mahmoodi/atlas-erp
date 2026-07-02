@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import docflow
 from app.core.events import publish
+from app.core.exceptions import ValidationFailedError
 from app.core.jobs import register_job
 from app.core.money import currency_decimals, quantize_money
 from app.core.numbering import claim_number, ensure_sequence
@@ -76,6 +77,15 @@ async def create_and_post_payment(
         session, tenant_id, payload.partner_id, payload.currency_code, payload.allocations
     )
     payment_amount = quantize_money(payload.amount, currency_decimals(payload.currency_code))
+    allocated_total = sum((amount for _, amount in pairs), Decimal(0))
+    if payment_amount != allocated_total:
+        # #73: without this, the difference flows into the realized-FX line and a plain
+        # same-currency over/under-payment is misbooked as a phantom FX gain/loss.
+        raise ValidationFailedError(
+            message="The payment amount must equal the sum of its allocations",
+            code="finance.payment_allocation_sum_mismatch",
+            details={"amount": str(payment_amount), "allocated": str(allocated_total)},
+        )
 
     lines, functional_amounts = await build_payment_lines(
         session,
