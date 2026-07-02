@@ -16,7 +16,10 @@ These are READ/parse schemas, not request bodies — the apply endpoint takes on
 (the content is the shipped file), so there is no Create/Update variant.
 """
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+import re
+import uuid
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # Mirrors core.custom_fields.CustomFieldType + the COA/costing enums; kept as literals so the
 # schema file and these models stay the single declarative pair (no runtime import of the enums
@@ -158,3 +161,61 @@ class IndustryTemplate(_StrictModel):
                 f"got {len(functional)}"
             )
         return self
+
+
+# --- Onboarding wizard I/O (PLAN 14.2 / D-061) --------------------------------
+# Request/response bodies for POST /api/v1/onboarding/tenants. Unlike the template models above
+# (parsed shipped files), these ARE request bodies, so they carry Create-style validation
+# (EmailStr, min-length password, slug shape) and forbid unknown keys.
+
+_SLUG_NON_ALNUM = re.compile(r"[^a-z0-9]+")
+
+
+def _slugify(value: str) -> str:
+    """Lowercase, collapse every run of non-alphanumerics to a single hyphen, trim edges — the
+    onboarding slug derivation when the caller omits an explicit slug (D-061)."""
+    return _SLUG_NON_ALNUM.sub("-", value.strip().lower()).strip("-")
+
+
+class OnboardTenantRequest(BaseModel):
+    """The onboarding wizard payload (D-061): company info + chosen template + first admin creds.
+
+    ``slug`` is optional — omitted, it is derived from ``company_name`` (lowercase, non-alnum ->
+    '-'). The functional currency comes from the chosen template."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    company_name: str = Field(min_length=1, max_length=200)
+    slug: str | None = Field(default=None, max_length=63)
+    template_name: str
+    # Plain str, not EmailStr, matching core/schemas.py's LoginRequest — the project deliberately
+    # avoids the email-validator dependency (D-008); a minimal shape check keeps garbage out.
+    admin_email: str = Field(min_length=3, max_length=320)
+    admin_password: str = Field(min_length=12)
+
+    @field_validator("admin_email")
+    @classmethod
+    def _looks_like_email(cls, value: str) -> str:
+        if "@" not in value or value.startswith("@") or value.endswith("@"):
+            raise ValueError("admin_email must look like an email address")
+        return value
+
+    @model_validator(mode="after")
+    def _derive_slug(self) -> "OnboardTenantRequest":
+        candidate = self.slug if self.slug else _slugify(self.company_name)
+        candidate = _slugify(candidate)  # normalize an explicit slug too
+        if not candidate:
+            raise ValueError("could not derive a non-empty slug from company_name/slug")
+        object.__setattr__(self, "slug", candidate)
+        return self
+
+
+class OnboardTenantResponse(BaseModel):
+    """What the wizard renders after provisioning (D-061): the new tenant + first admin, the applied
+    template, and a small count summary of what was instantiated (accounts/uoms/tax_codes)."""
+
+    tenant_id: uuid.UUID
+    slug: str
+    admin_user_id: uuid.UUID
+    template_applied: str
+    instantiated: dict[str, int]
