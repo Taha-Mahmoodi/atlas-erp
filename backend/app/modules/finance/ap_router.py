@@ -44,6 +44,7 @@ from app.modules.finance.payables_schemas import (
 ap_router = APIRouter(tags=["finance-ap"])
 
 CursorParamsDep = Depends(cursor_params)
+_CreateBillIdempotentDep = Depends(Idempotent("finance.ap.bill.create"))
 _PostBillIdempotentDep = Depends(Idempotent("finance.ap.bill.post"))
 _PayIdempotentDep = Depends(Idempotent("finance.ap.payment"))
 _RunIdempotentDep = Depends(Idempotent("finance.ap.payment_run"))
@@ -88,15 +89,22 @@ async def _payment_detail(
     dependencies=[Depends(require_permission(FINANCE_AP_MANAGE))],
 )
 async def create_vendor_bill(
-    payload: VendorBillCreate, current: CurrentUserDep, session: SessionDep
+    payload: VendorBillCreate,
+    current: CurrentUserDep,
+    session: SessionDep,
+    idem: IdempotentDep = _CreateBillIdempotentDep,
 ) -> VendorBillRead:
-    """Create a DRAFT vendor bill (no number/journal). Use the /post action to post it."""
+    """Create a DRAFT vendor bill (no number/journal). Use the /post action to post it.
+    IDEMPOTENT (D-013, #88): the draft registers a core_documents row, so a double-submit must
+    not create two documents."""
     holder: dict[str, VendorBillRead] = {}
 
     async def work() -> None:
         bill = await service.create_vendor_bill(session, current.tenant_id, payload)
         await session.refresh(bill)
-        holder["read"] = VendorBillRead.model_validate(bill)
+        holder["read"] = await idem.capture(
+            VendorBillRead.model_validate(bill), status_code=201
+        )
 
     await run_in_uow(session, work)
     return holder["read"]
