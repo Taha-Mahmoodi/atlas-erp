@@ -33,6 +33,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import docflow
+from app.core.docflow import DocumentLink
 from app.core.exceptions import ValidationFailedError
 from app.core.jobs import register_job
 from app.core.pagination import DEFAULT_LIMIT, OrderKey, SortDirection, paginate
@@ -219,10 +220,13 @@ async def _reverse_previous_run(
     session: AsyncSession, tenant_id: uuid.UUID, period: FiscalPeriod, next_start: date
 ) -> None:
     """Reverse a prior COMPLETED run's entries before reposting (D-019 re-run rule: append-only,
-    never delete). Every prior FX_REVAL entry that is still POSTED and is not itself a reversal is
-    reversed into its own period (period-dated adjustments into the revalued period, next-period
-    auto-reversals into the next period), and the prior run row(s) are marked REVERSED. Reversing
-    both halves nets the prior run fully out so the fresh run starts clean."""
+    never delete). Scoped to THIS period's run only (#71): its adjustments are the still-POSTED
+    FX_REVAL entries dated inside the re-run period that are the PREDECESSOR of a 'revalues'
+    docflow edge (the predecessor test excludes the previous period's auto-reversal, which is
+    dated day 1 of this period but is only ever a successor); each adjustment's paired
+    auto-reversal is the edge's successor. Both halves are reversed into their own period and
+    the prior run row(s) are marked REVERSED, netting the prior run fully out so the fresh run
+    starts clean — without touching other periods' still-active revaluations."""
     prior_runs = (
         await session.execute(
             select(FxRevaluationRun).where(
@@ -234,16 +238,40 @@ async def _reverse_previous_run(
     ).scalars().all()
     if not prior_runs:
         return
-    prior_entries = (
+    pair_rows = (
         await session.execute(
-            select(JournalEntry).where(
+            select(JournalEntry, DocumentLink.successor_document_id)
+            .join(
+                DocumentLink,
+                DocumentLink.predecessor_document_id == JournalEntry.document_id,
+            )
+            .where(
+                DocumentLink.tenant_id == tenant_id,
+                DocumentLink.link_type == FX_REVALUES_LINK,
                 JournalEntry.tenant_id == tenant_id,
                 JournalEntry.document_type == DocumentType.FX_REVAL.value,
                 JournalEntry.status == EntryStatus.POSTED.value,
                 JournalEntry.reverses_entry_id.is_(None),
+                JournalEntry.posting_date >= period.start_date,
+                JournalEntry.posting_date <= period.end_date,
             )
         )
-    ).scalars().all()
+    ).all()
+    prior_entries = [row[0] for row in pair_rows]
+    partner_document_ids = [row[1] for row in pair_rows]
+    if partner_document_ids:
+        prior_entries += list(
+            (
+                await session.execute(
+                    select(JournalEntry).where(
+                        JournalEntry.tenant_id == tenant_id,
+                        JournalEntry.document_id.in_(partner_document_ids),
+                        JournalEntry.status == EntryStatus.POSTED.value,
+                        JournalEntry.reverses_entry_id.is_(None),
+                    )
+                )
+            ).scalars().all()
+        )
     for entry in prior_entries:
         in_revalued_period = period.start_date <= entry.posting_date <= period.end_date
         reversal_date = entry.posting_date if in_revalued_period else next_start

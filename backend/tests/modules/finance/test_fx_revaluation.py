@@ -227,6 +227,75 @@ async def test_rerun_reverses_prior_then_reposts(
     assert any(e.posting_date == _RATE_DATE for e in fresh)
 
 
+async def test_rerun_leaves_other_periods_revaluations_untouched(
+    db_session: AsyncSession, fx_setup: FxSetup
+) -> None:
+    """Regression for #71: re-running ONE period used to reverse every still-posted FX_REVAL
+    entry tenant-wide, silently wiping other periods' active revaluations while their run rows
+    stayed COMPLETED."""
+    from app.modules.finance.constants import RateKind
+
+    april_rate_date = date(2026, 4, 30)
+    await _post_eur_balance(db_session, fx_setup)
+    march_id = await _march_period_id(db_session, fx_setup)
+    with tenant_context(fx_setup.tenant_id):
+        await service.create_exchange_rate(
+            db_session,
+            fx_setup.tenant_id,
+            rate_date=april_rate_date,
+            from_currency_code="EUR",
+            to_currency_code="USD",
+            rate=Decimal("1.30"),
+            rate_type=RateKind.CLOSING,
+        )
+        await db_session.commit()
+        periods = (
+            await service.list_fiscal_periods(
+                db_session, fx_setup.tenant_id, fx_setup.fiscal_year_id
+            )
+        ).items
+        april_id = next(p.id for p in periods if p.start_date == _NEXT_PERIOD_START)
+        for period_id, rate_date in ((march_id, _RATE_DATE), (april_id, april_rate_date)):
+            await run_in_uow(
+                db_session,
+                lambda pid=period_id, rd=rate_date: service.run_fx_revaluation(
+                    db_session, fx_setup.tenant_id, pid, rd
+                ),
+            )
+        # Re-run March only.
+        await run_in_uow(
+            db_session,
+            lambda: service.run_fx_revaluation(
+                db_session, fx_setup.tenant_id, march_id, _RATE_DATE
+            ),
+        )
+        runs = list(
+            (
+                await db_session.execute(
+                    select(FxRevaluationRun).order_by(FxRevaluationRun.created_at)
+                )
+            ).scalars().all()
+        )
+    # April's run row is still COMPLETED and — the bug — its entries must still be POSTED.
+    april_runs = [r for r in runs if r.fiscal_period_id == april_id]
+    assert [r.status for r in april_runs] == [FxRunStatus.COMPLETED.value]
+    entries = await _fx_reval_entries(db_session, fx_setup)
+    april_pair = [
+        e
+        for e in entries
+        if e.posting_date in (april_rate_date, date(2026, 5, 1))
+        and e.reverses_entry_id is None
+    ]
+    assert len(april_pair) == 2
+    assert all(e.status == EntryStatus.POSTED.value for e in april_pair)
+    # And March really was re-run: its first run row is REVERSED, its second COMPLETED.
+    march_runs = [r for r in runs if r.fiscal_period_id == march_id]
+    assert [r.status for r in march_runs] == [
+        FxRunStatus.REVERSED.value,
+        FxRunStatus.COMPLETED.value,
+    ]
+
+
 async def test_revaluation_with_no_foreign_balance_posts_nothing(
     db_session: AsyncSession, fx_setup: FxSetup
 ) -> None:
