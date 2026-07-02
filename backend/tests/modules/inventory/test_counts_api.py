@@ -91,6 +91,21 @@ async def _create_count(client: AsyncClient, warehouse_id: str, *, key: str) -> 
     return response.json()
 
 
+async def _item(client: AsyncClient, code: str, category_id: str, uom_id: str) -> str:
+    response = await client.post(
+        "/api/v1/inventory/items",
+        json={
+            "item_code": code,
+            "name": code,
+            "item_type": "STOCKED",
+            "category_id": category_id,
+            "base_uom_id": uom_id,
+        },
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["id"]
+
+
 # --- Lifecycle ----------------------------------------------------------------
 
 
@@ -122,7 +137,7 @@ async def test_count_lifecycle_create_count_post(inventory_client: AsyncClient) 
         f"/api/v1/inventory/stock-counts/{count['id']}/variance-preview"
     )
     assert preview.status_code == 200
-    assert preview.json()["lines"][0]["variance_qty"] == "3.000000"
+    assert preview.json()["lines"]["items"][0]["variance_qty"] == "3.000000"
 
     posted = await inventory_client.post(
         f"/api/v1/inventory/stock-counts/{count['id']}/post",
@@ -318,4 +333,29 @@ async def test_counts_list_query_budget(
     await _create_count(inventory_client, warehouse_id, key="c2")
     await assert_query_budget(
         inventory_client, query_counter, "/api/v1/inventory/stock-counts"
+    )
+
+
+async def test_variance_preview_query_budget_is_constant(
+    inventory_client: AsyncClient, query_counter
+) -> None:
+    """Regression for #78: the preview used to issue 2-3 queries PER LINE. With several lines the
+    warm-path budget stays constant: user + count header + all-lines slim read + bulk quants +
+    valuations + FIFO layers + page select."""
+    warehouse_id, bin_id, item_id = await _setup(inventory_client)
+    await _receipt(inventory_client, item_id, bin_id, "10", key="r1")
+    # Two more stocked items so the PHYSICAL count snapshots 3 lines.
+    cat = await inventory_client.get("/api/v1/inventory/item-categories")
+    category_id = cat.json()["items"][0]["id"]
+    uoms = await inventory_client.get("/api/v1/inventory/uoms")
+    uom_id = uoms.json()["items"][0]["id"]
+    for index in (2, 3):
+        extra = await _item(inventory_client, f"ITEM-{index}", category_id, uom_id)
+        await _receipt(inventory_client, extra, bin_id, "5", key=f"r{index}")
+    count = await _create_count(inventory_client, warehouse_id, key="cqb")
+    await assert_query_budget(
+        query_counter=query_counter,
+        client=inventory_client,
+        url=f"/api/v1/inventory/stock-counts/{count['id']}/variance-preview",
+        budget=7,
     )
