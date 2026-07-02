@@ -43,6 +43,8 @@ from app.modules.finance.queries.controlling import (
     cost_center_balance,
     cost_center_exists,
     costs_by_project_dimension,
+    existing_cost_center_ids,
+    existing_profit_center_ids,
     net_income,
     profit_center_exists,
 )
@@ -88,6 +90,8 @@ __all__ = [
     "cash_position",
     "cost_center_balance",
     "cost_center_exists",
+    "existing_cost_center_ids",
+    "existing_profit_center_ids",
     "costs_by_project_dimension",
     "currency_exists",
     "customer_open_balance",
