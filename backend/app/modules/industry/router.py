@@ -24,14 +24,22 @@ from app.core.deps import CurrentUserDep, SessionDep
 from app.core.events import run_in_uow
 from app.core.exceptions import PermissionDeniedError
 from app.core.rbac import require_permission
-from app.modules.industry import loader, queries
+from app.modules.industry import loader, onboarding, queries
 from app.modules.industry.constants import (
     INDUSTRY_TEMPLATE_APPLY,
     INDUSTRY_TEMPLATE_READ,
+    ONBOARDING_TENANT_CREATE,
 )
-from app.modules.industry.schemas import IndustryTemplate
+from app.modules.industry.schemas import (
+    IndustryTemplate,
+    OnboardTenantRequest,
+    OnboardTenantResponse,
+)
 
 router = APIRouter(prefix="/api/v1/industry", tags=["industry"])
+# Onboarding is a PLATFORM surface (creates whole tenants), so it mounts at its own prefix and is
+# guarded by onboarding.tenant.create — not the tenant-scoped industry.template.apply (D-061).
+onboarding_router = APIRouter(prefix="/api/v1/onboarding", tags=["onboarding"])
 
 
 class TemplateSummary(BaseModel):
@@ -120,4 +128,43 @@ async def apply_template(
     await run_in_uow(session, _work)
     return ApplyResult(
         tenant_id=tenant_id, template_name=template, created=already != template
+    )
+
+
+@onboarding_router.post(
+    "/tenants",
+    response_model=OnboardTenantResponse,
+    status_code=201,
+    dependencies=[Depends(require_permission(ONBOARDING_TENANT_CREATE))],
+)
+async def onboard_tenant(
+    payload: OnboardTenantRequest,
+    session: SessionDep,
+) -> OnboardTenantResponse:
+    """Provision a whole tenant in ONE transaction (PLAN 14.2 / D-061): tenant + first admin user
+    + the chosen industry template's COA/tax/currencies/UoMs/numbering/terminology. Guarded by
+    ``onboarding.tenant.create`` (a platform action). Idempotent by slug: an already-taken slug is
+    a 409 ``onboarding.slug_taken``; an unknown template is a 404. The whole flow runs through
+    ``run_in_uow`` so any failure rolls the tenant + user + every slice back together."""
+    result: onboarding.OnboardingResult | None = None
+
+    async def _work() -> None:
+        nonlocal result
+        result = await onboarding.onboard_tenant(
+            session,
+            company_name=payload.company_name,
+            slug=payload.slug,
+            template_name=payload.template_name,
+            admin_email=payload.admin_email,
+            admin_password=payload.admin_password,
+        )
+
+    await run_in_uow(session, _work)
+    assert result is not None  # run_in_uow only returns after _work committed
+    return OnboardTenantResponse(
+        tenant_id=result.tenant_id,
+        slug=result.slug,
+        admin_user_id=result.admin_user_id,
+        template_applied=result.template_applied,
+        instantiated=result.instantiated,
     )

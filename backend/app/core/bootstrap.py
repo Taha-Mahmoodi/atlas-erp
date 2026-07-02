@@ -18,6 +18,7 @@ from app.core.security_router import router as security_router
 from app.modules.crm.router import router as crm_router
 from app.modules.finance.router import router as finance_router
 from app.modules.hr.router import router as hr_router
+from app.modules.industry.router import onboarding_router
 from app.modules.industry.router import router as industry_router
 from app.modules.inventory.router import router as inventory_router
 from app.modules.maintenance.router import router as maintenance_router
@@ -114,6 +115,11 @@ def mount_routers(app: FastAPI) -> None:
     # the finance/inventory/procurement provisioning handlers — it never imports their services
     # (STRUCTURE §5). finance/inventory/procurement import industry/events (declarative) only.
     app.include_router(industry_router)
+    # Onboarding wizard (PLAN 14.2 / D-061): POST /api/v1/onboarding/tenants provisions a WHOLE
+    # tenant (tenant + first admin user + industry template) in one transaction. It lives in the
+    # industry module (orchestrates admin.service + the loader) and is guarded by the platform
+    # permission onboarding.tenant.create — a system action, not a tenant-admin one.
+    app.include_router(onboarding_router)
 
 
 def register_event_handlers() -> None:

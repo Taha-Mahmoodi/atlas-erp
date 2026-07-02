@@ -35,12 +35,18 @@ MODULE_TOGGLES_SETTING_KEY = "industry.module_toggles"
 # Permissions (D-009): one key per guarded endpoint action.
 INDUSTRY_TEMPLATE_READ = "industry.template.read"
 INDUSTRY_TEMPLATE_APPLY = "industry.template.apply"
+# Creating a WHOLE new tenant is a platform/system action, not a tenant-admin one (PLAN 14.2 /
+# D-061). Platform operators hold this key; a tenant admin does not, so onboarding cannot be used
+# to spin up arbitrary tenants from an ordinary tenant login.
+ONBOARDING_TENANT_CREATE = "onboarding.tenant.create"
 
 register_permissions(
     INDUSTRY_TEMPLATE_READ,
     INDUSTRY_TEMPLATE_APPLY,
+    ONBOARDING_TENANT_CREATE,
     descriptions={
         INDUSTRY_TEMPLATE_READ: "Read the shipped industry templates and their parsed content",
         INDUSTRY_TEMPLATE_APPLY: "Apply an industry template to a tenant at provisioning",
+        ONBOARDING_TENANT_CREATE: "Provision a new tenant (platform operators only)",
     },
 )
