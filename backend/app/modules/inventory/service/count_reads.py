@@ -24,14 +24,19 @@ from app.core.pagination import (
     paginate,
 )
 from app.core.schemas import Page
-from app.modules.inventory import queries
 from app.modules.inventory.constants import CountType
 from app.modules.inventory.count_schemas import (
     StockCountFilter,
     StockCountVarianceLine,
     StockCountVariancePreview,
 )
-from app.modules.inventory.models import StockCount, StockCountLine, StockQuant
+from app.modules.inventory.models import (
+    CostLayer,
+    ItemValuation,
+    StockCount,
+    StockCountLine,
+    StockQuant,
+)
 
 
 async def get_count(
@@ -132,41 +137,160 @@ async def list_count_lines(
     )
 
 
+async def _bulk_system_qty(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    item_ids: list[uuid.UUID],
+    bin_ids: list[uuid.UUID],
+) -> dict[tuple[uuid.UUID, uuid.UUID, uuid.UUID | None], Decimal]:
+    """LIVE on-hand for every quant touching the count's items × bins — ONE query (#78), keyed
+    ``(item_id, bin_id, lot_id)``. Superset rows (an item in a bin the count doesn't pair it
+    with) are harmless: callers only look up their own keys; a missing key reads 0 (the system
+    thinks the slot is empty), matching :func:`current_system_qty`."""
+    if not item_ids or not bin_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(
+                StockQuant.item_id, StockQuant.bin_id, StockQuant.lot_id, StockQuant.on_hand_qty
+            ).where(
+                StockQuant.tenant_id == tenant_id,
+                StockQuant.item_id.in_(item_ids),
+                StockQuant.bin_id.in_(bin_ids),
+            )
+        )
+    ).all()
+    return {(item, bin_, lot): Decimal(qty) for item, bin_, lot, qty in rows}
+
+
+async def _bulk_unit_costs(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    item_ids: list[uuid.UUID],
+    warehouse_id: uuid.UUID,
+) -> dict[uuid.UUID, Decimal]:
+    """Current per-unit BOOK cost for a batch of items in one warehouse — the bulk mirror of
+    ``queries.current_unit_cost`` (#78): the moving-average row when present, else the weighted
+    average of the live FIFO layers (multiplied in PYTHON, D-015), else 0. One valuation query +
+    one layer query for the items lacking a valuation row."""
+    if not item_ids:
+        return {}
+    costs: dict[uuid.UUID, Decimal] = {}
+    valuation_rows = (
+        await session.execute(
+            select(ItemValuation.item_id, ItemValuation.avg_unit_cost).where(
+                ItemValuation.tenant_id == tenant_id,
+                ItemValuation.item_id.in_(item_ids),
+                ItemValuation.warehouse_id == warehouse_id,
+            )
+        )
+    ).all()
+    for item_id, avg_unit_cost in valuation_rows:
+        costs[item_id] = Decimal(avg_unit_cost)
+    fifo_item_ids = [item_id for item_id in item_ids if item_id not in costs]
+    if fifo_item_ids:
+        layer_rows = (
+            await session.execute(
+                select(CostLayer.item_id, CostLayer.remaining_qty, CostLayer.unit_cost).where(
+                    CostLayer.tenant_id == tenant_id,
+                    CostLayer.item_id.in_(fifo_item_ids),
+                    CostLayer.warehouse_id == warehouse_id,
+                    CostLayer.remaining_qty > 0,
+                )
+            )
+        ).all()
+        totals: dict[uuid.UUID, tuple[Decimal, Decimal]] = {}
+        for item_id, qty, cost in layer_rows:
+            total_qty, total_value = totals.get(item_id, (Decimal(0), Decimal(0)))
+            totals[item_id] = (
+                total_qty + Decimal(qty),
+                total_value + Decimal(qty) * Decimal(cost),
+            )
+        for item_id, (total_qty, total_value) in totals.items():
+            if total_qty > 0:
+                costs[item_id] = total_value / total_qty
+    return costs
+
+
 async def variance_preview(
-    session: AsyncSession, tenant_id: uuid.UUID, count_id: uuid.UUID
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    count_id: uuid.UUID,
+    *,
+    cursor: str | None = None,
+    limit: int = DEFAULT_LIMIT,
 ) -> StockCountVariancePreview:
     """Per-line system-vs-counted-vs-variance + estimated value impact BEFORE posting (PLAN 5.4).
 
-    For each line it re-reads LIVE on-hand (the same authority the post uses, D-038), the item's
-    current unit cost, and computes variance = counted − live-system (NULL for uncounted lines) and
-    value impact = variance × unit_cost. The net total is the sum over counted lines. Read-only — it
-    never writes; it is what a reviewer inspects to decide whether to post. Query budget: lines
-    page, then per-line a quant read + a unit-cost read; bounded per line, no nested N+1 beyond
-    that."""
+    Re-reads LIVE on-hand (the same authority the post uses, D-038) and the items' current unit
+    costs, computing variance = counted − live-system (NULL for uncounted lines) and value impact
+    = variance × unit_cost. ``total_value_impact`` sums the WHOLE count; ``lines`` is a keyset
+    page (a physical count routinely has thousands of lines — PERFORMANCE §3). Read-only.
+
+    Query budget (#78, PERFORMANCE §2): CONSTANT regardless of line count — the count header, one
+    slim all-lines read (totals + bulk keys), one bulk quant read, one valuation + one FIFO-layer
+    read, and the page select. No per-line queries."""
     count = await get_count(session, tenant_id, count_id)
-    lines = (
+    all_lines = (
         await session.execute(
-            select(StockCountLine)
-            .where(
+            select(
+                StockCountLine.item_id,
+                StockCountLine.bin_id,
+                StockCountLine.lot_id,
+                StockCountLine.counted_qty,
+            ).where(
                 StockCountLine.tenant_id == tenant_id,
                 StockCountLine.count_id == count_id,
             )
-            .order_by(StockCountLine.line_number.asc())
         )
-    ).scalars().all()
-    preview_lines: list[StockCountVarianceLine] = []
-    total_impact = Decimal(0)
-    for line in lines:
-        system = await current_system_qty(
-            session, tenant_id, line.item_id, line.bin_id, line.lot_id
-        )
-        unit_cost = await queries.current_unit_cost(
-            session, tenant_id, line.item_id, count.warehouse_id
-        )
-        counted = Decimal(line.counted_qty) if line.counted_qty is not None else None
+    ).all()
+    system_by_key = await _bulk_system_qty(
+        session,
+        tenant_id,
+        list({row.item_id for row in all_lines}),
+        list({row.bin_id for row in all_lines}),
+    )
+    cost_by_item = await _bulk_unit_costs(
+        session, tenant_id, list({row.item_id for row in all_lines}), count.warehouse_id
+    )
+
+    def _compute(
+        item_id: uuid.UUID,
+        bin_id: uuid.UUID,
+        lot_id: uuid.UUID | None,
+        counted_qty: object,
+    ) -> tuple[Decimal, Decimal | None, Decimal | None, Decimal, Decimal]:
+        system = system_by_key.get((item_id, bin_id, lot_id), Decimal(0))
+        unit_cost = cost_by_item.get(item_id, Decimal(0))
+        counted = Decimal(counted_qty) if counted_qty is not None else None  # type: ignore[arg-type]
         variance = (counted - system) if counted is not None else None
         impact = (variance * unit_cost) if variance is not None else Decimal(0)
-        total_impact += impact
+        return system, counted, variance, unit_cost, impact
+
+    total_impact = sum(
+        (
+            _compute(row.item_id, row.bin_id, row.lot_id, row.counted_qty)[4]
+            for row in all_lines
+        ),
+        Decimal(0),
+    )
+
+    page = await paginate(
+        session,
+        select(StockCountLine).where(
+            StockCountLine.tenant_id == tenant_id, StockCountLine.count_id == count_id
+        ),
+        order_by=[OrderKey(StockCountLine.line_number, SortDirection.ASC)],
+        pk=StockCountLine.id,
+        cursor=cursor,
+        limit=limit,
+        filters=filter_fingerprint(count_id),
+    )
+    preview_lines: list[StockCountVarianceLine] = []
+    for line in page.items:
+        system, counted, variance, unit_cost, impact = _compute(
+            line.item_id, line.bin_id, line.lot_id, line.counted_qty
+        )
         preview_lines.append(
             StockCountVarianceLine(
                 line_id=line.id,
@@ -183,6 +307,6 @@ async def variance_preview(
     return StockCountVariancePreview(
         count_id=count.id,
         status=count.status,  # type: ignore[arg-type]
-        lines=preview_lines,
+        lines=Page(items=preview_lines, next_cursor=page.next_cursor, limit=page.limit),
         total_value_impact=total_impact,
     )

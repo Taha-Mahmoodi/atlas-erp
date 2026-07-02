@@ -147,12 +147,17 @@ async def list_stock_count_lines(
     dependencies=[Depends(require_permission(INVENTORY_COUNT_READ))],
 )
 async def get_stock_count_variance_preview(
-    count_id: uuid.UUID, current: CurrentUserDep, session: SessionDep
+    count_id: uuid.UUID,
+    current: CurrentUserDep,
+    session: SessionDep,
+    params: CursorParams = CursorParamsDep,
 ) -> StockCountVariancePreview:
     """The pre-post variance preview (PLAN 5.4): per-line live-system vs counted vs variance vs
-    estimated value impact + the net total. Read-only — re-reads live on-hand (the post's
-    authority)."""
-    return await service.variance_preview(session, current.tenant_id, count_id)
+    estimated value impact + the whole-count net total. Lines are keyset-paginated (#78);
+    read-only — re-reads live on-hand (the post's authority) with a constant query budget."""
+    return await service.variance_preview(
+        session, current.tenant_id, count_id, cursor=params.cursor, limit=params.limit
+    )
 
 
 # --- Record counted quantity --------------------------------------------------

@@ -153,8 +153,8 @@ async def test_variance_preview_shows_counted_minus_system(
 
     with tenant_context(tenant_a):
         preview = await service.variance_preview(db_session, tenant_a, count.id)
-    assert len(preview.lines) == 1
-    pl = preview.lines[0]
+    assert len(preview.lines.items) == 1
+    pl = preview.lines.items[0]
     assert pl.system_qty == Decimal(10)
     assert pl.counted_qty == Decimal(12)
     assert pl.variance_qty == Decimal(2)
