@@ -285,9 +285,10 @@ async def test_post_insufficient_stock_is_rejected(
     """If the bin's stock is drained AFTER the draft, the post fails at the stock issue — the
     inventory move's no-negative-stock guard surfaces InsufficientStockError, so the delivery
     cannot ship goods it doesn't have. The all-or-nothing ROLLBACK of a failed post is proven by
-    ``test_post_closed_period_rolls_back`` (same ``run_in_uow`` path, readable state because a
-    DB-trigger failure doesn't poison the aiosqlite connection the way a handler-raised Python
-    exception does — see #53); here we pin the rejection itself."""
+    ``test_post_closed_period_rolls_back``; the session staying fully usable after a
+    handler-raised failure is pinned by ``test_post_failure_leaves_session_usable`` (#53 —
+    the historical 'poisoned connection' was actually expire-on-rollback: only touching a
+    PRE-FAILURE ORM instance raises MissingGreenlet; re-querying always works)."""
     setup = order_setup
     await seed_on_hand(db_session, setup, "5")
     order = await build_confirmed_order(db_session, setup, quantity="5")
@@ -315,6 +316,71 @@ async def test_post_insufficient_stock_is_rejected(
     with pytest.raises(ValidationFailedError) as exc:
         await post_delivery(db_session, setup.tenant_id, delivery_id)
     assert exc.value.code == "inventory.insufficient_stock"
+
+
+async def test_post_failure_leaves_session_usable(
+    db_session: AsyncSession, order_setup: OrderSetup
+) -> None:
+    """Closes #53: a handler-raised exception during uow dispatch does NOT poison the
+    connection — verified identical on aiosqlite AND asyncpg (run with a PG
+    ATLAS_DATABASE_URL). After the rollback, the SAME session and a FRESH session on the same
+    engine both query normally, and re-reading the delivery shows the post rolled back. The
+    MissingGreenlet historically blamed on the connection comes from expire-on-rollback:
+    reading an attribute of an ORM instance loaded BEFORE the failure triggers a synchronous
+    refresh, which async SQLAlchemy forbids — engine-independent, and the reason post-failure
+    assertions must RE-QUERY rather than touch stale instances."""
+    setup = order_setup
+    await seed_on_hand(db_session, setup, "5")
+    order = await build_confirmed_order(db_session, setup, quantity="5")
+    line_id = await _order_line_id(db_session, setup.tenant_id, order.id)
+    delivery = await build_delivery(
+        db_session, setup, order_id=order.id, lines=[_line(line_id, setup.bin_id, "5")]
+    )
+    delivery_id = delivery.id
+    from app.modules.inventory.constants import MoveType as _MoveType
+    from app.modules.inventory.schemas import StockMoveCreate as _StockMoveCreate
+    from tests.modules.inventory.factories import build_move as _build_move
+
+    await _build_move(
+        db_session,
+        setup.tenant_id,
+        _StockMoveCreate(
+            move_type=_MoveType.ISSUE,
+            item_id=setup.item_id,
+            quantity=Decimal(5),
+            from_bin_id=setup.bin_id,
+        ),
+    )
+    with tenant_context(setup.tenant_id):
+        journals_before = len(
+            (
+                await db_session.execute(
+                    select(JournalEntry).where(JournalEntry.tenant_id == setup.tenant_id)
+                )
+            ).scalars().all()
+        )
+    with pytest.raises(ValidationFailedError):
+        await post_delivery(db_session, setup.tenant_id, delivery_id)
+
+    # Same session: usable, and the post rolled back (delivery still DRAFT when RE-QUERIED).
+    with tenant_context(setup.tenant_id):
+        reloaded = await service.get_delivery(db_session, setup.tenant_id, delivery_id)
+        assert reloaded.status == DeliveryStatus.DRAFT.value
+    # Fresh session on the same engine: also usable (the connection was never poisoned), and
+    # the failed post added NO journal.
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
+    async with factory() as fresh:
+        with tenant_context(setup.tenant_id):
+            journals_after = len(
+                (
+                    await fresh.execute(
+                        select(JournalEntry).where(JournalEntry.tenant_id == setup.tenant_id)
+                    )
+                ).scalars().all()
+            )
+    assert journals_after == journals_before
 
 
 async def test_post_closed_period_rolls_back(
