@@ -184,6 +184,30 @@ async def test_import_rejects_malformed_rows_with_row_numbers(
     assert [e["row"] for e in exc.value.details["row_errors"]] == [2, 3, 4]
 
 
+async def test_import_rejects_non_finite_amounts(
+    db_session: AsyncSession, bank_setup: BankSetup
+) -> None:
+    """Regression for #79: Decimal() accepts Infinity/NaN/1e10000, which used to crash
+    quantize_money with a 500 (Infinity) or surface as a misleading statement_unbalanced (NaN)
+    instead of the documented csv-invalid 422."""
+    with pytest.raises(ValidationFailedError) as exc:
+        await _import(
+            db_session,
+            bank_setup,
+            _csv(
+                [
+                    "2026-03-02,Infinity,Inf,",
+                    "2026-03-03,-Infinity,NegInf,",
+                    "2026-03-04,NaN,NaN,",
+                    "2026-03-05,1e10000,Overflow,",  # finite but overflows quantize
+                ]
+            ),
+            closing="0.00",
+        )
+    assert exc.value.code == "finance.statement_csv_invalid"
+    assert [e["row"] for e in exc.value.details["row_errors"]] == [1, 2, 3, 4]
+
+
 async def test_import_rejects_wrong_header_and_empty_file(
     db_session: AsyncSession, bank_setup: BankSetup
 ) -> None:
