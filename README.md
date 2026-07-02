@@ -17,21 +17,24 @@ The parity map itself lives at [docs/research/s4hana-parity.md](docs/research/s4
 
 🚧 **Pre-alpha, under active construction.** The build journal is public: see [PLAN.md](PLAN.md) for the phased plan, [PROGRESS.md](PROGRESS.md) for the running log, and [DECISIONS.md](DECISIONS.md) for the design-decision record.
 
-**Latest release: `v0.2.0` — Finance & Controlling.** The full FI/CO module is built on the v0.1.0 core platform and tested on both SQLite and PostgreSQL ([finance module guide](docs/modules/finance.md)):
+**Latest release: `v0.3.0` — all backend modules complete.** Every line-of-business module is built on the v0.1.0 core platform and tested on both SQLite and PostgreSQL. The REST API surface is complete; the web frontend is next (Phase 15).
 
-- **Universal journal** — hierarchical chart of accounts; strict double-entry posting with debit/credit and balance enforced in code *and* DB triggers; posted entries immutable, corrected only by reversal
-- **Fiscal periods** with open/closed states enforced at the service layer and by a per-dialect DB trigger (no posting into a closed period, even via raw SQL)
-- **Multi-currency** — transaction + functional amounts frozen at posting; realized FX at clearing; an auto-reversing unrealized-FX revaluation run
-- **Tax engine** — configurable inclusive/exclusive codes applied at line level
-- **Accounts Payable / Accounts Receivable** — bills, invoices, receipts, background payment runs, aging, dunning — all posting through the journal
-- **Cost & profit centers** with allocation rules and allocation runs
-- **Financial statements as pure projections** of the journal — trial balance, P&L, balance sheet, indirect cash flow, cost-center and margin reports; never stored totals
-- **Bank reconciliation** — CSV statement import (background job above 1k lines), set-based match suggestions, suspense clearing
-- **Asset accounting lite** — register plus straight-line and declining-balance depreciation runs that post grouped journals
+- **Finance & Controlling** ([guide](docs/modules/finance.md)) — universal journal (double-entry enforced in code *and* DB triggers, immutable posted entries), fiscal periods with closed-period DB guards, multi-currency with realized + auto-reversing unrealized FX, line-level tax, AP/AR with background payment runs, aging and dunning, cost/profit centers and allocations, bank reconciliation, asset accounting with depreciation runs, and all financial statements as pure journal projections
+- **Inventory & Warehouse** ([guide](docs/modules/inventory.md)) — items, categories, UoM conversions, lot/serial; warehouses, bins, and stock moves as the on-hand single source of truth; moving-average *and* FIFO costing with same-transaction COGS; physical and cycle counts with variance posting
+- **Procurement** ([guide](docs/modules/procurement.md)) — vendor master, requisition → RFQ → PO with data-driven approval thresholds, goods receipt with GR/IR clearing, 3-way match → AP bill, reorder-point requisitions
+- **Sales & Distribution** ([guide](docs/modules/sales.md)) — customer master with pricing, quote → order with ATP and credit-limit checks, delivery with partial shipments (stock issue + COGS), billing → revenue, and RMA returns with credit notes
+- **Manufacturing** ([guide](docs/modules/manufacturing.md)) — BOMs, work centers, routings; production orders with WIP journals; MRP run with a rough capacity check
+- **Quality & Maintenance** ([quality](docs/modules/quality.md) · [maintenance](docs/modules/maintenance.md)) — goods-receipt inspection lots with disposition; equipment register with corrective and preventive orders
+- **HR & Payroll** ([guide](docs/modules/hr.md)) — employees with masked compensation and org chart, leave accruals with approval, time tracking allocated to projects/cost centers, and a gross→net payroll run posting a balanced journal
+- **Projects** ([guide](docs/modules/projects.md)) — projects and WBS costing objects with a cost report
+- **CRM** ([guide](docs/modules/crm.md)) — leads → opportunities kanban, activities, and conversion
+- **Reporting** ([guide](docs/modules/reporting.md)) — role-based dashboard KPIs and a generic whitelist-driven, tenant-scoped report builder
+- **Industry templates & onboarding** ([guide](docs/modules/industry.md)) — five industry templates (manufacturing, retail, professional-services, healthcare, construction) applied idempotently, and a one-call tenant onboarding wizard that provisions a tenant + admin + the full template configuration in a single transaction
+- **Admin** ([guide](docs/modules/admin.md)) — user/role management, permission catalog, audit-log viewer, and per-tenant number-sequence viewer
 
 Built on the v0.1.0 core ([core module guide](docs/modules/core.md)): non-bypassable row-level multi-tenancy, JWT auth (argon2id, rotating refresh sessions), RBAC as data with field masking, in-transaction append-only audit, an in-process domain-event bus, document-flow chains, gapless numbering, idempotency keys, keyset pagination, an in-process background-job runner, gzip + conditional (ETag) reference reads, and a wall-clock performance budget suite.
 
-Inventory & Warehouse is next on the plan.
+Cross-module effects flow through the event bus (e.g. delivery → stock issue → COGS posting), never direct imports. Several correctness issues found during the build are tracked as open issues and listed in each release's notes; see the [v0.3.0 release notes](https://github.com/Taha-Mahmoodi/atlas-erp/releases) for the known-issues list before relying on a module. The web frontend and seeded `docker-compose` demo land in Phase 15–17.
 
 ## Stack
 
