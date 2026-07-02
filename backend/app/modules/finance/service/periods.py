@@ -67,7 +67,10 @@ async def create_fiscal_year(
 ) -> FiscalYear:
     """Create a fiscal year and auto-generate its monthly periods (D-018). The year's
     end_date is set to the last generated period's end so the periods exactly tile the year.
-    All periods (and the year) start OPEN. Rejects a duplicate year code with a ConflictError."""
+    All periods (and the year) start OPEN. Rejects a duplicate year code with a ConflictError
+    and a date range overlapping an existing year with a ValidationFailedError (#72) —
+    ``find_period_for_date`` assumes at most one period covers any date, which only holds
+    when the years themselves never overlap."""
     existing = (
         await session.execute(
             select(FiscalYear).where(
@@ -84,6 +87,32 @@ async def create_fiscal_year(
 
     boundaries = generate_periods(payload.start_date, payload.period_count)
     year_end = boundaries[-1][2]
+    overlapping = (
+        await session.execute(
+            select(FiscalYear)
+            .where(
+                FiscalYear.tenant_id == tenant_id,
+                FiscalYear.start_date <= year_end,
+                FiscalYear.end_date >= payload.start_date,
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if overlapping is not None:
+        raise ValidationFailedError(
+            message=(
+                f"Fiscal year {payload.code} ({payload.start_date} – {year_end}) overlaps "
+                f"existing fiscal year {overlapping.code} "
+                f"({overlapping.start_date} – {overlapping.end_date})"
+            ),
+            code="finance.fiscal_year_overlap",
+            details={
+                "code": payload.code,
+                "conflicting_code": overlapping.code,
+                "conflicting_start_date": overlapping.start_date.isoformat(),
+                "conflicting_end_date": overlapping.end_date.isoformat(),
+            },
+        )
     year = FiscalYear(
         tenant_id=tenant_id,
         code=payload.code,
