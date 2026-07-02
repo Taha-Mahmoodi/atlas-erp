@@ -166,6 +166,55 @@ async def test_variance_preview_shows_counted_minus_system(
 # --- Post: positive / negative / zero variance --------------------------------
 
 
+async def test_count_up_with_zero_book_cost_posts_quantity_only(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    """Regression for #87: counting an item UP where its (item, warehouse) book cost is 0 used to
+    raise inventory.receipt_unit_cost_required and roll the whole count post back — the documented
+    'enter at 0 cost, quantity-only correction' path was unreachable. It must post: on-hand rises
+    to the counted qty, the adjustment enters at 0 value, and NO journal posts (no GL effect)."""
+    from app.modules.inventory.models import StockQuant
+
+    setup = await build_stock_setup(db_session, tenant_a)
+    # A quant with NO valuation row → current_unit_cost is 0 (e.g. stock discovered without a
+    # priced receipt). Direct insert mirrors test_stock_moves' quant seeding.
+    with tenant_context(tenant_a):
+        db_session.add(
+            StockQuant(
+                tenant_id=tenant_a,
+                item_id=setup.item_id,
+                bin_id=setup.bin_a_id,
+                lot_id=None,
+                on_hand_qty=Decimal(2),
+            )
+        )
+        await db_session.commit()
+    count = await _create_count(
+        db_session,
+        tenant_a,
+        StockCountCreate(count_type=CountType.PHYSICAL, warehouse_id=setup.warehouse_id),
+    )
+    line = (await _lines(db_session, tenant_a, count.id))[0]
+    await _record(db_session, tenant_a, count.id, line.id, Decimal(5))
+
+    posted = await _post(db_session, tenant_a, count.id)
+    assert posted.status == CountStatus.POSTED.value
+    with tenant_context(tenant_a):
+        on_hand = await queries.on_hand(db_session, tenant_a, setup.item_id, setup.bin_a_id)
+        journals = list(
+            (
+                await db_session.execute(
+                    select(JournalEntry).where(
+                        JournalEntry.tenant_id == tenant_a,
+                        JournalEntry.document_type == DocumentType.COGS.value,
+                    )
+                )
+            ).scalars().all()
+        )
+    assert on_hand == Decimal(5)
+    assert journals == []  # zero-value adjustment: quantity-only, no GL effect
+
+
 async def test_positive_variance_posts_adjustment_in_and_journal(
     db_session: AsyncSession, tenant_a: uuid.UUID
 ) -> None:
