@@ -203,37 +203,35 @@ def _explode(
 async def _plan_levels(
     session: AsyncSession, tenant_id: uuid.UUID
 ) -> list[_PlanLine]:
-    """Net demand against supply LEVEL BY LEVEL, exploding MAKE items (module docstring). Returns
-    the accumulated planned-order lines. Level 0 is the independent demand; each subsequent level
-    is the dependent demand the prior level's MAKE explosions raised, capped at
-    ``MRP_MAX_EXPLOSION_LEVELS`` (cycle guard). Per level the BOM lookups are batched (two
-    queries); the per-item demand/supply reads reuse the bounded cross-module queries (no N+1)."""
-    lines: list[_PlanLine] = []
-    # The current level's GROSS demand per item (independent at level 0, dependent thereafter).
-    pending: dict[uuid.UUID, Decimal] = await _gather_independent_demand(session, tenant_id)
-    # Items already netted in an EARLIER level — the cycle/diamond guard: a component re-appearing
-    # at a deeper level is folded into its earlier net rather than re-planned (low-level-code).
-    netted: set[uuid.UUID] = set()
-    level = 0
+    """Net demand against supply in LOW-LEVEL-CODE order, exploding MAKE items (module docstring).
 
-    while pending and level < MRP_MAX_EXPLOSION_LEVELS:
-        item_ids = [item_id for item_id in pending if item_id not in netted]
-        if not item_ids:
-            break
-        boms = await _active_boms_for(session, tenant_id, item_ids)
-        components_by_bom = await _components_for(
-            session, tenant_id, [bom.id for bom in boms.values()]
-        )
-        next_pending: dict[uuid.UUID, Decimal] = {}
-        for item_id in item_ids:
-            gross = pending[item_id]
+    #76: an item is netted exactly ONCE, at the DEEPEST level it appears in any demanded BOM (its
+    low-level code) — so every parent's explosion has contributed the item's full dependent demand
+    before it nets. Netting on first encounter instead used to DROP the dependent demand of a
+    component that was already netted at a shallower level (independent reorder demand, or a
+    diamond BOM sharing a component across levels), under-planning it.
+
+    The BOM structure is fetched once by :func:`_bom_graph` (batched per frontier, each BOM read
+    once); the per-item demand/supply reads reuse the bounded cross-module queries (no N+1)."""
+    lines: list[_PlanLine] = []
+    # Accumulated GROSS demand per item: independent up front, dependent added as parents explode.
+    gross_demand: dict[uuid.UUID, Decimal] = await _gather_independent_demand(session, tenant_id)
+    if not gross_demand:
+        return lines
+    levels, boms_by_item, components_by_bom = await _bom_graph(
+        session, tenant_id, list(gross_demand)
+    )
+    for level in range(max(levels.values()) + 1):
+        for item_id in [i for i, item_level in levels.items() if item_level == level]:
+            gross = gross_demand.get(item_id, Decimal(0))
+            if gross <= 0:
+                continue  # reachable in the BOM graph but nothing demands it this run
             supply = await _net_supply(session, tenant_id, item_id)
             net = gross - supply
-            netted.add(item_id)
             if net <= 0:
                 continue  # supply covers it — no planned order, no dependent demand
             net = _quantize_qty(net)
-            bom = boms.get(item_id)
+            bom = boms_by_item.get(item_id)
             order_type = (
                 PlannedOrderType.MAKE.value if bom is not None else PlannedOrderType.BUY.value
             )
@@ -251,12 +249,56 @@ async def _plan_levels(
                 for component_id, dependent in _explode(
                     bom, components_by_bom.get(bom.id, []), net
                 ).items():
-                    next_pending[component_id] = (
-                        next_pending.get(component_id, Decimal(0)) + dependent
+                    gross_demand[component_id] = (
+                        gross_demand.get(component_id, Decimal(0)) + dependent
                     )
-        pending = next_pending
-        level += 1
     return lines
+
+
+async def _bom_graph(
+    session: AsyncSession, tenant_id: uuid.UUID, roots: list[uuid.UUID]
+) -> tuple[dict[uuid.UUID, int], dict[uuid.UUID, Bom], dict[uuid.UUID, list[BomComponent]]]:
+    """The demanded BOM graph + each item's LOW-LEVEL CODE (#76).
+
+    Structural BFS from the independently-demanded ``roots`` fetches every reachable item's active
+    default BOM and components ONCE (two batched queries per frontier, a seen-set stops cycles).
+    An in-memory relaxation then assigns each item the DEEPEST level it appears at, capped at
+    ``MRP_MAX_EXPLOSION_LEVELS`` (the masters-rejected-but-defensive cycle guard). Returns
+    ``(levels, boms_by_item, components_by_bom)`` so the netting pass reuses the cached BOMs."""
+    boms_by_item: dict[uuid.UUID, Bom] = {}
+    components_by_bom: dict[uuid.UUID, list[BomComponent]] = {}
+    seen: set[uuid.UUID] = set(roots)
+    frontier = list(dict.fromkeys(roots))
+    while frontier:
+        boms = await _active_boms_for(session, tenant_id, frontier)
+        boms_by_item.update(boms)
+        components_by_bom.update(
+            await _components_for(session, tenant_id, [bom.id for bom in boms.values()])
+        )
+        next_frontier: list[uuid.UUID] = []
+        for bom in boms.values():
+            for component in components_by_bom.get(bom.id, []):
+                if component.component_item_id not in seen:
+                    seen.add(component.component_item_id)
+                    next_frontier.append(component.component_item_id)
+        frontier = next_frontier
+
+    levels: dict[uuid.UUID, int] = dict.fromkeys(roots, 0)
+    work: list[uuid.UUID] = list(levels)
+    while work:
+        item_id = work.pop()
+        child_level = levels[item_id] + 1
+        if child_level >= MRP_MAX_EXPLOSION_LEVELS:
+            continue  # cycle guard: stop deepening rather than loop forever
+        bom = boms_by_item.get(item_id)
+        if bom is None:
+            continue
+        for component in components_by_bom.get(bom.id, []):
+            component_id = component.component_item_id
+            if levels.get(component_id, -1) < child_level:
+                levels[component_id] = child_level
+                work.append(component_id)
+    return levels, boms_by_item, components_by_bom
 
 
 async def _regenerate(session: AsyncSession, tenant_id: uuid.UUID) -> None:
