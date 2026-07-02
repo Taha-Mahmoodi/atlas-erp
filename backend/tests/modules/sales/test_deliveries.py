@@ -157,6 +157,28 @@ async def test_create_rejects_over_delivery(
     assert exc.value.code == "sales.over_delivery"
 
 
+async def test_post_rejects_over_delivery_via_second_draft(
+    db_session: AsyncSession, order_setup: OrderSetup
+) -> None:
+    """Regression for #75: two DRAFT deliveries created before either posts both pass the
+    create-time check (the column is unraised); posting the second used to over-deliver."""
+    await seed_on_hand(db_session, order_setup, "20")
+    order = await build_confirmed_order(db_session, order_setup, quantity="5")
+    line_id = await _order_line_id(db_session, order_setup.tenant_id, order.id)
+    d1 = await build_delivery(
+        db_session, order_setup, order_id=order.id,
+        lines=[_line(line_id, order_setup.bin_id, "5")],
+    )
+    d2 = await build_delivery(
+        db_session, order_setup, order_id=order.id,
+        lines=[_line(line_id, order_setup.bin_id, "5")],
+    )
+    await post_delivery(db_session, order_setup.tenant_id, d1.id)
+    with pytest.raises(ValidationFailedError) as exc:
+        await post_delivery(db_session, order_setup.tenant_id, d2.id)
+    assert exc.value.code == "sales.over_delivery"
+
+
 async def test_create_rejects_unconfirmed_order(
     db_session: AsyncSession, order_setup: OrderSetup
 ) -> None:

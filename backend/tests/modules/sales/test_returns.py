@@ -171,6 +171,25 @@ async def test_create_rejects_over_return(
     assert exc.value.code == "sales.over_return"
 
 
+async def test_post_rejects_over_return_via_second_draft(
+    db_session: AsyncSession, billing_setup: BillingSetup
+) -> None:
+    """Regression for #75: two DRAFT returns created before either posts both pass the
+    create-time check; posting the second used to over-return past the invoiced quantity."""
+    setup = billing_setup
+    order_id, line_id = await _build_invoiced_order(db_session, setup, quantity="5")
+    r1 = await build_return(
+        db_session, setup, order_id=order_id, lines=[_rline(line_id, setup.order.bin_id, "5")]
+    )
+    r2 = await build_return(
+        db_session, setup, order_id=order_id, lines=[_rline(line_id, setup.order.bin_id, "5")]
+    )
+    await post_return(db_session, setup.order.tenant_id, r1.id)
+    with pytest.raises(ValidationFailedError) as exc:
+        await post_return(db_session, setup.order.tenant_id, r2.id)
+    assert exc.value.code == "sales.over_return"
+
+
 # --- Post: stock receipt reversing COGS + credit note -------------------------
 
 
