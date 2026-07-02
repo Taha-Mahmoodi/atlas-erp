@@ -129,6 +129,39 @@ async def test_login_bad_password_returns_401_envelope(
     assert response.json()["error"]["code"] == "auth.invalid_credentials"
 
 
+async def test_login_no_user_path_still_runs_password_verify(
+    client: AsyncClient, provisioned_user: ProvisionedUser, monkeypatch
+) -> None:
+    """Regression for #80: the unknown-email and unknown-tenant paths must burn an argon2
+    verify (against the dummy hash) so login latency doesn't enumerate valid accounts."""
+    calls: list[str] = []
+    real_verify = auth.verify_password_async
+
+    async def counting_verify(password_hash: str, password: str) -> bool:
+        calls.append(password_hash)
+        return await real_verify(password_hash, password)
+
+    from app.core import security_router
+
+    monkeypatch.setattr(security_router.auth, "verify_password_async", counting_verify)
+    for body in (
+        {  # valid tenant, unknown email
+            "tenant_slug": provisioned_user.tenant_slug,
+            "email": "no-such-user@acme.test",
+            "password": "whatever",
+        },
+        {  # unknown tenant
+            "tenant_slug": "no-such-tenant",
+            "email": provisioned_user.email,
+            "password": "whatever",
+        },
+    ):
+        calls.clear()
+        response = await client.post("/api/v1/auth/login", json=body)
+        assert response.status_code == 401
+        assert calls == [security_router._DUMMY_PASSWORD_HASH]
+
+
 async def test_login_unknown_tenant_slug_returns_401(
     client: AsyncClient, provisioned_user: ProvisionedUser
 ) -> None:
