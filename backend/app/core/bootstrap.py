@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from app.core.docflow_router import router as docflow_router
 from app.core.jobs_router import router as jobs_router
 from app.core.security_router import router as security_router
+from app.modules.admin.router import router as admin_router
 from app.modules.crm.router import router as crm_router
 from app.modules.finance.router import router as finance_router
 from app.modules.hr.router import router as hr_router
@@ -120,6 +121,12 @@ def mount_routers(app: FastAPI) -> None:
     # industry module (orchestrates admin.service + the loader) and is guarded by the platform
     # permission onboarding.tenant.create — a system action, not a tenant-admin one.
     app.include_router(onboarding_router)
+    # Admin module (PLAN 14.3): the tenant-admin surface at /api/v1/admin — user/role management,
+    # the audit viewer, and the number-sequence viewer, all over EXISTING core tables (no new
+    # table/migration). Mounted last; it imports core + its own service/queries ONLY (STRUCTURE
+    # §5) — it does NOT import finance, so exchange rates + tax codes stay on the finance router
+    # (/api/v1/finance/exchange-rates, /tax-codes), cross-linked from docs/modules/admin.md.
+    app.include_router(admin_router)
 
 
 def register_event_handlers() -> None:

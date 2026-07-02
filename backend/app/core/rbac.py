@@ -55,6 +55,9 @@ ADMIN_USER_MANAGE = "admin.user.manage"
 ADMIN_ROLE_MANAGE = "admin.role.manage"
 ADMIN_AUDIT_READ = "admin.audit.read"
 ADMIN_TENANT_MANAGE = "admin.tenant.manage"
+# The admin viewer over per-tenant number sequences (PLAN 14.3) is read-only, so it gets its
+# own read key rather than reusing a .manage key that would imply a write it does not offer.
+ADMIN_NUMBERING_READ = "admin.numbering.read"
 CORE_DOCUMENT_READ = "core.document.read"
 CORE_SETTING_MANAGE = "core.setting.manage"
 
@@ -63,6 +66,7 @@ register_permissions(
     ADMIN_ROLE_MANAGE,
     ADMIN_AUDIT_READ,
     ADMIN_TENANT_MANAGE,
+    ADMIN_NUMBERING_READ,
     CORE_DOCUMENT_READ,
     CORE_SETTING_MANAGE,
     descriptions={
@@ -70,6 +74,7 @@ register_permissions(
         ADMIN_ROLE_MANAGE: "Create roles and assign permissions",
         ADMIN_AUDIT_READ: "Read the audit log",
         ADMIN_TENANT_MANAGE: "Manage tenant settings and provisioning",
+        ADMIN_NUMBERING_READ: "View the tenant's number sequences",
         CORE_DOCUMENT_READ: "View documents and their flow",
         CORE_SETTING_MANAGE: "Manage tenant-level configuration",
     },
