@@ -234,6 +234,27 @@ async def test_reorder_point_demand_adds_to_sales_demand(
     assert planned[setup.finished_item_id].quantity == Decimal(17)
 
 
+async def test_shared_component_keeps_dependent_and_independent_demand(
+    db_session: AsyncSession, mrp_setup: MrpSetup
+) -> None:
+    """Regression for #76: raw1 has independent reorder demand AND is a component of the
+    finished good. Netting on first encounter used to plan only the reorder 50 and DROP the 30
+    dependent units from the finished good's explosion; low-level-code netting plans 80."""
+    setup = mrp_setup
+    await set_reorder_point(
+        db_session, setup, setup.raw1_item_id,
+        reorder_point=Decimal(5), reorder_quantity=Decimal(50),
+    )
+    run = await run_mrp(db_session, setup.tenant_id)
+    planned = await planned_by_item(db_session, setup.tenant_id, run.id)
+    # raw1 = reorder 50 (independent) + 3 x 10 (dependent from finished) = 80.
+    assert planned[setup.raw1_item_id].quantity == Decimal(80)
+    assert planned[setup.raw1_item_id].order_type == PlannedOrderType.BUY.value
+    # The rest of the tree is unchanged: sub 2x10=20, raw2 4x20=80.
+    assert planned[setup.sub_assembly_item_id].quantity == Decimal(20)
+    assert planned[setup.raw2_item_id].quantity == Decimal(80)
+
+
 # --- cycle guard --------------------------------------------------------------
 
 
