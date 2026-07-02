@@ -376,10 +376,10 @@ async def test_cost_center_report_sums_to_account_totals(
     assert _expense_amount(filtered.sections[0]) == Decimal("100.00")
 
 
-# --- Margin by product --------------------------------------------------------
+# --- Margin by item -----------------------------------------------------------
 
 
-async def test_margin_by_product_per_item(
+async def test_margin_by_item_per_item(
     db_session: AsyncSession, tenant_a: uuid.UUID
 ) -> None:
     item_x = uuid.uuid4()
@@ -434,7 +434,7 @@ async def test_margin_by_product_per_item(
     )
 
     with tenant_context(tenant_a):
-        margin = await service.margin_by_product(
+        margin = await service.margin_by_item(
             db_session, tenant_a, _PERIOD_START, _PERIOD_END
         )
     by_item = {row.item_id: row for row in margin.items}

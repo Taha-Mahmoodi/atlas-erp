@@ -131,7 +131,7 @@ from app.modules.finance.service.statements import (
     balance_sheet,
     cash_flow_indirect,
     cost_center_report,
-    margin_by_product,
+    margin_by_item,
     profit_and_loss,
     trial_balance,
 )
@@ -243,7 +243,7 @@ __all__ = [
     "list_tax_codes",
     "list_vendor_bills",
     "list_vendor_payments",
-    "margin_by_product",
+    "margin_by_item",
     "open_period",
     "post_customer_invoice",
     "post_entry",

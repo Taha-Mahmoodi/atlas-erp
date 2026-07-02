@@ -23,7 +23,7 @@ from app.modules.finance.statements_schemas import (
     BalanceSheetRead,
     CashFlowStatementRead,
     CostCenterReportRead,
-    MarginByProductRead,
+    MarginByItemRead,
     ProfitAndLossRead,
     TrialBalanceRead,
 )
@@ -106,16 +106,16 @@ async def get_cost_center_report(
     return CostCenterReportRead.model_validate(result)
 
 
-@statements_router.get("/margin-by-product", response_model=MarginByProductRead)
-async def get_margin_by_product(
+@statements_router.get("/margin-by-item", response_model=MarginByItemRead)
+async def get_margin_by_item(
     current: CurrentUserDep,
     session: SessionDep,
     date_from: date,
     date_to: date,
-) -> MarginByProductRead:
+) -> MarginByItemRead:
     """Revenue - COGS per item over the period (D-021), a projection of the journal's ``item_id``
     dimension (sparse until inventory posts COGS with item_id)."""
-    result = await service.margin_by_product(
+    result = await service.margin_by_item(
         session, current.tenant_id, date_from, date_to
     )
-    return MarginByProductRead.model_validate(result)
+    return MarginByItemRead.model_validate(result)
