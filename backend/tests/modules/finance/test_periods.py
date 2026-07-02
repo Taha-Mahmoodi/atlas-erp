@@ -69,6 +69,66 @@ async def test_duplicate_fiscal_year_code_raises_conflict(
             )
 
 
+async def test_overlapping_fiscal_year_rejected(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    # Regression for #72: an overlapping second year used to be accepted, making
+    # find_period_for_date raise MultipleResultsFound (HTTP 500) for dates in the
+    # overlap window.
+    with tenant_context(tenant_a):
+        await service.create_fiscal_year(
+            db_session,
+            tenant_a,
+            FiscalYearCreate(code="2026", name="FY2026", start_date=date(2026, 1, 1)),
+        )
+        await db_session.commit()
+        with pytest.raises(ValidationFailedError) as exc:
+            await service.create_fiscal_year(
+                db_session,
+                tenant_a,
+                FiscalYearCreate(code="2026H2", name="dup", start_date=date(2026, 6, 1)),
+            )
+        assert exc.value.code == "finance.fiscal_year_overlap"
+
+
+async def test_adjacent_fiscal_years_allowed(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    with tenant_context(tenant_a):
+        await service.create_fiscal_year(
+            db_session,
+            tenant_a,
+            FiscalYearCreate(code="2026", name="FY2026", start_date=date(2026, 1, 1)),
+        )
+        year = await service.create_fiscal_year(
+            db_session,
+            tenant_a,
+            FiscalYearCreate(code="2027", name="FY2027", start_date=date(2027, 1, 1)),
+        )
+        await db_session.commit()
+    assert year.start_date == date(2027, 1, 1)
+
+
+async def test_overlap_check_is_per_tenant(
+    db_session: AsyncSession, tenant_a: uuid.UUID, tenant_b: uuid.UUID
+) -> None:
+    with tenant_context(tenant_a):
+        await service.create_fiscal_year(
+            db_session,
+            tenant_a,
+            FiscalYearCreate(code="2026", name="FY2026", start_date=date(2026, 1, 1)),
+        )
+        await db_session.commit()
+    with tenant_context(tenant_b):
+        year = await service.create_fiscal_year(
+            db_session,
+            tenant_b,
+            FiscalYearCreate(code="2026", name="FY2026", start_date=date(2026, 1, 1)),
+        )
+        await db_session.commit()
+    assert year.tenant_id == tenant_b
+
+
 async def test_find_period_for_date_returns_covering_period(
     db_session: AsyncSession, tenant_a: uuid.UUID
 ) -> None:
