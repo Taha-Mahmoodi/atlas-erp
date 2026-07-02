@@ -46,6 +46,11 @@ async def _bootstrap(db_session: AsyncSession, tenant_id: uuid.UUID) -> dict[str
     return ids
 
 
+def _idem() -> dict[str, str]:
+    """A fresh Idempotency-Key header (#88 — draft creation now requires one)."""
+    return {"Idempotency-Key": str(uuid.uuid4())}
+
+
 def _invoice_body(ids: dict[str, str], partner_id: str, net: str = "100.00") -> dict:
     return {
         "partner_id": partner_id,
@@ -71,7 +76,7 @@ async def test_create_post_receive_flow(
     partner = str(uuid.uuid4())
 
     create = await finance_client.post(
-        "/api/v1/finance/customer-invoices", json=_invoice_body(ids, partner)
+        "/api/v1/finance/customer-invoices", json=_invoice_body(ids, partner), headers=_idem()
     )
     assert create.status_code == 201, create.text
     invoice_id = create.json()["id"]
@@ -117,7 +122,7 @@ async def test_post_invoice_is_idempotent_over_http(
     partner = str(uuid.uuid4())
     invoice_id = (
         await finance_client.post(
-            "/api/v1/finance/customer-invoices", json=_invoice_body(ids, partner)
+            "/api/v1/finance/customer-invoices", json=_invoice_body(ids, partner), headers=_idem()
         )
     ).json()["id"]
     first = await finance_client.post(
@@ -141,7 +146,7 @@ async def test_dunning_run_endpoint(
     partner = str(uuid.uuid4())
     invoice_id = (
         await finance_client.post(
-            "/api/v1/finance/customer-invoices", json=_invoice_body(ids, partner)
+            "/api/v1/finance/customer-invoices", json=_invoice_body(ids, partner), headers=_idem()
         )
     ).json()["id"]
     await finance_client.post(
@@ -171,7 +176,7 @@ async def test_ar_aging_endpoint(
     partner = str(uuid.uuid4())
     invoice_id = (
         await finance_client.post(
-            "/api/v1/finance/customer-invoices", json=_invoice_body(ids, partner)
+            "/api/v1/finance/customer-invoices", json=_invoice_body(ids, partner), headers=_idem()
         )
     ).json()["id"]
     await finance_client.post(
@@ -199,7 +204,7 @@ async def test_ar_list_and_detail_query_count(
     invoice_id = ""
     for _ in range(3):
         created = await finance_client.post(
-            "/api/v1/finance/customer-invoices", json=_invoice_body(ids, partner)
+            "/api/v1/finance/customer-invoices", json=_invoice_body(ids, partner), headers=_idem()
         )
         assert created.status_code == 201
         invoice_id = created.json()["id"]
@@ -246,7 +251,9 @@ async def test_post_invoice_requires_ar_manage(
     client.headers["Authorization"] = f"Bearer {login.json()['access_token']}"
     ids = await _bootstrap(db_session, principal.tenant_id)
     resp = await client.post(
-        "/api/v1/finance/customer-invoices", json=_invoice_body(ids, str(uuid.uuid4()))
+        "/api/v1/finance/customer-invoices",
+        json=_invoice_body(ids, str(uuid.uuid4())),
+        headers=_idem(),
     )
     assert resp.status_code == 403
 
@@ -266,7 +273,9 @@ async def test_receipt_requires_ar_collect(
     ids = await _bootstrap(db_session, principal.tenant_id)
     partner = str(uuid.uuid4())
     invoice_id = (
-        await client.post("/api/v1/finance/customer-invoices", json=_invoice_body(ids, partner))
+        await client.post(
+            "/api/v1/finance/customer-invoices", json=_invoice_body(ids, partner), headers=_idem()
+        )
     ).json()["id"]
     await client.post(
         f"/api/v1/finance/customer-invoices/{invoice_id}/post",
@@ -306,3 +315,30 @@ async def test_dunning_requires_ar_collect(
         headers={"Idempotency-Key": "dun-rbac"},
     )
     assert resp.status_code == 403
+
+
+async def test_create_invoice_is_idempotent_and_requires_key(
+    finance_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Regression for #88: draft invoice creation registers a core document, so it must carry the
+    D-013 idempotency contract like every other document-creating endpoint."""
+    ids = await _bootstrap(db_session, await _tenant_of(finance_client))
+    partner = str(uuid.uuid4())
+
+    missing = await finance_client.post(
+        "/api/v1/finance/customer-invoices", json=_invoice_body(ids, partner)
+    )
+    assert missing.status_code == 422
+    assert missing.json()["error"]["code"] == "idempotency.key_required"
+
+    headers = {"Idempotency-Key": "inv-create-1"}
+    first = await finance_client.post(
+        "/api/v1/finance/customer-invoices", json=_invoice_body(ids, partner), headers=headers
+    )
+    assert first.status_code == 201, first.text
+    replay = await finance_client.post(
+        "/api/v1/finance/customer-invoices", json=_invoice_body(ids, partner), headers=headers
+    )
+    assert replay.status_code == 201
+    assert replay.headers.get("Idempotency-Replayed") == "true"
+    assert replay.json()["id"] == first.json()["id"]  # ONE draft document, not two

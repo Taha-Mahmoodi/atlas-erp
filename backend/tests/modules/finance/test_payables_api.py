@@ -47,6 +47,11 @@ async def _bootstrap(db_session: AsyncSession, tenant_id: uuid.UUID) -> dict[str
     return ids
 
 
+def _idem() -> dict[str, str]:
+    """A fresh Idempotency-Key header (#88 — draft creation now requires one)."""
+    return {"Idempotency-Key": str(uuid.uuid4())}
+
+
 def _bill_body(ids: dict[str, str], partner_id: str, net: str = "100.00") -> dict:
     return {
         "partner_id": partner_id,
@@ -72,7 +77,7 @@ async def test_create_post_pay_flow(
     partner = str(uuid.uuid4())
 
     create = await finance_client.post(
-        "/api/v1/finance/vendor-bills", json=_bill_body(ids, partner)
+        "/api/v1/finance/vendor-bills", json=_bill_body(ids, partner), headers=_idem()
     )
     assert create.status_code == 201, create.text
     bill_id = create.json()["id"]
@@ -116,7 +121,9 @@ async def test_post_bill_is_idempotent_over_http(
     ids = await _bootstrap(db_session, tenant_id)
     partner = str(uuid.uuid4())
     bill_id = (
-        await finance_client.post("/api/v1/finance/vendor-bills", json=_bill_body(ids, partner))
+        await finance_client.post(
+            "/api/v1/finance/vendor-bills", json=_bill_body(ids, partner), headers=_idem()
+        )
     ).json()["id"]
     first = await finance_client.post(
         f"/api/v1/finance/vendor-bills/{bill_id}/post",
@@ -141,7 +148,9 @@ async def test_payment_run_returns_202_and_pays_due_bills_in_background(
     ids = await _bootstrap(db_session, tenant_id)
     partner = str(uuid.uuid4())
     bill_id = (
-        await finance_client.post("/api/v1/finance/vendor-bills", json=_bill_body(ids, partner))
+        await finance_client.post(
+            "/api/v1/finance/vendor-bills", json=_bill_body(ids, partner), headers=_idem()
+        )
     ).json()["id"]
     await finance_client.post(
         f"/api/v1/finance/vendor-bills/{bill_id}/post",
@@ -186,7 +195,9 @@ async def test_ap_aging_endpoint(
     ids = await _bootstrap(db_session, tenant_id)
     partner = str(uuid.uuid4())
     bill_id = (
-        await finance_client.post("/api/v1/finance/vendor-bills", json=_bill_body(ids, partner))
+        await finance_client.post(
+            "/api/v1/finance/vendor-bills", json=_bill_body(ids, partner), headers=_idem()
+        )
     ).json()["id"]
     await finance_client.post(
         f"/api/v1/finance/vendor-bills/{bill_id}/post",
@@ -213,7 +224,7 @@ async def test_ap_list_and_detail_query_count(
     bill_id = ""
     for _ in range(3):
         created = await finance_client.post(
-            "/api/v1/finance/vendor-bills", json=_bill_body(ids, partner)
+            "/api/v1/finance/vendor-bills", json=_bill_body(ids, partner), headers=_idem()
         )
         assert created.status_code == 201
         bill_id = created.json()["id"]
@@ -260,7 +271,7 @@ async def test_post_bill_requires_ap_manage(
     client.headers["Authorization"] = f"Bearer {login.json()['access_token']}"
     ids = await _bootstrap(db_session, principal.tenant_id)
     resp = await client.post(
-        "/api/v1/finance/vendor-bills", json=_bill_body(ids, str(uuid.uuid4()))
+        "/api/v1/finance/vendor-bills", json=_bill_body(ids, str(uuid.uuid4())), headers=_idem()
     )
     assert resp.status_code == 403
 
@@ -280,7 +291,9 @@ async def test_payment_requires_ap_pay(
     ids = await _bootstrap(db_session, principal.tenant_id)
     partner = str(uuid.uuid4())
     bill_id = (
-        await client.post("/api/v1/finance/vendor-bills", json=_bill_body(ids, partner))
+        await client.post(
+            "/api/v1/finance/vendor-bills", json=_bill_body(ids, partner), headers=_idem()
+        )
     ).json()["id"]
     await client.post(
         f"/api/v1/finance/vendor-bills/{bill_id}/post",
@@ -300,3 +313,29 @@ async def test_payment_requires_ap_pay(
         headers={"Idempotency-Key": "mgr-pay"},
     )
     assert pay.status_code == 403
+
+
+async def test_create_bill_is_idempotent_and_requires_key(
+    finance_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Regression for #88 (AP mirror): draft bill creation must carry the D-013 contract."""
+    ids = await _bootstrap(db_session, await _tenant_of(finance_client))
+    partner = str(uuid.uuid4())
+
+    missing = await finance_client.post(
+        "/api/v1/finance/vendor-bills", json=_bill_body(ids, partner)
+    )
+    assert missing.status_code == 422
+    assert missing.json()["error"]["code"] == "idempotency.key_required"
+
+    headers = {"Idempotency-Key": "bill-create-1"}
+    first = await finance_client.post(
+        "/api/v1/finance/vendor-bills", json=_bill_body(ids, partner), headers=headers
+    )
+    assert first.status_code == 201, first.text
+    replay = await finance_client.post(
+        "/api/v1/finance/vendor-bills", json=_bill_body(ids, partner), headers=headers
+    )
+    assert replay.status_code == 201
+    assert replay.headers.get("Idempotency-Replayed") == "true"
+    assert replay.json()["id"] == first.json()["id"]  # ONE draft document, not two
