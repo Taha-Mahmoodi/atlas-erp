@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { fileURLToPath, URL } from "node:url";
 
 import tailwindcss from "@tailwindcss/vite";
@@ -14,5 +15,13 @@ export default defineConfig({
   },
   server: {
     proxy: { "/api": "http://localhost:8000" },
+  },
+  test: {
+    environment: "jsdom",
+    // globals so @testing-library/react registers its afterEach auto-cleanup —
+    // without it every render accumulates in one DOM and events hit stale mocks.
+    globals: true,
+    setupFiles: ["./vitest.setup.ts"],
+    include: ["src/**/*.test.tsx", "src/**/*.test.ts"],
   },
 });

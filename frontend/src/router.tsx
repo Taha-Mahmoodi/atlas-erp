@@ -24,11 +24,11 @@ const indexRoute = createRoute({
 
 function IndexPage() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50">
+    <main className="flex min-h-screen items-center justify-center">
       <div className="text-center">
-        <h1 className="text-2xl font-semibold text-slate-900">Atlas ERP</h1>
-        <p className="mt-2 text-sm text-slate-500">
-          Frontend scaffold (PLAN 15.1) — the app shell arrives with 15.3.
+        <h1 className="text-xl font-semibold text-ink">Atlas ERP</h1>
+        <p className="mt-2 text-sm text-ink-muted">
+          Design system in place (PLAN 15.2) — the app shell arrives with 15.3.
         </p>
       </div>
     </main>
