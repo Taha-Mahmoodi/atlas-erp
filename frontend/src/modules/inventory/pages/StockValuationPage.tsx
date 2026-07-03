@@ -9,6 +9,7 @@
 import { useState } from "react";
 
 import { formatMoney, formatQuantity } from "@/lib/format";
+import { useFunctionalCurrency } from "@/modules/finance/hooks";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
 import {
   useCostLayers,
@@ -27,6 +28,8 @@ export function StockValuationPage() {
   const warehouses = useWarehouseOptions();
   const itemLookup = useItemLookup();
   const warehouseLookup = useWarehouseLookup();
+  const currency = useFunctionalCurrency();
+  const currencyCode = currency.data ?? "—";
 
   const valuations = useStockValuations({
     ...(itemId ? { item_id: itemId } : {}),
@@ -47,8 +50,8 @@ export function StockValuationPage() {
     { key: "item_id", header: "Item", render: (row) => itemLabel(row.item_id) },
     { key: "warehouse_id", header: "Warehouse", render: (row) => warehouseLabel(row.warehouse_id) },
     { key: "on_hand_qty", header: "On hand", align: "right", render: (row) => formatQuantity(row.on_hand_qty), width: "110px" },
-    { key: "avg_unit_cost", header: "Avg unit cost", align: "right", render: (row) => row.avg_unit_cost, width: "130px" },
-    { key: "total_value", header: "Total value", align: "right", render: (row) => row.total_value, width: "130px" },
+    { key: "avg_unit_cost", header: "Avg unit cost", align: "right", render: (row) => formatMoney(row.avg_unit_cost, currencyCode), width: "130px" },
+    { key: "total_value", header: "Total value", align: "right", render: (row) => formatMoney(row.total_value, currencyCode), width: "130px" },
   ];
 
   return (
@@ -107,6 +110,8 @@ function CostLayersLookup() {
   const [itemId, setItemId] = useState("");
   const [warehouseId, setWarehouseId] = useState("");
   const layers = useCostLayers(itemId || undefined, warehouseId || undefined);
+  const currency = useFunctionalCurrency();
+  const currencyCode = currency.data ?? "—";
 
   return (
     <div className="mt-8 rounded-card border border-line bg-surface p-4 shadow-card">
@@ -165,7 +170,7 @@ function CostLayersLookup() {
                   <td className="py-1.5 pr-2 text-ink-muted">{layer.received_at}</td>
                   <td className="py-1.5 pr-2 text-right tabular-nums text-ink">{formatQuantity(layer.original_qty)}</td>
                   <td className="py-1.5 pr-2 text-right tabular-nums text-ink">{formatQuantity(layer.remaining_qty)}</td>
-                  <td className="py-1.5 pr-2 text-right tabular-nums text-ink">{formatMoney(layer.unit_cost, "—")}</td>
+                  <td className="py-1.5 pr-2 text-right tabular-nums text-ink">{formatMoney(layer.unit_cost, currencyCode)}</td>
                 </tr>
               ))
             )}
