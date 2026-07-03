@@ -49,6 +49,11 @@ import { UomFormPage } from "@/modules/inventory/pages/UomFormPage";
 import { UomListPage } from "@/modules/inventory/pages/UomListPage";
 import { WarehouseFormPage } from "@/modules/inventory/pages/WarehouseFormPage";
 import { WarehouseListPage } from "@/modules/inventory/pages/WarehouseListPage";
+import { ApprovalRuleFormPage } from "@/modules/procurement/pages/ApprovalRuleFormPage";
+import { ApprovalRuleListPage } from "@/modules/procurement/pages/ApprovalRuleListPage";
+import { ProcurementHomePage } from "@/modules/procurement/pages/ProcurementHomePage";
+import { VendorFormPage as ProcurementVendorFormPage } from "@/modules/procurement/pages/VendorFormPage";
+import { VendorListPage as ProcurementVendorListPage } from "@/modules/procurement/pages/VendorListPage";
 import { ProfitAndLossPage } from "@/modules/finance/pages/ProfitAndLossPage";
 import { TrialBalancePage } from "@/modules/finance/pages/TrialBalancePage";
 import { JournalEntryDetailPage } from "@/modules/finance/pages/JournalEntryDetailPage";
@@ -385,6 +390,46 @@ const inventoryStockCountDetailRoute = createRoute({
   component: StockCountDetailPage,
 });
 
+// --- Procurement (PLAN 15.6) ---------------------------------------------------------------
+
+const procurementHomeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement",
+  component: ProcurementHomePage,
+});
+
+// Vendors + approval rules (slice 1)
+const procurementVendorsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/vendors",
+  component: ProcurementVendorListPage,
+});
+const procurementVendorNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/vendors/new",
+  component: ProcurementVendorFormPage,
+});
+const procurementVendorDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/vendors/$vendorId",
+  component: ProcurementVendorFormPage,
+});
+const procurementApprovalRulesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/approval-rules",
+  component: ApprovalRuleListPage,
+});
+const procurementApprovalRuleNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/approval-rules/new",
+  component: ApprovalRuleFormPage,
+});
+const procurementApprovalRuleDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/approval-rules/$ruleId",
+  component: ApprovalRuleFormPage,
+});
+
 // --- Every other module: placeholder until its own slice lands ----------------------------
 
 const moduleRoute = createRoute({
@@ -451,6 +496,13 @@ const routeTree = rootRoute.addChildren([
   inventoryStockCountsRoute,
   inventoryStockCountNewRoute,
   inventoryStockCountDetailRoute,
+  procurementHomeRoute,
+  procurementVendorsRoute,
+  procurementVendorNewRoute,
+  procurementVendorDetailRoute,
+  procurementApprovalRulesRoute,
+  procurementApprovalRuleNewRoute,
+  procurementApprovalRuleDetailRoute,
   moduleRoute,
 ]);
 

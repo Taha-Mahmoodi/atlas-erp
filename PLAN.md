@@ -127,7 +127,7 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 - [x] 15.2 Design system: DataGrid, FormBuilder, Kanban, KpiCard, DocFlowViewer (ERP-agnostic, tested)
 - [x] 15.3 App shell: login, role-based home pages with tiles + KPIs, navigation
 - [x] 15.4 Finance UIs (COA, journal entries + posting, AP/AR workbenches, statements, bank rec, assets)
-- [ ] 15.5 Inventory UIs (items, stock overview, moves, counts)
+- [x] 15.5 Inventory UIs (items, stock overview, moves, counts)
 - [ ] 15.6 Procurement UIs (vendors, requisitions, RFQs, POs, receipts, match)
 - [ ] 15.7 Sales UIs (customers, pricing, quotes, orders, deliveries, invoices, returns)
 - [ ] 15.8 Manufacturing UIs (BOMs, work centers, routings, production orders, MRP results)
