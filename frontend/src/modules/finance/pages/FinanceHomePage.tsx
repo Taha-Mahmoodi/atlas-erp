@@ -19,6 +19,7 @@ const SECTIONS = [
   { to: "/finance/profit-loss", label: "Profit & Loss", description: "Revenue and expenses over a period" },
   { to: "/finance/balance-sheet", label: "Balance Sheet", description: "Assets, liabilities, and equity as of a date" },
   { to: "/finance/cash-flow", label: "Cash Flow Statement", description: "Indirect-method cash flow over a period" },
+  { to: "/finance/bank-statements", label: "Bank Statements", description: "Import and reconcile bank statement lines" },
 ] as const;
 
 export function FinanceHomePage() {

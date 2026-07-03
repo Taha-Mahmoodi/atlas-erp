@@ -5,6 +5,7 @@
  */
 
 import { api, newIdempotencyKey, type Page } from "@/lib/apiClient";
+import type { JobSubmitted } from "@/lib/jobs";
 import type {
   Account,
   AccountCreate,
@@ -13,8 +14,13 @@ import type {
   AccountUpdate,
   AgingReport,
   BalanceSheet,
+  BankStatement,
+  BankStatementDetail,
+  BankStatementImportRequest,
+  BankStatementLine,
   BillStatus,
   CashFlowStatement,
+  ClearLineRequest,
   Currency,
   CustomerInvoice,
   CustomerInvoiceCreate,
@@ -31,6 +37,7 @@ import type {
   JournalEntryDetail,
   JournalEntryReverseRequest,
   ProfitAndLoss,
+  SuggestMatchesResult,
   TaxCode,
   TrialBalance,
   VendorBill,
@@ -256,5 +263,71 @@ export function getBalanceSheet(asOf: string): Promise<BalanceSheet> {
 export function getCashFlowStatement(dateFrom: string, dateTo: string): Promise<CashFlowStatement> {
   return api.get<CashFlowStatement>("/finance/statements/cash-flow", {
     params: { date_from: dateFrom, date_to: dateTo },
+  });
+}
+
+// --- Bank reconciliation ------------------------------------------------------
+// importBankStatement resolves to either the finished statement (small CSV, 201) or a job to
+// poll (large CSV, PERFORMANCE §3, 202) — the caller distinguishes by checking for `job_id`.
+
+export function importBankStatement(
+  payload: BankStatementImportRequest,
+): Promise<BankStatement | JobSubmitted> {
+  return api.post<BankStatement | JobSubmitted>("/finance/bank-statements", payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export interface BankStatementFilters {
+  cursor?: string;
+  limit?: number;
+}
+
+export function listBankStatements(
+  filters: BankStatementFilters = {},
+): Promise<Page<BankStatement>> {
+  return api.get<Page<BankStatement>>("/finance/bank-statements", { params: { ...filters } });
+}
+
+export function getBankStatement(statementId: string): Promise<BankStatementDetail> {
+  return api.get<BankStatementDetail>(`/finance/bank-statements/${statementId}`);
+}
+
+export function listBankStatementLines(
+  statementId: string,
+  filters: { cursor?: string; limit?: number; status?: string } = {},
+): Promise<Page<BankStatementLine>> {
+  return api.get<Page<BankStatementLine>>(`/finance/bank-statements/${statementId}/lines`, {
+    params: { ...filters },
+  });
+}
+
+export function suggestMatches(statementId: string): Promise<SuggestMatchesResult> {
+  return api.post<SuggestMatchesResult>(
+    `/finance/bank-statements/${statementId}/suggest-matches`,
+    undefined,
+  );
+}
+
+export function confirmMatch(lineId: string): Promise<BankStatementLine> {
+  return api.post<BankStatementLine>(
+    `/finance/bank-statement-lines/${lineId}/confirm-match`,
+    undefined,
+  );
+}
+
+export function rejectSuggestion(lineId: string): Promise<BankStatementLine> {
+  return api.post<BankStatementLine>(
+    `/finance/bank-statement-lines/${lineId}/reject-suggestion`,
+    undefined,
+  );
+}
+
+export function clearLine(
+  lineId: string,
+  payload: ClearLineRequest = {},
+): Promise<BankStatementLine> {
+  return api.post<BankStatementLine>(`/finance/bank-statement-lines/${lineId}/clear`, payload, {
+    idempotencyKey: newIdempotencyKey(),
   });
 }

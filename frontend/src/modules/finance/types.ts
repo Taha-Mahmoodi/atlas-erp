@@ -505,3 +505,73 @@ export interface CashFlowStatement {
   cash_account_movement: string;
   is_reconciled: boolean;
 }
+
+// --- Bank reconciliation (mirrors backend bank_schemas.py) ------------------
+//
+// A "bank account" is just a regular Account with is_cash_equivalent = true — no separate
+// model. Lines only ever come from CSV import (no manual create); matching is exclusively
+// automatic suggest-matches followed by confirm/reject — there's no manual bank-line <->
+// journal-line pairing action, no un-matching a MATCHED line, and no reopening a CLEARED one.
+
+export type StatementStatus = "IMPORTED" | "PARTIALLY_RECONCILED" | "RECONCILED";
+export type LineStatus = "UNMATCHED" | "SUGGESTED" | "MATCHED" | "CLEARED";
+
+export interface BankStatementImportRequest {
+  bank_account_id: string;
+  statement_date: string;
+  opening_balance: string;
+  closing_balance: string;
+  currency_code: string;
+  csv_text: string;
+  source_filename?: string | null;
+}
+
+export interface BankStatement {
+  id: string;
+  bank_account_id: string;
+  statement_date: string;
+  opening_balance: string;
+  closing_balance: string;
+  currency_code: string;
+  status: StatementStatus;
+  line_count: number;
+  import_job_id: string | null;
+  source_filename: string | null;
+  created_at: string;
+}
+
+export interface StatementProgress {
+  total: number;
+  unmatched: number;
+  suggested: number;
+  matched: number;
+  cleared: number;
+  resolved: number;
+}
+
+export interface BankStatementDetail extends BankStatement {
+  progress: StatementProgress;
+}
+
+/** amount is SIGNED: positive = money in (credit to bank), negative = money out. */
+export interface BankStatementLine {
+  id: string;
+  statement_id: string;
+  line_number: number;
+  value_date: string;
+  amount: string;
+  description: string;
+  counterparty_ref: string | null;
+  status: LineStatus;
+  matched_journal_line_id: string | null;
+  cleared_journal_entry_id: string | null;
+}
+
+export interface SuggestMatchesResult {
+  suggested: number;
+  unmatched: number;
+}
+
+export interface ClearLineRequest {
+  contra_account_id?: string | null;
+}

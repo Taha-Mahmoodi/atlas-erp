@@ -14,6 +14,9 @@ import { AccountListPage } from "@/modules/finance/pages/AccountListPage";
 import { ApAgingPage } from "@/modules/finance/pages/ApAgingPage";
 import { ArAgingPage } from "@/modules/finance/pages/ArAgingPage";
 import { BalanceSheetPage } from "@/modules/finance/pages/BalanceSheetPage";
+import { BankStatementDetailPage } from "@/modules/finance/pages/BankStatementDetailPage";
+import { BankStatementImportPage } from "@/modules/finance/pages/BankStatementImportPage";
+import { BankStatementListPage } from "@/modules/finance/pages/BankStatementListPage";
 import { CashFlowStatementPage } from "@/modules/finance/pages/CashFlowStatementPage";
 import { CustomerInvoiceDetailPage } from "@/modules/finance/pages/CustomerInvoiceDetailPage";
 import { CustomerInvoiceFormPage } from "@/modules/finance/pages/CustomerInvoiceFormPage";
@@ -185,6 +188,23 @@ const financeCashFlowRoute = createRoute({
   component: CashFlowStatementPage,
 });
 
+// Bank reconciliation (slice 5)
+const financeBankStatementsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/bank-statements",
+  component: BankStatementListPage,
+});
+const financeBankStatementImportRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/bank-statements/import",
+  component: BankStatementImportPage,
+});
+const financeBankStatementDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/bank-statements/$statementId",
+  component: BankStatementDetailPage,
+});
+
 // --- Every other module: placeholder until its own slice lands ----------------------------
 
 const moduleRoute = createRoute({
@@ -219,6 +239,9 @@ const routeTree = rootRoute.addChildren([
   financeProfitLossRoute,
   financeBalanceSheetRoute,
   financeCashFlowRoute,
+  financeBankStatementsRoute,
+  financeBankStatementImportRoute,
+  financeBankStatementDetailRoute,
   moduleRoute,
 ]);
 
