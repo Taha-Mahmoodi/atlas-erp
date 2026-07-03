@@ -6,6 +6,7 @@
 
 export * from "@/modules/procurement/hooks/approvalRules";
 export * from "@/modules/procurement/hooks/goodsReceipts";
+export * from "@/modules/procurement/hooks/invoiceMatches";
 export * from "@/modules/procurement/hooks/orders";
 export * from "@/modules/procurement/hooks/requisitions";
 export * from "@/modules/procurement/hooks/rfqs";

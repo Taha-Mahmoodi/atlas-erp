@@ -1,6 +1,6 @@
 /**
- * The procurement module's own landing page (STRUCTURE §4: modules/procurement/pages/). Links
- * into this slice's areas; invoice matches land as the final slice of PLAN 15.6.
+ * The procurement module's own landing page (STRUCTURE §4: modules/procurement/pages/). Final
+ * slice of PLAN 15.6 — every area now has real UI.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -11,7 +11,9 @@ const SECTIONS = [
   { to: "/procurement/rfqs", label: "RFQs", description: "Request for quotation and vendor responses" },
   { to: "/procurement/purchase-orders", label: "Purchase Orders", description: "Firm commitments to a vendor" },
   { to: "/procurement/goods-receipts", label: "Goods Receipts", description: "Receiving against purchase orders" },
+  { to: "/procurement/invoice-matches", label: "Invoice Matches", description: "3-way match against receipts and POs" },
   { to: "/procurement/approval-rules", label: "Approval Rules", description: "Value thresholds for requisition/PO approval" },
+  { to: "/procurement/match-tolerances", label: "Match Tolerance", description: "Price/quantity variance thresholds" },
 ] as const;
 
 export function ProcurementHomePage() {

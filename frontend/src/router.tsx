@@ -54,6 +54,10 @@ import { ApprovalRuleListPage } from "@/modules/procurement/pages/ApprovalRuleLi
 import { GoodsReceiptDetailPage } from "@/modules/procurement/pages/GoodsReceiptDetailPage";
 import { GoodsReceiptFormPage } from "@/modules/procurement/pages/GoodsReceiptFormPage";
 import { GoodsReceiptListPage } from "@/modules/procurement/pages/GoodsReceiptListPage";
+import { InvoiceMatchDetailPage } from "@/modules/procurement/pages/InvoiceMatchDetailPage";
+import { InvoiceMatchFormPage } from "@/modules/procurement/pages/InvoiceMatchFormPage";
+import { InvoiceMatchListPage } from "@/modules/procurement/pages/InvoiceMatchListPage";
+import { MatchToleranceFormPage } from "@/modules/procurement/pages/MatchToleranceFormPage";
 import { ProcurementHomePage } from "@/modules/procurement/pages/ProcurementHomePage";
 import { PurchaseOrderDetailPage } from "@/modules/procurement/pages/PurchaseOrderDetailPage";
 import { PurchaseOrderFormPage } from "@/modules/procurement/pages/PurchaseOrderFormPage";
@@ -497,6 +501,28 @@ const procurementGoodsReceiptDetailRoute = createRoute({
   component: GoodsReceiptDetailPage,
 });
 
+// Invoice matches + match tolerance (slice 5, FINAL)
+const procurementInvoiceMatchesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/invoice-matches",
+  component: InvoiceMatchListPage,
+});
+const procurementInvoiceMatchNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/invoice-matches/new",
+  component: InvoiceMatchFormPage,
+});
+const procurementInvoiceMatchDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/invoice-matches/$invoiceMatchId",
+  component: InvoiceMatchDetailPage,
+});
+const procurementMatchTolerancesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/match-tolerances",
+  component: MatchToleranceFormPage,
+});
+
 const procurementApprovalRulesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/procurement/approval-rules",
@@ -596,6 +622,10 @@ const routeTree = rootRoute.addChildren([
   procurementGoodsReceiptsRoute,
   procurementGoodsReceiptNewRoute,
   procurementGoodsReceiptDetailRoute,
+  procurementInvoiceMatchesRoute,
+  procurementInvoiceMatchNewRoute,
+  procurementInvoiceMatchDetailRoute,
+  procurementMatchTolerancesRoute,
   procurementApprovalRulesRoute,
   procurementApprovalRuleNewRoute,
   procurementApprovalRuleDetailRoute,

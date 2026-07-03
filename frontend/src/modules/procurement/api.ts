@@ -1,7 +1,7 @@
 /**
  * Typed endpoint calls for the procurement module (STRUCTURE §4): vendors + approved items,
- * approval rules, purchase requisitions, RFQs, purchase orders, goods receipts. Invoice
- * matches land in the final slice of PLAN 15.6.
+ * approval rules, purchase requisitions, RFQs, purchase orders, goods receipts, invoice
+ * matches. Final slice of PLAN 15.6.
  */
 
 import { api, newIdempotencyKey, type Page } from "@/lib/apiClient";
@@ -15,6 +15,12 @@ import type {
   GoodsReceiptCreate,
   GoodsReceiptDetail,
   GoodsReceiptStatus,
+  InvoiceMatch,
+  InvoiceMatchCreate,
+  InvoiceMatchDetail,
+  MatchStatus,
+  MatchTolerance,
+  MatchToleranceUpsert,
   PurchaseOrder,
   PurchaseOrderCreate,
   PurchaseOrderDetail,
@@ -296,4 +302,49 @@ export function postGoodsReceipt(goodsReceiptId: string): Promise<GoodsReceiptDe
 
 export function cancelGoodsReceipt(goodsReceiptId: string): Promise<GoodsReceiptDetail> {
   return api.post<GoodsReceiptDetail>(`/procurement/goods-receipts/${goodsReceiptId}/cancel`, undefined);
+}
+
+// --- Invoice matches -----------------------------------------------------------
+
+export interface InvoiceMatchFilters {
+  cursor?: string;
+  limit?: number;
+  purchase_order_id?: string;
+  status?: MatchStatus;
+}
+
+export function listInvoiceMatches(filters: InvoiceMatchFilters = {}): Promise<Page<InvoiceMatch>> {
+  return api.get<Page<InvoiceMatch>>("/procurement/invoice-matches", { params: { ...filters } });
+}
+
+export function getInvoiceMatch(invoiceMatchId: string): Promise<InvoiceMatchDetail> {
+  return api.get<InvoiceMatchDetail>(`/procurement/invoice-matches/${invoiceMatchId}`);
+}
+
+export function createInvoiceMatch(payload: InvoiceMatchCreate): Promise<InvoiceMatchDetail> {
+  return api.post<InvoiceMatchDetail>("/procurement/invoice-matches", payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function postInvoiceMatch(invoiceMatchId: string): Promise<InvoiceMatchDetail> {
+  return api.post<InvoiceMatchDetail>(`/procurement/invoice-matches/${invoiceMatchId}/post`, undefined, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function overrideInvoiceMatch(invoiceMatchId: string): Promise<InvoiceMatchDetail> {
+  return api.post<InvoiceMatchDetail>(`/procurement/invoice-matches/${invoiceMatchId}/override`, undefined);
+}
+
+export function cancelInvoiceMatch(invoiceMatchId: string): Promise<InvoiceMatchDetail> {
+  return api.post<InvoiceMatchDetail>(`/procurement/invoice-matches/${invoiceMatchId}/cancel`, undefined);
+}
+
+export function getMatchTolerance(): Promise<MatchTolerance | null> {
+  return api.get<MatchTolerance | null>("/procurement/match-tolerances");
+}
+
+export function setMatchTolerance(payload: MatchToleranceUpsert): Promise<MatchTolerance> {
+  return api.put<MatchTolerance>("/procurement/match-tolerances", payload);
 }

@@ -38,7 +38,7 @@ export function GoodsReceiptFormPage() {
   const [warehouseId, setWarehouseId] = useState("");
   const [receiptDate, setReceiptDate] = useState(today());
   const [notes, setNotes] = useState("");
-  const [lineInputs, setLineInputs] = useState<Record<string, { quantity: string; binId: string; lotCode: string }>>({});
+  const [lineInputs, setLineInputs] = useState<Record<string, Partial<{ quantity: string; binId: string; lotCode: string }>>>({});
   const [error, setError] = useState<string | null>(null);
 
   const order = usePurchaseOrder(purchaseOrderId || undefined);
@@ -49,7 +49,7 @@ export function GoodsReceiptFormPage() {
     (Number(quantity) - Number(receivedQuantity)).toString();
 
   const setLineInput = (lineId: string, patch: Partial<{ quantity: string; binId: string; lotCode: string }>) => {
-    setLineInputs((prev) => ({ ...prev, [lineId]: { quantity: "", binId: "", lotCode: "", ...prev[lineId], ...patch } }));
+    setLineInputs((prev) => ({ ...prev, [lineId]: { ...prev[lineId], ...patch } }));
   };
 
   const lines: GoodsReceiptLineCreate[] = (order.data?.lines ?? [])

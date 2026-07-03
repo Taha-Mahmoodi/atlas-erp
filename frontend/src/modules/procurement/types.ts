@@ -1,8 +1,8 @@
 /**
  * Mirrors backend `app/modules/procurement/schemas/{vendors,approvals,requisitions,rfqs,
- * orders,goods_receipts}.py` (STRUCTURE §4). Vendor masters + approved items, approval rules,
- * purchase requisitions, RFQs, and purchase orders shipped first; this slice adds goods
- * receipts. Invoice matches land in the final slice of PLAN 15.6.
+ * orders,goods_receipts,invoice_matches}.py` (STRUCTURE §4). This is the final slice of PLAN
+ * 15.6: vendor masters + approved items, approval rules, requisitions, RFQs, purchase orders,
+ * and goods receipts shipped first; this slice adds the 3-way invoice match.
  */
 
 export type VendorStatus = "ACTIVE" | "BLOCKED" | "INACTIVE";
@@ -367,4 +367,93 @@ export interface GoodsReceipt {
 
 export interface GoodsReceiptDetail extends GoodsReceipt {
   lines: GoodsReceiptLine[];
+}
+
+// --- Invoice matches (mirrors schemas/invoice_matches.py) --------------------
+//
+// DRAFT -> MATCHED | EXCEPTION (computed at create time from each line's price/quantity
+// variance vs MatchTolerance) -> POSTED (terminal; blocked from EXCEPTION, use /override
+// first) or CANCELLED. Posting publishes InvoiceMatched: finance creates+posts the AP vendor
+// bill in the same transaction — there is NO "create bill" endpoint here; the resulting bill
+// is only visible via finance's own VendorBillListPage/VendorBillDetailPage (D-042: no
+// vendor_bill_id FK on this schema by design). po_unit_cost/price_variance/quantity_variance/
+// within_tolerance are server-computed, never client-settable.
+//
+// Quantity variance is NOT simply matched-vs-received: if goods_receipt_line_id is given,
+// expected quantity is THAT receipt line's received_quantity; otherwise it's the PO line's
+// open-to-bill quantity (received - billed). variance = max(0, matched - expected) — billing
+// LESS than expected (an ordinary partial invoice) is never a variance (issue #74's fix).
+//
+// price_variance is a MONEY AMOUNT — (unit_price - po_unit_cost) * matched_quantity — not a
+// percentage; render with formatMoney, not a raw "%" suffix (a real bug this slice's own QA
+// caught: a $10->$15 price on 100 units rendered as "500%" instead of "USD 500.00"). The
+// tolerance *percentage* used for within_tolerance is computed server-side but not itself
+// exposed on the line.
+
+export type MatchStatus = "DRAFT" | "MATCHED" | "EXCEPTION" | "POSTED" | "CANCELLED";
+
+export interface InvoiceMatchLineCreate {
+  purchase_order_line_id: string;
+  goods_receipt_line_id?: string | null;
+  matched_quantity: string;
+  unit_price: string;
+}
+
+export interface InvoiceMatchCreate {
+  purchase_order_id: string;
+  vendor_invoice_ref?: string | null;
+  invoice_date?: string | null;
+  tax_code_id?: string | null;
+  notes?: string | null;
+  lines: InvoiceMatchLineCreate[];
+}
+
+export interface InvoiceMatchLine {
+  id: string;
+  line_number: number;
+  purchase_order_line_id: string;
+  goods_receipt_line_id: string | null;
+  item_id: string;
+  matched_quantity: string;
+  unit_price: string;
+  po_unit_cost: string;
+  price_variance: string;
+  quantity_variance: string;
+  line_amount: string;
+  within_tolerance: boolean;
+}
+
+export interface InvoiceMatch {
+  id: string;
+  match_number: string;
+  status: MatchStatus;
+  purchase_order_id: string;
+  vendor_id: string;
+  vendor_invoice_ref: string | null;
+  invoice_date: string;
+  currency_code: string;
+  total_amount: string;
+  tax_code_id: string | null;
+  notes: string | null;
+  document_id: string;
+  posted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InvoiceMatchDetail extends InvoiceMatch {
+  lines: InvoiceMatchLine[];
+}
+
+export interface MatchToleranceUpsert {
+  price_tolerance_percent?: string;
+  quantity_tolerance_percent?: string;
+}
+
+export interface MatchTolerance {
+  id: string;
+  price_tolerance_percent: string;
+  quantity_tolerance_percent: string;
+  created_at: string;
+  updated_at: string;
 }
