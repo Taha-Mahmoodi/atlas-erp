@@ -11,11 +11,20 @@ import type {
   AccountGroup,
   AccountType,
   AccountUpdate,
+  AgingReport,
+  BillStatus,
   EntryStatus,
   JournalEntry,
   JournalEntryCreate,
   JournalEntryDetail,
   JournalEntryReverseRequest,
+  TaxCode,
+  VendorBill,
+  VendorBillCreate,
+  VendorBillDetail,
+  VendorPayment,
+  VendorPaymentCreate,
+  VendorPaymentDetail,
 } from "@/modules/finance/types";
 
 export interface AccountFilters {
@@ -86,4 +95,61 @@ export function reverseJournalEntry(
     payload,
     { idempotencyKey: newIdempotencyKey() },
   );
+}
+
+export function listTaxCodes(): Promise<Page<TaxCode>> {
+  return api.get<Page<TaxCode>>("/finance/tax-codes", { params: { is_active: true, limit: 100 } });
+}
+
+// --- Accounts Payable ----------------------------------------------------------
+
+export interface VendorBillFilters {
+  cursor?: string;
+  limit?: number;
+  status?: BillStatus;
+  partner_id?: string;
+}
+
+export function listVendorBills(filters: VendorBillFilters = {}): Promise<Page<VendorBill>> {
+  return api.get<Page<VendorBill>>("/finance/vendor-bills", { params: { ...filters } });
+}
+
+export function getVendorBill(billId: string): Promise<VendorBillDetail> {
+  return api.get<VendorBillDetail>(`/finance/vendor-bills/${billId}`);
+}
+
+export function createVendorBill(payload: VendorBillCreate): Promise<VendorBill> {
+  return api.post<VendorBill>("/finance/vendor-bills", payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function postVendorBill(billId: string): Promise<VendorBillDetail> {
+  return api.post<VendorBillDetail>(`/finance/vendor-bills/${billId}/post`, undefined, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function createVendorPayment(payload: VendorPaymentCreate): Promise<VendorPaymentDetail> {
+  return api.post<VendorPaymentDetail>("/finance/vendor-payments", payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export interface VendorPaymentFilters {
+  cursor?: string;
+  limit?: number;
+  partner_id?: string;
+}
+
+export function listVendorPayments(
+  filters: VendorPaymentFilters = {},
+): Promise<Page<VendorPayment>> {
+  return api.get<Page<VendorPayment>>("/finance/vendor-payments", { params: { ...filters } });
+}
+
+export function getApAging(asOf: string, partnerId?: string): Promise<AgingReport> {
+  return api.get<AgingReport>("/finance/ap-aging", {
+    params: { as_of: asOf, ...(partnerId ? { partner_id: partnerId } : {}) },
+  });
 }
