@@ -1,11 +1,14 @@
 /**
- * Typed endpoint calls for the inventory module's item masters (STRUCTURE §4): item
- * categories, units of measure, items, UoM conversions. Warehouses/bins/moves/on-hand/
- * valuation and stock counts land in later slices of PLAN 15.5.
+ * Typed endpoint calls for the inventory module (STRUCTURE §4): item masters, warehouses/
+ * bins, stock moves, on-hand, valuation. Stock counts land in a later slice of PLAN 15.5.
  */
 
-import { api, type Page } from "@/lib/apiClient";
+import { api, newIdempotencyKey, type Page } from "@/lib/apiClient";
 import type {
+  Bin,
+  BinCreate,
+  BinUpdate,
+  CostLayer,
   Item,
   ItemCategory,
   ItemCategoryCreate,
@@ -13,11 +16,19 @@ import type {
   ItemCreate,
   ItemType,
   ItemUpdate,
+  MoveType,
+  StockMove,
+  StockMoveCreate,
+  StockOnHand,
+  StockValuation,
   Uom,
   UomConversion,
   UomConversionCreate,
   UomCreate,
   UomUpdate,
+  Warehouse,
+  WarehouseCreate,
+  WarehouseUpdate,
 } from "@/modules/inventory/types";
 
 export interface ItemCategoryFilters {
@@ -100,4 +111,118 @@ export function createUomConversion(
   payload: UomConversionCreate,
 ): Promise<UomConversion> {
   return api.post<UomConversion>(`/inventory/items/${itemId}/uom-conversions`, payload);
+}
+
+// --- Warehouses / bins --------------------------------------------------------
+
+export interface WarehouseFilters {
+  cursor?: string;
+  limit?: number;
+}
+
+export function listWarehouses(filters: WarehouseFilters = {}): Promise<Page<Warehouse>> {
+  return api.get<Page<Warehouse>>("/inventory/warehouses", { params: { ...filters } });
+}
+
+export function getWarehouse(warehouseId: string): Promise<Warehouse> {
+  return api.get<Warehouse>(`/inventory/warehouses/${warehouseId}`);
+}
+
+export function createWarehouse(payload: WarehouseCreate): Promise<Warehouse> {
+  return api.post<Warehouse>("/inventory/warehouses", payload);
+}
+
+export function updateWarehouse(warehouseId: string, payload: WarehouseUpdate): Promise<Warehouse> {
+  return api.patch<Warehouse>(`/inventory/warehouses/${warehouseId}`, payload);
+}
+
+export interface BinFilters {
+  cursor?: string;
+  limit?: number;
+  warehouse_id?: string;
+}
+
+export function listBins(filters: BinFilters = {}): Promise<Page<Bin>> {
+  return api.get<Page<Bin>>("/inventory/bins", { params: { ...filters } });
+}
+
+export function getBin(binId: string): Promise<Bin> {
+  return api.get<Bin>(`/inventory/bins/${binId}`);
+}
+
+export function createBin(payload: BinCreate): Promise<Bin> {
+  return api.post<Bin>("/inventory/bins", payload);
+}
+
+export function updateBin(binId: string, payload: BinUpdate): Promise<Bin> {
+  return api.patch<Bin>(`/inventory/bins/${binId}`, payload);
+}
+
+// --- Stock moves ---------------------------------------------------------------
+
+export function createStockMove(payload: StockMoveCreate): Promise<StockMove> {
+  return api.post<StockMove>("/inventory/stock-moves", payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function reverseStockMove(moveId: string): Promise<StockMove> {
+  return api.post<StockMove>(`/inventory/stock-moves/${moveId}/reverse`, undefined, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export interface StockMoveFilters {
+  cursor?: string;
+  limit?: number;
+  item_id?: string;
+  bin_id?: string;
+  move_type?: MoveType;
+  date_from?: string;
+  date_to?: string;
+}
+
+export function listStockMoves(filters: StockMoveFilters = {}): Promise<Page<StockMove>> {
+  return api.get<Page<StockMove>>("/inventory/stock-moves", { params: { ...filters } });
+}
+
+export function getStockMove(moveId: string): Promise<StockMove> {
+  return api.get<StockMove>(`/inventory/stock-moves/${moveId}`);
+}
+
+// --- On-hand -------------------------------------------------------------------
+
+export interface StockOnHandFilters {
+  cursor?: string;
+  limit?: number;
+  item_id?: string;
+  bin_id?: string;
+}
+
+export function listStockOnHand(filters: StockOnHandFilters = {}): Promise<Page<StockOnHand>> {
+  return api.get<Page<StockOnHand>>("/inventory/stock-on-hand", { params: { ...filters } });
+}
+
+// --- Valuation -------------------------------------------------------------------
+
+export interface StockValuationFilters {
+  cursor?: string;
+  limit?: number;
+  item_id?: string;
+  warehouse_id?: string;
+}
+
+export function listStockValuations(
+  filters: StockValuationFilters = {},
+): Promise<Page<StockValuation>> {
+  return api.get<Page<StockValuation>>("/inventory/stock-valuations", { params: { ...filters } });
+}
+
+export function listCostLayers(
+  itemId: string,
+  filters: { cursor?: string; limit?: number; warehouse_id?: string; include_exhausted?: boolean } = {},
+): Promise<Page<CostLayer>> {
+  return api.get<Page<CostLayer>>(`/inventory/items/${itemId}/cost-layers`, {
+    params: { ...filters },
+  });
 }
