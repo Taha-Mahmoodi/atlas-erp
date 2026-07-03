@@ -5,6 +5,7 @@
  */
 
 import { api, newIdempotencyKey, type Page } from "@/lib/apiClient";
+import type { JobSubmitted } from "@/lib/jobs";
 import type {
   Account,
   AccountCreate,
@@ -12,13 +13,43 @@ import type {
   AccountType,
   AccountUpdate,
   AgingReport,
+  Asset,
+  AssetActivateRequest,
+  AssetCreate,
+  AssetRegisterReport,
+  AssetStatus,
+  AssetUpdate,
+  BalanceSheet,
+  BankStatement,
+  BankStatementDetail,
+  BankStatementImportRequest,
+  BankStatementLine,
   BillStatus,
+  CashFlowStatement,
+  ClearLineRequest,
+  Currency,
+  CustomerInvoice,
+  CustomerInvoiceCreate,
+  CustomerInvoiceDetail,
+  CustomerReceipt,
+  CustomerReceiptCreate,
+  CustomerReceiptDetail,
+  DepreciationEntry,
+  DepreciationRun,
+  DepreciationRunRequest,
+  DunningRunRequest,
+  DunningRunResult,
   EntryStatus,
+  FiscalPeriod,
+  InvoiceStatus,
   JournalEntry,
   JournalEntryCreate,
   JournalEntryDetail,
   JournalEntryReverseRequest,
+  ProfitAndLoss,
+  SuggestMatchesResult,
   TaxCode,
+  TrialBalance,
   VendorBill,
   VendorBillCreate,
   VendorBillDetail,
@@ -101,6 +132,10 @@ export function listTaxCodes(): Promise<Page<TaxCode>> {
   return api.get<Page<TaxCode>>("/finance/tax-codes", { params: { is_active: true, limit: 100 } });
 }
 
+export function listCurrencies(): Promise<Page<Currency>> {
+  return api.get<Page<Currency>>("/finance/currencies", { params: { limit: 100 } });
+}
+
 // --- Accounts Payable ----------------------------------------------------------
 
 export interface VendorBillFilters {
@@ -152,4 +187,232 @@ export function getApAging(asOf: string, partnerId?: string): Promise<AgingRepor
   return api.get<AgingReport>("/finance/ap-aging", {
     params: { as_of: asOf, ...(partnerId ? { partner_id: partnerId } : {}) },
   });
+}
+
+// --- Accounts Receivable ---------------------------------------------------
+
+export interface CustomerInvoiceFilters {
+  cursor?: string;
+  limit?: number;
+  status?: InvoiceStatus;
+  partner_id?: string;
+}
+
+export function listCustomerInvoices(
+  filters: CustomerInvoiceFilters = {},
+): Promise<Page<CustomerInvoice>> {
+  return api.get<Page<CustomerInvoice>>("/finance/customer-invoices", { params: { ...filters } });
+}
+
+export function getCustomerInvoice(invoiceId: string): Promise<CustomerInvoiceDetail> {
+  return api.get<CustomerInvoiceDetail>(`/finance/customer-invoices/${invoiceId}`);
+}
+
+export function createCustomerInvoice(payload: CustomerInvoiceCreate): Promise<CustomerInvoice> {
+  return api.post<CustomerInvoice>("/finance/customer-invoices", payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function postCustomerInvoice(invoiceId: string): Promise<CustomerInvoiceDetail> {
+  return api.post<CustomerInvoiceDetail>(`/finance/customer-invoices/${invoiceId}/post`, undefined, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function createCustomerReceipt(
+  payload: CustomerReceiptCreate,
+): Promise<CustomerReceiptDetail> {
+  return api.post<CustomerReceiptDetail>("/finance/customer-receipts", payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export interface CustomerReceiptFilters {
+  cursor?: string;
+  limit?: number;
+  partner_id?: string;
+}
+
+export function listCustomerReceipts(
+  filters: CustomerReceiptFilters = {},
+): Promise<Page<CustomerReceipt>> {
+  return api.get<Page<CustomerReceipt>>("/finance/customer-receipts", { params: { ...filters } });
+}
+
+export function runDunning(payload: DunningRunRequest): Promise<DunningRunResult> {
+  return api.post<DunningRunResult>("/finance/dunning-runs", payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function getArAging(asOf: string, partnerId?: string): Promise<AgingReport> {
+  return api.get<AgingReport>("/finance/ar-aging", {
+    params: { as_of: asOf, ...(partnerId ? { partner_id: partnerId } : {}) },
+  });
+}
+
+// --- Financial statements ---------------------------------------------------
+// Plain synchronous reads (no writes, no idempotency, no job/polling) — a single full object
+// each, not Page<T>. No server-side comparison-period support: two calls + client-side diff.
+
+export function getTrialBalance(asOf: string): Promise<TrialBalance> {
+  return api.get<TrialBalance>("/finance/statements/trial-balance", { params: { as_of: asOf } });
+}
+
+export function getProfitAndLoss(dateFrom: string, dateTo: string): Promise<ProfitAndLoss> {
+  return api.get<ProfitAndLoss>("/finance/statements/profit-loss", {
+    params: { date_from: dateFrom, date_to: dateTo },
+  });
+}
+
+export function getBalanceSheet(asOf: string): Promise<BalanceSheet> {
+  return api.get<BalanceSheet>("/finance/statements/balance-sheet", { params: { as_of: asOf } });
+}
+
+export function getCashFlowStatement(dateFrom: string, dateTo: string): Promise<CashFlowStatement> {
+  return api.get<CashFlowStatement>("/finance/statements/cash-flow", {
+    params: { date_from: dateFrom, date_to: dateTo },
+  });
+}
+
+// --- Bank reconciliation ------------------------------------------------------
+// importBankStatement resolves to either the finished statement (small CSV, 201) or a job to
+// poll (large CSV, PERFORMANCE §3, 202) — the caller distinguishes by checking for `job_id`.
+
+export function importBankStatement(
+  payload: BankStatementImportRequest,
+): Promise<BankStatement | JobSubmitted> {
+  return api.post<BankStatement | JobSubmitted>("/finance/bank-statements", payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export interface BankStatementFilters {
+  cursor?: string;
+  limit?: number;
+}
+
+export function listBankStatements(
+  filters: BankStatementFilters = {},
+): Promise<Page<BankStatement>> {
+  return api.get<Page<BankStatement>>("/finance/bank-statements", { params: { ...filters } });
+}
+
+export function getBankStatement(statementId: string): Promise<BankStatementDetail> {
+  return api.get<BankStatementDetail>(`/finance/bank-statements/${statementId}`);
+}
+
+export function listBankStatementLines(
+  statementId: string,
+  filters: { cursor?: string; limit?: number; status?: string } = {},
+): Promise<Page<BankStatementLine>> {
+  return api.get<Page<BankStatementLine>>(`/finance/bank-statements/${statementId}/lines`, {
+    params: { ...filters },
+  });
+}
+
+export function suggestMatches(statementId: string): Promise<SuggestMatchesResult> {
+  return api.post<SuggestMatchesResult>(
+    `/finance/bank-statements/${statementId}/suggest-matches`,
+    undefined,
+  );
+}
+
+export function confirmMatch(lineId: string): Promise<BankStatementLine> {
+  return api.post<BankStatementLine>(
+    `/finance/bank-statement-lines/${lineId}/confirm-match`,
+    undefined,
+  );
+}
+
+export function rejectSuggestion(lineId: string): Promise<BankStatementLine> {
+  return api.post<BankStatementLine>(
+    `/finance/bank-statement-lines/${lineId}/reject-suggestion`,
+    undefined,
+  );
+}
+
+export function clearLine(
+  lineId: string,
+  payload: ClearLineRequest = {},
+): Promise<BankStatementLine> {
+  return api.post<BankStatementLine>(`/finance/bank-statement-lines/${lineId}/clear`, payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+// --- Fixed assets --------------------------------------------------------------
+
+export function createAsset(payload: AssetCreate): Promise<Asset> {
+  return api.post<Asset>("/finance/assets", payload);
+}
+
+export function updateAsset(assetId: string, payload: AssetUpdate): Promise<Asset> {
+  return api.patch<Asset>(`/finance/assets/${assetId}`, payload);
+}
+
+export function activateAsset(assetId: string, payload: AssetActivateRequest): Promise<Asset> {
+  return api.post<Asset>(`/finance/assets/${assetId}/activate`, payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export interface AssetFilters {
+  cursor?: string;
+  limit?: number;
+  status?: AssetStatus;
+}
+
+export function listAssets(filters: AssetFilters = {}): Promise<Page<Asset>> {
+  return api.get<Page<Asset>>("/finance/assets", { params: { ...filters } });
+}
+
+export function getAsset(assetId: string): Promise<Asset> {
+  return api.get<Asset>(`/finance/assets/${assetId}`);
+}
+
+/** Resolves to either the finished run (small period, 201) or a job to poll (large period,
+ * PERFORMANCE §3, 202) — the caller distinguishes by checking for `job_id`. */
+export function runDepreciation(
+  payload: DepreciationRunRequest,
+): Promise<DepreciationRun | JobSubmitted> {
+  return api.post<DepreciationRun | JobSubmitted>("/finance/depreciation-runs", payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export interface DepreciationRunFilters {
+  cursor?: string;
+  limit?: number;
+  fiscal_period_id?: string;
+}
+
+export function listDepreciationRuns(
+  filters: DepreciationRunFilters = {},
+): Promise<Page<DepreciationRun>> {
+  return api.get<Page<DepreciationRun>>("/finance/depreciation-runs", { params: { ...filters } });
+}
+
+export function getDepreciationRun(runId: string): Promise<DepreciationRun> {
+  return api.get<DepreciationRun>(`/finance/depreciation-runs/${runId}`);
+}
+
+export function listDepreciationEntries(
+  runId: string,
+  filters: { cursor?: string; limit?: number } = {},
+): Promise<Page<DepreciationEntry>> {
+  return api.get<Page<DepreciationEntry>>(`/finance/depreciation-runs/${runId}/entries`, {
+    params: { ...filters },
+  });
+}
+
+export function getAssetRegister(asOf: string): Promise<AssetRegisterReport> {
+  return api.get<AssetRegisterReport>("/finance/asset-register", { params: { as_of: asOf } });
+}
+
+export function listFiscalPeriods(
+  filters: { cursor?: string; limit?: number } = {},
+): Promise<Page<FiscalPeriod>> {
+  return api.get<Page<FiscalPeriod>>("/finance/fiscal-periods", { params: { ...filters } });
 }

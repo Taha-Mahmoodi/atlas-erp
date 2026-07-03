@@ -11,6 +11,18 @@ const SECTIONS = [
   { to: "/finance/vendor-bills", label: "Vendor Bills", description: "Draft, post vendor bills" },
   { to: "/finance/vendor-payments", label: "Vendor Payments", description: "Pay vendor bills, clearing open items" },
   { to: "/finance/ap-aging", label: "AP Aging", description: "Open vendor bills by age" },
+  { to: "/finance/customer-invoices", label: "Customer Invoices", description: "Draft, post customer invoices" },
+  { to: "/finance/customer-receipts", label: "Customer Receipts", description: "Receive payment, clearing open items" },
+  { to: "/finance/ar-aging", label: "AR Aging", description: "Open customer invoices by age" },
+  { to: "/finance/dunning", label: "Dunning", description: "Advance reminder levels on overdue invoices" },
+  { to: "/finance/trial-balance", label: "Trial Balance", description: "Every account's net debit/credit as of a date" },
+  { to: "/finance/profit-loss", label: "Profit & Loss", description: "Revenue and expenses over a period" },
+  { to: "/finance/balance-sheet", label: "Balance Sheet", description: "Assets, liabilities, and equity as of a date" },
+  { to: "/finance/cash-flow", label: "Cash Flow Statement", description: "Indirect-method cash flow over a period" },
+  { to: "/finance/bank-statements", label: "Bank Statements", description: "Import and reconcile bank statement lines" },
+  { to: "/finance/assets", label: "Fixed Assets", description: "Register and activate fixed assets" },
+  { to: "/finance/depreciation-runs", label: "Depreciation Runs", description: "Run and review period depreciation" },
+  { to: "/finance/asset-register", label: "Asset Register", description: "Net book value of every asset as of a date" },
 ] as const;
 
 export function FinanceHomePage() {

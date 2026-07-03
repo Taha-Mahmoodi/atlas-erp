@@ -17,7 +17,8 @@ export interface FieldDef {
   type: "text" | "password" | "number" | "date" | "select" | "checkbox" | "textarea";
   required?: boolean;
   placeholder?: string;
-  /** For selects. An empty-value option is added automatically unless required. */
+  /** For selects. An empty-value placeholder option is always added automatically — even
+   * when required — so an unset value never silently displays as the first real option. */
   options?: SelectOption[];
   help?: string;
   disabled?: boolean;
@@ -89,10 +90,16 @@ function Control({
     return (
       <select
         {...shared}
+        required={field.required}
         value={String(value ?? "")}
         onChange={(event) => onChange(field.name, event.target.value)}
       >
-        {!field.required && <option value="">—</option>}
+        {/* Always rendered, even when required: a controlled <select> whose value doesn't
+         * match any option falls back to silently displaying the first real option while
+         * the underlying state stays empty — a user who never opens the dropdown submits an
+         * empty value that visually looked chosen. This placeholder keeps "nothing selected
+         * yet" visually true until the user actually picks something. */}
+        <option value="">{field.required ? "Select…" : "—"}</option>
         {(field.options ?? []).map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
