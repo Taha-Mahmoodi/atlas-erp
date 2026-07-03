@@ -12,6 +12,13 @@ import { App } from "@/App";
 import { AccountFormPage } from "@/modules/finance/pages/AccountFormPage";
 import { AccountListPage } from "@/modules/finance/pages/AccountListPage";
 import { ApAgingPage } from "@/modules/finance/pages/ApAgingPage";
+import { ArAgingPage } from "@/modules/finance/pages/ArAgingPage";
+import { CustomerInvoiceDetailPage } from "@/modules/finance/pages/CustomerInvoiceDetailPage";
+import { CustomerInvoiceFormPage } from "@/modules/finance/pages/CustomerInvoiceFormPage";
+import { CustomerInvoiceListPage } from "@/modules/finance/pages/CustomerInvoiceListPage";
+import { CustomerReceiptFormPage } from "@/modules/finance/pages/CustomerReceiptFormPage";
+import { CustomerReceiptListPage } from "@/modules/finance/pages/CustomerReceiptListPage";
+import { DunningRunPage } from "@/modules/finance/pages/DunningRunPage";
 import { FinanceHomePage } from "@/modules/finance/pages/FinanceHomePage";
 import { JournalEntryDetailPage } from "@/modules/finance/pages/JournalEntryDetailPage";
 import { JournalEntryFormPage } from "@/modules/finance/pages/JournalEntryFormPage";
@@ -115,6 +122,43 @@ const financeApAgingRoute = createRoute({
   component: ApAgingPage,
 });
 
+// Accounts Receivable (slice 3)
+const financeCustomerInvoicesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/customer-invoices",
+  component: CustomerInvoiceListPage,
+});
+const financeCustomerInvoiceNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/customer-invoices/new",
+  component: CustomerInvoiceFormPage,
+});
+const financeCustomerInvoiceDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/customer-invoices/$invoiceId",
+  component: CustomerInvoiceDetailPage,
+});
+const financeCustomerReceiptsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/customer-receipts",
+  component: CustomerReceiptListPage,
+});
+const financeCustomerReceiptNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/customer-receipts/new",
+  component: CustomerReceiptFormPage,
+});
+const financeArAgingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/ar-aging",
+  component: ArAgingPage,
+});
+const financeDunningRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/dunning",
+  component: DunningRunPage,
+});
+
 // --- Every other module: placeholder until its own slice lands ----------------------------
 
 const moduleRoute = createRoute({
@@ -138,6 +182,13 @@ const routeTree = rootRoute.addChildren([
   financeVendorPaymentsRoute,
   financeVendorPaymentNewRoute,
   financeApAgingRoute,
+  financeCustomerInvoicesRoute,
+  financeCustomerInvoiceNewRoute,
+  financeCustomerInvoiceDetailRoute,
+  financeCustomerReceiptsRoute,
+  financeCustomerReceiptNewRoute,
+  financeArAgingRoute,
+  financeDunningRoute,
   moduleRoute,
 ]);
 

@@ -13,7 +13,16 @@ import type {
   AccountUpdate,
   AgingReport,
   BillStatus,
+  CustomerInvoice,
+  CustomerInvoiceCreate,
+  CustomerInvoiceDetail,
+  CustomerReceipt,
+  CustomerReceiptCreate,
+  CustomerReceiptDetail,
+  DunningRunRequest,
+  DunningRunResult,
   EntryStatus,
+  InvoiceStatus,
   JournalEntry,
   JournalEntryCreate,
   JournalEntryDetail,
@@ -150,6 +159,69 @@ export function listVendorPayments(
 
 export function getApAging(asOf: string, partnerId?: string): Promise<AgingReport> {
   return api.get<AgingReport>("/finance/ap-aging", {
+    params: { as_of: asOf, ...(partnerId ? { partner_id: partnerId } : {}) },
+  });
+}
+
+// --- Accounts Receivable ---------------------------------------------------
+
+export interface CustomerInvoiceFilters {
+  cursor?: string;
+  limit?: number;
+  status?: InvoiceStatus;
+  partner_id?: string;
+}
+
+export function listCustomerInvoices(
+  filters: CustomerInvoiceFilters = {},
+): Promise<Page<CustomerInvoice>> {
+  return api.get<Page<CustomerInvoice>>("/finance/customer-invoices", { params: { ...filters } });
+}
+
+export function getCustomerInvoice(invoiceId: string): Promise<CustomerInvoiceDetail> {
+  return api.get<CustomerInvoiceDetail>(`/finance/customer-invoices/${invoiceId}`);
+}
+
+export function createCustomerInvoice(payload: CustomerInvoiceCreate): Promise<CustomerInvoice> {
+  return api.post<CustomerInvoice>("/finance/customer-invoices", payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function postCustomerInvoice(invoiceId: string): Promise<CustomerInvoiceDetail> {
+  return api.post<CustomerInvoiceDetail>(`/finance/customer-invoices/${invoiceId}/post`, undefined, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function createCustomerReceipt(
+  payload: CustomerReceiptCreate,
+): Promise<CustomerReceiptDetail> {
+  return api.post<CustomerReceiptDetail>("/finance/customer-receipts", payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export interface CustomerReceiptFilters {
+  cursor?: string;
+  limit?: number;
+  partner_id?: string;
+}
+
+export function listCustomerReceipts(
+  filters: CustomerReceiptFilters = {},
+): Promise<Page<CustomerReceipt>> {
+  return api.get<Page<CustomerReceipt>>("/finance/customer-receipts", { params: { ...filters } });
+}
+
+export function runDunning(payload: DunningRunRequest): Promise<DunningRunResult> {
+  return api.post<DunningRunResult>("/finance/dunning-runs", payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function getArAging(asOf: string, partnerId?: string): Promise<AgingReport> {
+  return api.get<AgingReport>("/finance/ar-aging", {
     params: { as_of: asOf, ...(partnerId ? { partner_id: partnerId } : {}) },
   });
 }

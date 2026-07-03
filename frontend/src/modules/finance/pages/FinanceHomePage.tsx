@@ -11,6 +11,10 @@ const SECTIONS = [
   { to: "/finance/vendor-bills", label: "Vendor Bills", description: "Draft, post vendor bills" },
   { to: "/finance/vendor-payments", label: "Vendor Payments", description: "Pay vendor bills, clearing open items" },
   { to: "/finance/ap-aging", label: "AP Aging", description: "Open vendor bills by age" },
+  { to: "/finance/customer-invoices", label: "Customer Invoices", description: "Draft, post customer invoices" },
+  { to: "/finance/customer-receipts", label: "Customer Receipts", description: "Receive payment, clearing open items" },
+  { to: "/finance/ar-aging", label: "AR Aging", description: "Open customer invoices by age" },
+  { to: "/finance/dunning", label: "Dunning", description: "Advance reminder levels on overdue invoices" },
 ] as const;
 
 export function FinanceHomePage() {

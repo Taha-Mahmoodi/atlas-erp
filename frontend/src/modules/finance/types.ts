@@ -266,6 +266,8 @@ export interface AgingBucket {
   total: string;
 }
 
+/** Shared by AP and AR — the backend's AgingBucketRead / ArAgingBucketRead are structurally
+ * identical (partner-vs-partner buckets), just named per module. */
 export interface AgingReport {
   as_of: string;
   partners: AgingBucket[];
@@ -275,4 +277,136 @@ export interface AgingReport {
   days_61_90: string;
   days_over_90: string;
   total: string;
+}
+
+// --- Accounts Receivable (mirrors backend receivables_schemas.py) --------------
+
+export type InvoiceStatus = "DRAFT" | "POSTED" | "PARTIALLY_PAID" | "PAID" | "REVERSED";
+export type ReceiptStatus = "DRAFT" | "POSTED" | "REVERSED";
+
+export interface CustomerInvoiceLineCreate {
+  account_id: string;
+  description?: string | null;
+  net_amount: string;
+  tax_code_id?: string | null;
+}
+
+export interface CustomerInvoiceCreate {
+  partner_id: string;
+  partner_name: string;
+  invoice_date: string;
+  due_date: string;
+  currency_code: string;
+  ar_account_id: string;
+  external_ref?: string | null;
+  description?: string | null;
+  lines: CustomerInvoiceLineCreate[];
+}
+
+export interface CustomerInvoiceLine {
+  id: string;
+  line_number: number;
+  account_id: string;
+  description: string | null;
+  net_amount: string;
+  tax_code_id: string | null;
+  tax_amount: string;
+  cost_center_id: string | null;
+  profit_center_id: string | null;
+  project_id: string | null;
+}
+
+export interface CustomerInvoice {
+  id: string;
+  partner_id: string;
+  partner_name: string;
+  external_ref: string | null;
+  invoice_number: string | null;
+  invoice_date: string;
+  due_date: string;
+  currency_code: string;
+  status: InvoiceStatus;
+  ar_account_id: string;
+  journal_entry_id: string | null;
+  gross_amount: string;
+  tax_amount: string;
+  net_amount: string;
+  open_amount: string;
+  dunning_level: number;
+  last_dunned_date: string | null;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomerInvoiceDetail extends CustomerInvoice {
+  lines: CustomerInvoiceLine[];
+}
+
+export interface ReceiptAllocationCreate {
+  invoice_id: string;
+  amount: string;
+}
+
+export interface CustomerReceiptCreate {
+  partner_id: string;
+  partner_name: string;
+  receipt_date: string;
+  currency_code: string;
+  bank_account_id: string;
+  amount: string;
+  description?: string | null;
+  allocations: ReceiptAllocationCreate[];
+}
+
+export interface ReceiptAllocation {
+  id: string;
+  receipt_id: string;
+  customer_invoice_id: string;
+  allocated_amount: string;
+}
+
+export interface CustomerReceipt {
+  id: string;
+  partner_id: string;
+  partner_name: string;
+  receipt_number: string | null;
+  receipt_date: string;
+  currency_code: string;
+  bank_account_id: string;
+  amount: string;
+  journal_entry_id: string | null;
+  status: ReceiptStatus;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomerReceiptDetail extends CustomerReceipt {
+  allocations: ReceiptAllocation[];
+}
+
+// --- Dunning ---------------------------------------------------------------
+
+export interface DunningRunRequest {
+  as_of: string;
+  partner_id?: string | null;
+}
+
+export interface DunningNotice {
+  partner_id: string;
+  partner_name: string;
+  invoice_id: string;
+  invoice_number: string | null;
+  currency_code: string;
+  open_amount: string;
+  due_date: string;
+  days_overdue: number;
+  previous_level: number;
+  new_level: number;
+}
+
+export interface DunningRunResult {
+  as_of: string;
+  notices: DunningNotice[];
 }
