@@ -8,6 +8,9 @@ import { Link } from "@tanstack/react-router";
 const SECTIONS = [
   { to: "/finance/accounts", label: "Chart of Accounts", description: "Accounts and account groups" },
   { to: "/finance/journal-entries", label: "Journal Entries", description: "Draft, post, and reverse journal entries" },
+  { to: "/finance/vendor-bills", label: "Vendor Bills", description: "Draft, post vendor bills" },
+  { to: "/finance/vendor-payments", label: "Vendor Payments", description: "Pay vendor bills, clearing open items" },
+  { to: "/finance/ap-aging", label: "AP Aging", description: "Open vendor bills by age" },
 ] as const;
 
 export function FinanceHomePage() {
