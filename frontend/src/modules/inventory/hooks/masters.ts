@@ -153,6 +153,16 @@ export function useItemOptions() {
   });
 }
 
+/** Every item (no filters) for resolving item_id -> code/name on read-only views — a posted
+ * move may reference a since-deactivated item. Mirrors finance's useAccountLookup. */
+export function useItemLookup() {
+  return useQuery({
+    queryKey: ["inventory", "items", "lookup"],
+    queryFn: () => listItems({ limit: 200 }),
+    staleTime: 60_000,
+  });
+}
+
 export function useCreateItem() {
   const queryClient = useQueryClient();
   return useMutation({

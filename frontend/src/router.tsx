@@ -37,8 +37,18 @@ import { ItemCategoryFormPage } from "@/modules/inventory/pages/ItemCategoryForm
 import { ItemCategoryListPage } from "@/modules/inventory/pages/ItemCategoryListPage";
 import { ItemFormPage } from "@/modules/inventory/pages/ItemFormPage";
 import { ItemListPage } from "@/modules/inventory/pages/ItemListPage";
+import { StockCountDetailPage } from "@/modules/inventory/pages/StockCountDetailPage";
+import { StockCountFormPage } from "@/modules/inventory/pages/StockCountFormPage";
+import { StockCountListPage } from "@/modules/inventory/pages/StockCountListPage";
+import { StockMoveDetailPage } from "@/modules/inventory/pages/StockMoveDetailPage";
+import { StockMoveFormPage } from "@/modules/inventory/pages/StockMoveFormPage";
+import { StockMoveListPage } from "@/modules/inventory/pages/StockMoveListPage";
+import { StockOnHandPage } from "@/modules/inventory/pages/StockOnHandPage";
+import { StockValuationPage } from "@/modules/inventory/pages/StockValuationPage";
 import { UomFormPage } from "@/modules/inventory/pages/UomFormPage";
 import { UomListPage } from "@/modules/inventory/pages/UomListPage";
+import { WarehouseFormPage } from "@/modules/inventory/pages/WarehouseFormPage";
+import { WarehouseListPage } from "@/modules/inventory/pages/WarehouseListPage";
 import { ProfitAndLossPage } from "@/modules/finance/pages/ProfitAndLossPage";
 import { TrialBalancePage } from "@/modules/finance/pages/TrialBalancePage";
 import { JournalEntryDetailPage } from "@/modules/finance/pages/JournalEntryDetailPage";
@@ -316,6 +326,65 @@ const inventoryItemDetailRoute = createRoute({
   component: ItemFormPage,
 });
 
+// Warehouses/bins + stock moves + on-hand + valuation (slice 2)
+const inventoryWarehousesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/warehouses",
+  component: WarehouseListPage,
+});
+const inventoryWarehouseNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/warehouses/new",
+  component: WarehouseFormPage,
+});
+const inventoryWarehouseDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/warehouses/$warehouseId",
+  component: WarehouseFormPage,
+});
+const inventoryStockMovesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/stock-moves",
+  component: StockMoveListPage,
+});
+const inventoryStockMoveNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/stock-moves/new",
+  component: StockMoveFormPage,
+});
+const inventoryStockMoveDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/stock-moves/$moveId",
+  component: StockMoveDetailPage,
+});
+const inventoryStockOnHandRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/stock-on-hand",
+  component: StockOnHandPage,
+});
+const inventoryStockValuationRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/stock-valuation",
+  component: StockValuationPage,
+});
+
+// Stock counts (slice 3)
+const inventoryStockCountsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/stock-counts",
+  component: StockCountListPage,
+});
+const inventoryStockCountNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/stock-counts/new",
+  component: StockCountFormPage,
+});
+const inventoryStockCountDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/stock-counts/$countId",
+  component: StockCountDetailPage,
+});
+
 // --- Every other module: placeholder until its own slice lands ----------------------------
 
 const moduleRoute = createRoute({
@@ -371,6 +440,17 @@ const routeTree = rootRoute.addChildren([
   inventoryItemsRoute,
   inventoryItemNewRoute,
   inventoryItemDetailRoute,
+  inventoryWarehousesRoute,
+  inventoryWarehouseNewRoute,
+  inventoryWarehouseDetailRoute,
+  inventoryStockMovesRoute,
+  inventoryStockMoveNewRoute,
+  inventoryStockMoveDetailRoute,
+  inventoryStockOnHandRoute,
+  inventoryStockValuationRoute,
+  inventoryStockCountsRoute,
+  inventoryStockCountNewRoute,
+  inventoryStockCountDetailRoute,
   moduleRoute,
 ]);
 
