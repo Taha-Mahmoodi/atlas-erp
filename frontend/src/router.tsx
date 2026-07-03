@@ -37,6 +37,9 @@ import { ItemCategoryFormPage } from "@/modules/inventory/pages/ItemCategoryForm
 import { ItemCategoryListPage } from "@/modules/inventory/pages/ItemCategoryListPage";
 import { ItemFormPage } from "@/modules/inventory/pages/ItemFormPage";
 import { ItemListPage } from "@/modules/inventory/pages/ItemListPage";
+import { StockCountDetailPage } from "@/modules/inventory/pages/StockCountDetailPage";
+import { StockCountFormPage } from "@/modules/inventory/pages/StockCountFormPage";
+import { StockCountListPage } from "@/modules/inventory/pages/StockCountListPage";
 import { StockMoveDetailPage } from "@/modules/inventory/pages/StockMoveDetailPage";
 import { StockMoveFormPage } from "@/modules/inventory/pages/StockMoveFormPage";
 import { StockMoveListPage } from "@/modules/inventory/pages/StockMoveListPage";
@@ -365,6 +368,23 @@ const inventoryStockValuationRoute = createRoute({
   component: StockValuationPage,
 });
 
+// Stock counts (slice 3)
+const inventoryStockCountsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/stock-counts",
+  component: StockCountListPage,
+});
+const inventoryStockCountNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/stock-counts/new",
+  component: StockCountFormPage,
+});
+const inventoryStockCountDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/stock-counts/$countId",
+  component: StockCountDetailPage,
+});
+
 // --- Every other module: placeholder until its own slice lands ----------------------------
 
 const moduleRoute = createRoute({
@@ -428,6 +448,9 @@ const routeTree = rootRoute.addChildren([
   inventoryStockMoveDetailRoute,
   inventoryStockOnHandRoute,
   inventoryStockValuationRoute,
+  inventoryStockCountsRoute,
+  inventoryStockCountNewRoute,
+  inventoryStockCountDetailRoute,
   moduleRoute,
 ]);
 

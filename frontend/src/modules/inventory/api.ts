@@ -1,14 +1,16 @@
 /**
  * Typed endpoint calls for the inventory module (STRUCTURE §4): item masters, warehouses/
- * bins, stock moves, on-hand, valuation. Stock counts land in a later slice of PLAN 15.5.
+ * bins, stock moves, on-hand, valuation, stock counts.
  */
 
 import { api, newIdempotencyKey, type Page } from "@/lib/apiClient";
+import type { JobSubmitted } from "@/lib/jobs";
 import type {
   Bin,
   BinCreate,
   BinUpdate,
   CostLayer,
+  CountType,
   Item,
   ItemCategory,
   ItemCategoryCreate,
@@ -17,6 +19,11 @@ import type {
   ItemType,
   ItemUpdate,
   MoveType,
+  StockCount,
+  StockCountCreate,
+  StockCountLine,
+  StockCountLineCountUpdate,
+  StockCountVariancePreview,
   StockMove,
   StockMoveCreate,
   StockOnHand,
@@ -225,4 +232,69 @@ export function listCostLayers(
   return api.get<Page<CostLayer>>(`/inventory/items/${itemId}/cost-layers`, {
     params: { ...filters },
   });
+}
+
+// --- Stock counts --------------------------------------------------------------
+
+export function createStockCount(payload: StockCountCreate): Promise<StockCount> {
+  return api.post<StockCount>("/inventory/stock-counts", payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export interface StockCountFilters {
+  cursor?: string;
+  limit?: number;
+  status?: string;
+  warehouse_id?: string;
+  count_type?: CountType;
+}
+
+export function listStockCounts(filters: StockCountFilters = {}): Promise<Page<StockCount>> {
+  return api.get<Page<StockCount>>("/inventory/stock-counts", { params: { ...filters } });
+}
+
+export function getStockCount(countId: string): Promise<StockCount> {
+  return api.get<StockCount>(`/inventory/stock-counts/${countId}`);
+}
+
+export function listStockCountLines(
+  countId: string,
+  filters: { cursor?: string; limit?: number } = {},
+): Promise<Page<StockCountLine>> {
+  return api.get<Page<StockCountLine>>(`/inventory/stock-counts/${countId}/lines`, {
+    params: { ...filters },
+  });
+}
+
+export function getStockCountVariancePreview(
+  countId: string,
+  filters: { cursor?: string; limit?: number } = {},
+): Promise<StockCountVariancePreview> {
+  return api.get<StockCountVariancePreview>(`/inventory/stock-counts/${countId}/variance-preview`, {
+    params: { ...filters },
+  });
+}
+
+export function recordCountedQuantity(
+  countId: string,
+  lineId: string,
+  payload: StockCountLineCountUpdate,
+): Promise<StockCountLine> {
+  return api.post<StockCountLine>(
+    `/inventory/stock-counts/${countId}/lines/${lineId}/count`,
+    payload,
+  );
+}
+
+/** Resolves to either the finished count (small variance count, 200) or a job to poll (large
+ * count, PERFORMANCE §3, 202) — the caller distinguishes by checking for `job_id`. */
+export function postStockCount(countId: string): Promise<StockCount | JobSubmitted> {
+  return api.post<StockCount | JobSubmitted>(`/inventory/stock-counts/${countId}/post`, undefined, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function cancelStockCount(countId: string): Promise<StockCount> {
+  return api.post<StockCount>(`/inventory/stock-counts/${countId}/cancel`, undefined);
 }

@@ -4,6 +4,7 @@
  * `@/modules/inventory/hooks` import working unchanged.
  */
 
+export * from "@/modules/inventory/hooks/counts";
 export * from "@/modules/inventory/hooks/masters";
 export * from "@/modules/inventory/hooks/stock";
 export * from "@/modules/inventory/hooks/warehouses";

@@ -1,8 +1,10 @@
 /**
- * Mirrors backend `app/modules/inventory/schemas.py` (item masters) and `stock_router.py` /
- * `valuation_router.py` (warehouses/bins/moves/on-hand/valuation) (STRUCTURE §4). Stock
- * counts land in a later slice of PLAN 15.5.
+ * Mirrors backend `app/modules/inventory/schemas.py` (item masters), `stock_router.py` /
+ * `valuation_router.py` (warehouses/bins/moves/on-hand/valuation), and `count_schemas.py`
+ * (stock counts) (STRUCTURE §4).
  */
+
+import type { Page } from "@/lib/apiClient";
 
 export type CostingMethod = "MOVING_AVERAGE" | "FIFO";
 export type ItemType = "STOCKED" | "NON_STOCKED" | "SERVICE";
@@ -219,4 +221,80 @@ export interface CostLayer {
   remaining_qty: string;
   unit_cost: string;
   created_at: string;
+}
+
+// --- Stock counts (mirrors count_schemas.py) ---------------------------------
+//
+// Posting re-reads LIVE on-hand per line (not the stale creation-time snapshot) and posts one
+// ordinary ADJUSTMENT move per non-zero variance through the same costing/event-bus pipeline
+// every other move uses — finance posts the GL journal in the same transaction. No bespoke
+// "count journal." POSTED is terminal (no un-post); CANCELLED only from DRAFT/COUNTING.
+
+export type CountType = "PHYSICAL" | "CYCLE";
+export type CountStatus = "DRAFT" | "COUNTING" | "POSTED" | "CANCELLED";
+
+export interface StockCountCreate {
+  count_type: CountType;
+  warehouse_id: string;
+  count_date?: string;
+  description?: string | null;
+  /** CYCLE only — ignored on PHYSICAL (a physical count is whole-warehouse). */
+  item_ids?: string[];
+  bin_ids?: string[];
+}
+
+export interface StockCount {
+  id: string;
+  count_number: string;
+  count_type: CountType;
+  warehouse_id: string;
+  status: CountStatus;
+  count_date: string;
+  description: string | null;
+  posted_at: string | null;
+  document_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StockCountLineCountUpdate {
+  counted_qty: string;
+}
+
+/** system_qty is the snapshot at creation/last-recount, not necessarily live — the variance
+ * preview endpoint re-reads live on-hand for its own system_qty, which can differ. */
+export interface StockCountLine {
+  id: string;
+  count_id: string;
+  line_number: number;
+  item_id: string;
+  bin_id: string;
+  lot_id: string | null;
+  system_qty: string;
+  counted_qty: string | null;
+  variance_qty: string | null;
+  adjustment_move_id: string | null;
+  unit_cost: string | null;
+}
+
+export interface StockCountVarianceLine {
+  line_id: string;
+  item_id: string;
+  bin_id: string;
+  lot_id: string | null;
+  system_qty: string;
+  counted_qty: string | null;
+  variance_qty: string | null;
+  unit_cost: string;
+  estimated_value_impact: string;
+}
+
+/** `lines` is keyset-paginated (#78 — a physical count routinely has thousands of lines), not
+ * a plain array — `total_value_impact` is still the net impact over the WHOLE count, not just
+ * this page. */
+export interface StockCountVariancePreview {
+  count_id: string;
+  status: CountStatus;
+  lines: Page<StockCountVarianceLine>;
+  total_value_impact: string;
 }

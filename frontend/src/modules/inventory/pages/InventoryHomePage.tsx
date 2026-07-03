@@ -14,6 +14,7 @@ const SECTIONS = [
   { to: "/inventory/stock-moves", label: "Stock Moves", description: "Receipts, issues, transfers, adjustments" },
   { to: "/inventory/stock-on-hand", label: "Stock On-Hand", description: "Current quantities by item and bin" },
   { to: "/inventory/stock-valuation", label: "Stock Valuation", description: "Moving-average value and FIFO cost layers" },
+  { to: "/inventory/stock-counts", label: "Stock Counts", description: "Physical and cycle counts, variance posting" },
 ] as const;
 
 export function InventoryHomePage() {
