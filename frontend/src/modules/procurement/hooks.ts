@@ -2,22 +2,33 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 
 import {
   type ApprovalRuleFilters,
+  cancelRequisition,
   createApprovalRule,
+  createRequisition,
   createVendor,
   createVendorApprovedItem,
+  decideRequisition,
   deleteVendorApprovedItem,
   getApprovalRule,
+  getRequisition,
   getVendor,
   listApprovalRules,
+  listRequisitions,
   listVendorApprovedItems,
   listVendors,
+  type RequisitionFilters,
+  submitRequisition,
   updateApprovalRule,
+  updateRequisition,
   updateVendor,
   type VendorFilters,
 } from "@/modules/procurement/api";
 import type {
+  ApprovalDecisionPayload,
   ApprovalRuleCreate,
   ApprovalRuleUpdate,
+  RequisitionCreate,
+  RequisitionUpdate,
   VendorApprovedItemCreate,
   VendorCreate,
   VendorUpdate,
@@ -149,5 +160,72 @@ export function useUpdateApprovalRule(ruleId: string) {
       void queryClient.invalidateQueries({ queryKey: ["procurement", "approval-rules"] });
       void queryClient.invalidateQueries({ queryKey: ["procurement", "approval-rule", ruleId] });
     },
+  });
+}
+
+// --- Purchase requisitions -------------------------------------------------------
+
+export function useRequisitions(filters: Omit<RequisitionFilters, "cursor"> = {}) {
+  return useInfiniteQuery({
+    queryKey: ["procurement", "requisitions", filters],
+    queryFn: ({ pageParam }) =>
+      listRequisitions({ ...filters, ...(pageParam ? { cursor: pageParam } : {}) }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+  });
+}
+
+export function useRequisition(requisitionId: string | undefined) {
+  return useQuery({
+    queryKey: ["procurement", "requisition", requisitionId],
+    queryFn: () => getRequisition(requisitionId as string),
+    enabled: requisitionId !== undefined,
+  });
+}
+
+function invalidateRequisition(queryClient: ReturnType<typeof useQueryClient>, requisitionId: string) {
+  void queryClient.invalidateQueries({ queryKey: ["procurement", "requisitions"] });
+  void queryClient.invalidateQueries({ queryKey: ["procurement", "requisition", requisitionId] });
+}
+
+export function useCreateRequisition() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: RequisitionCreate) => createRequisition(payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["procurement", "requisitions"] });
+    },
+  });
+}
+
+export function useUpdateRequisition(requisitionId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: RequisitionUpdate) => updateRequisition(requisitionId, payload),
+    onSuccess: () => invalidateRequisition(queryClient, requisitionId),
+  });
+}
+
+export function useSubmitRequisition(requisitionId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => submitRequisition(requisitionId),
+    onSuccess: () => invalidateRequisition(queryClient, requisitionId),
+  });
+}
+
+export function useDecideRequisition(requisitionId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ApprovalDecisionPayload) => decideRequisition(requisitionId, payload),
+    onSuccess: () => invalidateRequisition(queryClient, requisitionId),
+  });
+}
+
+export function useCancelRequisition(requisitionId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => cancelRequisition(requisitionId),
+    onSuccess: () => invalidateRequisition(queryClient, requisitionId),
   });
 }

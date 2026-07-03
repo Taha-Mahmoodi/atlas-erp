@@ -1,15 +1,21 @@
 /**
  * Typed endpoint calls for the procurement module (STRUCTURE §4): vendors + approved items,
- * approval rules. Requisitions, RFQs, POs, goods receipts, and invoice matches land in later
- * slices of PLAN 15.6.
+ * approval rules, purchase requisitions. RFQs, POs, goods receipts, and invoice matches land
+ * in later slices of PLAN 15.6.
  */
 
-import { api, type Page } from "@/lib/apiClient";
+import { api, newIdempotencyKey, type Page } from "@/lib/apiClient";
 import type {
+  ApprovalDecisionPayload,
+  ApprovalDocumentType,
   ApprovalRule,
   ApprovalRuleCreate,
   ApprovalRuleUpdate,
-  ApprovalDocumentType,
+  Requisition,
+  RequisitionCreate,
+  RequisitionDetail,
+  RequisitionStatus,
+  RequisitionUpdate,
   Vendor,
   VendorApprovedItem,
   VendorApprovedItemCreate,
@@ -78,4 +84,53 @@ export function createApprovalRule(payload: ApprovalRuleCreate): Promise<Approva
 
 export function updateApprovalRule(ruleId: string, payload: ApprovalRuleUpdate): Promise<ApprovalRule> {
   return api.patch<ApprovalRule>(`/procurement/approval-rules/${ruleId}`, payload);
+}
+
+// --- Purchase requisitions -------------------------------------------------------
+
+export interface RequisitionFilters {
+  cursor?: string;
+  limit?: number;
+  status?: RequisitionStatus;
+  requested_by?: string;
+}
+
+export function listRequisitions(filters: RequisitionFilters = {}): Promise<Page<Requisition>> {
+  return api.get<Page<Requisition>>("/procurement/requisitions", { params: { ...filters } });
+}
+
+export function getRequisition(requisitionId: string): Promise<RequisitionDetail> {
+  return api.get<RequisitionDetail>(`/procurement/requisitions/${requisitionId}`);
+}
+
+export function createRequisition(payload: RequisitionCreate): Promise<RequisitionDetail> {
+  return api.post<RequisitionDetail>("/procurement/requisitions", payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function updateRequisition(
+  requisitionId: string,
+  payload: RequisitionUpdate,
+): Promise<RequisitionDetail> {
+  return api.patch<RequisitionDetail>(`/procurement/requisitions/${requisitionId}`, payload);
+}
+
+export function submitRequisition(requisitionId: string): Promise<RequisitionDetail> {
+  return api.post<RequisitionDetail>(`/procurement/requisitions/${requisitionId}/submit`, undefined, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function decideRequisition(
+  requisitionId: string,
+  payload: ApprovalDecisionPayload,
+): Promise<RequisitionDetail> {
+  return api.post<RequisitionDetail>(`/procurement/requisitions/${requisitionId}/decision`, payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function cancelRequisition(requisitionId: string): Promise<RequisitionDetail> {
+  return api.post<RequisitionDetail>(`/procurement/requisitions/${requisitionId}/cancel`, undefined);
 }

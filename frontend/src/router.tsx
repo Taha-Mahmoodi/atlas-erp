@@ -52,6 +52,9 @@ import { WarehouseListPage } from "@/modules/inventory/pages/WarehouseListPage";
 import { ApprovalRuleFormPage } from "@/modules/procurement/pages/ApprovalRuleFormPage";
 import { ApprovalRuleListPage } from "@/modules/procurement/pages/ApprovalRuleListPage";
 import { ProcurementHomePage } from "@/modules/procurement/pages/ProcurementHomePage";
+import { RequisitionDetailPage } from "@/modules/procurement/pages/RequisitionDetailPage";
+import { RequisitionFormPage } from "@/modules/procurement/pages/RequisitionFormPage";
+import { RequisitionListPage } from "@/modules/procurement/pages/RequisitionListPage";
 import { VendorFormPage as ProcurementVendorFormPage } from "@/modules/procurement/pages/VendorFormPage";
 import { VendorListPage as ProcurementVendorListPage } from "@/modules/procurement/pages/VendorListPage";
 import { ProfitAndLossPage } from "@/modules/finance/pages/ProfitAndLossPage";
@@ -414,6 +417,28 @@ const procurementVendorDetailRoute = createRoute({
   path: "/procurement/vendors/$vendorId",
   component: ProcurementVendorFormPage,
 });
+// Requisitions (slice 2)
+const procurementRequisitionsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/requisitions",
+  component: RequisitionListPage,
+});
+const procurementRequisitionNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/requisitions/new",
+  component: RequisitionFormPage,
+});
+const procurementRequisitionDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/requisitions/$requisitionId",
+  component: RequisitionDetailPage,
+});
+const procurementRequisitionEditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/requisitions/$requisitionId/edit",
+  component: RequisitionFormPage,
+});
+
 const procurementApprovalRulesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/procurement/approval-rules",
@@ -500,6 +525,10 @@ const routeTree = rootRoute.addChildren([
   procurementVendorsRoute,
   procurementVendorNewRoute,
   procurementVendorDetailRoute,
+  procurementRequisitionsRoute,
+  procurementRequisitionNewRoute,
+  procurementRequisitionDetailRoute,
+  procurementRequisitionEditRoute,
   procurementApprovalRulesRoute,
   procurementApprovalRuleNewRoute,
   procurementApprovalRuleDetailRoute,

@@ -1,7 +1,8 @@
 /**
- * Mirrors backend `app/modules/procurement/schemas/{vendors,approvals}.py` (STRUCTURE §4).
- * This slice covers vendor masters (+ approved items) and approval rules; requisitions, RFQs,
- * POs, goods receipts, and invoice matches land in later slices of PLAN 15.6.
+ * Mirrors backend `app/modules/procurement/schemas/{vendors,approvals,requisitions}.py`
+ * (STRUCTURE §4). Vendor masters + approved items and approval rules shipped first; this
+ * slice adds purchase requisitions. RFQs, POs, goods receipts, and invoice matches land in
+ * later slices of PLAN 15.6.
  */
 
 export type VendorStatus = "ACTIVE" | "BLOCKED" | "INACTIVE";
@@ -86,4 +87,69 @@ export interface ApprovalRule {
 export interface ApprovalDecisionPayload {
   decision: "APPROVED" | "REJECTED";
   comment?: string | null;
+}
+
+// --- Purchase requisitions (mirrors schemas/requisitions.py) ----------------
+//
+// DRAFT -> SUBMITTED (if a REQUISITION approval rule applies to the total) -> APPROVED |
+// REJECTED, or DRAFT -> APPROVED directly when no rule applies (auto-approve, no separate
+// decision step). APPROVED -> CONVERTED once turned into an RFQ or PO. CANCELLED from DRAFT
+// or APPROVED. Only DRAFT can be edited (PATCH replaces the whole line set wholesale).
+
+export type RequisitionStatus =
+  | "DRAFT"
+  | "SUBMITTED"
+  | "APPROVED"
+  | "REJECTED"
+  | "CONVERTED"
+  | "CANCELLED";
+
+export interface RequisitionLineCreate {
+  item_id: string;
+  description?: string | null;
+  quantity: string;
+  uom_id: string;
+  estimated_unit_cost?: string | null;
+  currency_code: string;
+}
+
+export interface RequisitionCreate {
+  requested_by?: string | null;
+  needed_by_date?: string | null;
+  notes?: string | null;
+  lines: RequisitionLineCreate[];
+}
+
+export interface RequisitionUpdate {
+  requested_by?: string | null;
+  needed_by_date?: string | null;
+  notes?: string | null;
+  lines?: RequisitionLineCreate[] | null;
+}
+
+export interface RequisitionLine {
+  id: string;
+  line_number: number;
+  item_id: string;
+  description: string | null;
+  quantity: string;
+  uom_id: string;
+  estimated_unit_cost: string | null;
+  currency_code: string;
+}
+
+export interface Requisition {
+  id: string;
+  requisition_number: string;
+  status: RequisitionStatus;
+  requested_by: string | null;
+  needed_by_date: string | null;
+  notes: string | null;
+  document_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RequisitionDetail extends Requisition {
+  lines: RequisitionLine[];
 }
