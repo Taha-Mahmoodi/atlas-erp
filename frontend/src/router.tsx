@@ -1,17 +1,23 @@
 /**
- * Code-based TanStack Router tree (STRUCTURE §1: `router.tsx`). 15.1 ships the root and a
- * placeholder index route; 15.3 replaces the index with the login + role-based home pages
- * and each module registers its routes under the root as its UI lands (15.4+).
+ * Code-based TanStack Router tree (STRUCTURE §1: `router.tsx`). Root wraps every route in
+ * AuthGate, which decides login-vs-shell; authenticated routes render inside AppShell. Module
+ * routes are ONE dynamic `/$moduleKey` until each module's real pages land (15.4-15.12), at
+ * which point that module gets its own static route registered here ahead of the dynamic one.
  */
 
 import { createRootRoute, createRoute, createRouter, Outlet } from "@tanstack/react-router";
 
 import { App } from "@/App";
+import { AuthGate } from "@/shell/AuthGate";
+import { HomePage } from "@/shell/HomePage";
+import { ModulePlaceholderPage } from "@/shell/ModulePlaceholderPage";
 
 const rootRoute = createRootRoute({
   component: () => (
     <App>
-      <Outlet />
+      <AuthGate>
+        <Outlet />
+      </AuthGate>
     </App>
   ),
 });
@@ -19,23 +25,16 @@ const rootRoute = createRootRoute({
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: IndexPage,
+  component: HomePage,
 });
 
-function IndexPage() {
-  return (
-    <main className="flex min-h-screen items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-xl font-semibold text-ink">Atlas ERP</h1>
-        <p className="mt-2 text-sm text-ink-muted">
-          Design system in place (PLAN 15.2) — the app shell arrives with 15.3.
-        </p>
-      </div>
-    </main>
-  );
-}
+const moduleRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/$moduleKey",
+  component: ModulePlaceholderPage,
+});
 
-const routeTree = rootRoute.addChildren([indexRoute]);
+const routeTree = rootRoute.addChildren([indexRoute, moduleRoute]);
 
 export const router = createRouter({ routeTree });
 
