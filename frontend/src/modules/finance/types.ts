@@ -5,6 +5,14 @@
  */
 
 export type AccountType = "ASSET" | "LIABILITY" | "EQUITY" | "REVENUE" | "EXPENSE";
+
+export interface Currency {
+  id: string;
+  code: string;
+  name: string;
+  decimal_places: number;
+  is_functional: boolean;
+}
 export type NormalBalance = "DEBIT" | "CREDIT";
 export type CashFlowCategory = "OPERATING" | "INVESTING" | "FINANCING";
 export type EntryStatus = "DRAFT" | "POSTED" | "REVERSED";
@@ -409,4 +417,91 @@ export interface DunningNotice {
 export interface DunningRunResult {
   as_of: string;
   notices: DunningNotice[];
+}
+
+// --- Financial statements (mirrors backend statements_schemas.py) ----------
+//
+// All money fields are Decimal on the wire (D-015) — typed `string` here, formatted only via
+// lib/format.ts. Every statement below has already been re-signed to natural presentation
+// magnitude server-side (revenue/liabilities/equity/expenses/assets all show positive) — no
+// sign-flipping needed client-side. Trial balance and balance sheet are cumulative-to-date
+// (as_of only); P&L and cash flow are period-bound (date_from/date_to).
+
+export interface TrialBalanceRow {
+  account_id: string;
+  account_code: string;
+  account_name: string;
+  account_type: AccountType;
+  debit: string;
+  credit: string;
+}
+
+export interface TrialBalance {
+  as_of: string;
+  rows: TrialBalanceRow[];
+  total_debit: string;
+  total_credit: string;
+  is_balanced: boolean;
+}
+
+export interface StatementLine {
+  account_id: string;
+  account_code: string;
+  account_name: string;
+  amount: string;
+}
+
+export interface StatementGroup {
+  group_code: string;
+  group_name: string;
+  lines: StatementLine[];
+  subtotal: string;
+}
+
+export interface ProfitAndLoss {
+  date_from: string;
+  date_to: string;
+  revenue_groups: StatementGroup[];
+  expense_groups: StatementGroup[];
+  revenue_total: string;
+  expense_total: string;
+  net_income: string;
+}
+
+/** Balance sheet's retained-earnings synthetic line (account_id sentinel, not a real account,
+ * group_code "EARNINGS") is included directly in equity_groups by the backend — no special
+ * handling needed beyond not looking it up in the Chart of Accounts. */
+export interface BalanceSheet {
+  as_of: string;
+  asset_groups: StatementGroup[];
+  liability_groups: StatementGroup[];
+  equity_groups: StatementGroup[];
+  asset_total: string;
+  liability_total: string;
+  equity_total: string;
+  retained_earnings: string;
+  is_balanced: boolean;
+}
+
+export interface CashFlowLine {
+  account_id: string;
+  account_code: string;
+  account_name: string;
+  amount: string;
+}
+
+export interface CashFlowCategorySection {
+  category: CashFlowCategory;
+  lines: CashFlowLine[];
+  subtotal: string;
+}
+
+export interface CashFlowStatement {
+  date_from: string;
+  date_to: string;
+  net_income: string;
+  sections: CashFlowCategorySection[];
+  net_change_from_activities: string;
+  cash_account_movement: string;
+  is_reconciled: boolean;
 }

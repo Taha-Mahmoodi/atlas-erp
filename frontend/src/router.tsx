@@ -13,6 +13,8 @@ import { AccountFormPage } from "@/modules/finance/pages/AccountFormPage";
 import { AccountListPage } from "@/modules/finance/pages/AccountListPage";
 import { ApAgingPage } from "@/modules/finance/pages/ApAgingPage";
 import { ArAgingPage } from "@/modules/finance/pages/ArAgingPage";
+import { BalanceSheetPage } from "@/modules/finance/pages/BalanceSheetPage";
+import { CashFlowStatementPage } from "@/modules/finance/pages/CashFlowStatementPage";
 import { CustomerInvoiceDetailPage } from "@/modules/finance/pages/CustomerInvoiceDetailPage";
 import { CustomerInvoiceFormPage } from "@/modules/finance/pages/CustomerInvoiceFormPage";
 import { CustomerInvoiceListPage } from "@/modules/finance/pages/CustomerInvoiceListPage";
@@ -20,6 +22,8 @@ import { CustomerReceiptFormPage } from "@/modules/finance/pages/CustomerReceipt
 import { CustomerReceiptListPage } from "@/modules/finance/pages/CustomerReceiptListPage";
 import { DunningRunPage } from "@/modules/finance/pages/DunningRunPage";
 import { FinanceHomePage } from "@/modules/finance/pages/FinanceHomePage";
+import { ProfitAndLossPage } from "@/modules/finance/pages/ProfitAndLossPage";
+import { TrialBalancePage } from "@/modules/finance/pages/TrialBalancePage";
 import { JournalEntryDetailPage } from "@/modules/finance/pages/JournalEntryDetailPage";
 import { JournalEntryFormPage } from "@/modules/finance/pages/JournalEntryFormPage";
 import { JournalEntryListPage } from "@/modules/finance/pages/JournalEntryListPage";
@@ -159,6 +163,28 @@ const financeDunningRoute = createRoute({
   component: DunningRunPage,
 });
 
+// Financial statements (slice 4)
+const financeTrialBalanceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/trial-balance",
+  component: TrialBalancePage,
+});
+const financeProfitLossRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/profit-loss",
+  component: ProfitAndLossPage,
+});
+const financeBalanceSheetRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/balance-sheet",
+  component: BalanceSheetPage,
+});
+const financeCashFlowRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/cash-flow",
+  component: CashFlowStatementPage,
+});
+
 // --- Every other module: placeholder until its own slice lands ----------------------------
 
 const moduleRoute = createRoute({
@@ -189,6 +215,10 @@ const routeTree = rootRoute.addChildren([
   financeCustomerReceiptNewRoute,
   financeArAgingRoute,
   financeDunningRoute,
+  financeTrialBalanceRoute,
+  financeProfitLossRoute,
+  financeBalanceSheetRoute,
+  financeCashFlowRoute,
   moduleRoute,
 ]);
 

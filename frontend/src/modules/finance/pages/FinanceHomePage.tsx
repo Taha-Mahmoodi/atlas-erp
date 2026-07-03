@@ -15,6 +15,10 @@ const SECTIONS = [
   { to: "/finance/customer-receipts", label: "Customer Receipts", description: "Receive payment, clearing open items" },
   { to: "/finance/ar-aging", label: "AR Aging", description: "Open customer invoices by age" },
   { to: "/finance/dunning", label: "Dunning", description: "Advance reminder levels on overdue invoices" },
+  { to: "/finance/trial-balance", label: "Trial Balance", description: "Every account's net debit/credit as of a date" },
+  { to: "/finance/profit-loss", label: "Profit & Loss", description: "Revenue and expenses over a period" },
+  { to: "/finance/balance-sheet", label: "Balance Sheet", description: "Assets, liabilities, and equity as of a date" },
+  { to: "/finance/cash-flow", label: "Cash Flow Statement", description: "Indirect-method cash flow over a period" },
 ] as const;
 
 export function FinanceHomePage() {

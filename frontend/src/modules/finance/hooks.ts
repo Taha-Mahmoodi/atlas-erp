@@ -13,12 +13,17 @@ import {
   getAccount,
   getApAging,
   getArAging,
+  getBalanceSheet,
+  getCashFlowStatement,
   getCustomerInvoice,
   getJournalEntry,
+  getProfitAndLoss,
+  getTrialBalance,
   getVendorBill,
   type JournalEntryFilters,
   listAccountGroups,
   listAccounts,
+  listCurrencies,
   listCustomerInvoices,
   listCustomerReceipts,
   listJournalEntries,
@@ -172,6 +177,18 @@ export function useTaxCodes() {
     queryKey: ["finance", "tax-codes"],
     queryFn: () => listTaxCodes(),
     staleTime: 5 * 60_000,
+  });
+}
+
+/** The tenant's single functional currency (D-058's "—" sentinel covers the unconfigured
+ * case) — statements report in this currency but don't echo the code in their own responses,
+ * so callers that format money need to look it up here. */
+export function useFunctionalCurrency() {
+  return useQuery({
+    queryKey: ["finance", "currencies", "functional"],
+    queryFn: () => listCurrencies(),
+    staleTime: 5 * 60_000,
+    select: (page) => page.items.find((currency) => currency.is_functional)?.code ?? "—",
   });
 }
 
@@ -348,5 +365,35 @@ export function useArAging(asOf: string, partnerId?: string) {
   return useQuery({
     queryKey: ["finance", "ar-aging", asOf, partnerId],
     queryFn: () => getArAging(asOf, partnerId),
+  });
+}
+
+// --- Financial statements -----------------------------------------------------
+
+export function useTrialBalance(asOf: string) {
+  return useQuery({
+    queryKey: ["finance", "trial-balance", asOf],
+    queryFn: () => getTrialBalance(asOf),
+  });
+}
+
+export function useProfitAndLoss(dateFrom: string, dateTo: string) {
+  return useQuery({
+    queryKey: ["finance", "profit-loss", dateFrom, dateTo],
+    queryFn: () => getProfitAndLoss(dateFrom, dateTo),
+  });
+}
+
+export function useBalanceSheet(asOf: string) {
+  return useQuery({
+    queryKey: ["finance", "balance-sheet", asOf],
+    queryFn: () => getBalanceSheet(asOf),
+  });
+}
+
+export function useCashFlowStatement(dateFrom: string, dateTo: string) {
+  return useQuery({
+    queryKey: ["finance", "cash-flow", dateFrom, dateTo],
+    queryFn: () => getCashFlowStatement(dateFrom, dateTo),
   });
 }

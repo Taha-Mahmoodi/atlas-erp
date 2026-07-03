@@ -12,7 +12,10 @@ import type {
   AccountType,
   AccountUpdate,
   AgingReport,
+  BalanceSheet,
   BillStatus,
+  CashFlowStatement,
+  Currency,
   CustomerInvoice,
   CustomerInvoiceCreate,
   CustomerInvoiceDetail,
@@ -27,7 +30,9 @@ import type {
   JournalEntryCreate,
   JournalEntryDetail,
   JournalEntryReverseRequest,
+  ProfitAndLoss,
   TaxCode,
+  TrialBalance,
   VendorBill,
   VendorBillCreate,
   VendorBillDetail,
@@ -108,6 +113,10 @@ export function reverseJournalEntry(
 
 export function listTaxCodes(): Promise<Page<TaxCode>> {
   return api.get<Page<TaxCode>>("/finance/tax-codes", { params: { is_active: true, limit: 100 } });
+}
+
+export function listCurrencies(): Promise<Page<Currency>> {
+  return api.get<Page<Currency>>("/finance/currencies", { params: { limit: 100 } });
 }
 
 // --- Accounts Payable ----------------------------------------------------------
@@ -223,5 +232,29 @@ export function runDunning(payload: DunningRunRequest): Promise<DunningRunResult
 export function getArAging(asOf: string, partnerId?: string): Promise<AgingReport> {
   return api.get<AgingReport>("/finance/ar-aging", {
     params: { as_of: asOf, ...(partnerId ? { partner_id: partnerId } : {}) },
+  });
+}
+
+// --- Financial statements ---------------------------------------------------
+// Plain synchronous reads (no writes, no idempotency, no job/polling) — a single full object
+// each, not Page<T>. No server-side comparison-period support: two calls + client-side diff.
+
+export function getTrialBalance(asOf: string): Promise<TrialBalance> {
+  return api.get<TrialBalance>("/finance/statements/trial-balance", { params: { as_of: asOf } });
+}
+
+export function getProfitAndLoss(dateFrom: string, dateTo: string): Promise<ProfitAndLoss> {
+  return api.get<ProfitAndLoss>("/finance/statements/profit-loss", {
+    params: { date_from: dateFrom, date_to: dateTo },
+  });
+}
+
+export function getBalanceSheet(asOf: string): Promise<BalanceSheet> {
+  return api.get<BalanceSheet>("/finance/statements/balance-sheet", { params: { as_of: asOf } });
+}
+
+export function getCashFlowStatement(dateFrom: string, dateTo: string): Promise<CashFlowStatement> {
+  return api.get<CashFlowStatement>("/finance/statements/cash-flow", {
+    params: { date_from: dateFrom, date_to: dateTo },
   });
 }
