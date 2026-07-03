@@ -4,13 +4,12 @@
  * tile grid of the modules the caller has any access to, each linking into its section.
  */
 
-import { Link } from "@tanstack/react-router";
-
 import { formatMoney, formatPercent } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { KpiCard } from "@/components/KpiCard";
 import { useDashboard } from "@/modules/reporting/hooks";
 import { modulesFor } from "@/shell/moduleRegistry";
+import { ModuleLink } from "@/shell/ModuleLink";
 
 export function HomePage() {
   const me = useMe();
@@ -80,10 +79,9 @@ export function HomePage() {
       ) : (
         <section className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
           {modules.map((entry) => (
-            <Link
+            <ModuleLink
               key={entry.key}
-              to="/$moduleKey"
-              params={{ moduleKey: entry.key }}
+              entry={entry}
               className="flex items-start gap-3 rounded-card border border-line bg-surface p-4 shadow-card transition-colors duration-150 hover:border-primary"
             >
               <span
@@ -96,7 +94,7 @@ export function HomePage() {
                 <span className="block text-sm font-medium text-ink">{entry.label}</span>
                 <span className="mt-0.5 block text-xs text-ink-muted">{entry.description}</span>
               </span>
-            </Link>
+            </ModuleLink>
           ))}
         </section>
       )}

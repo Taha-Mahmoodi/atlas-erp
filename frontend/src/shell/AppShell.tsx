@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import { logout } from "@/lib/auth";
 import { useMe } from "@/lib/session";
 import { modulesFor } from "@/shell/moduleRegistry";
+import { ModuleLink } from "@/shell/ModuleLink";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const me = useMe();
@@ -34,19 +35,21 @@ export function AppShell({ children }: { children: ReactNode }) {
               Home
             </Link>
           </li>
-          {modules.map((entry) => (
-            <li key={entry.key}>
-              <Link
-                to="/$moduleKey"
-                params={{ moduleKey: entry.key }}
-                className={`block px-4 py-2 text-sm transition-colors duration-150 ${
-                  currentPath === `/${entry.key}` ? "bg-primary-tint font-medium text-primary" : "text-ink-muted hover:bg-surface hover:text-ink"
-                }`}
-              >
-                {entry.label}
-              </Link>
-            </li>
-          ))}
+          {modules.map((entry) => {
+            const active = currentPath === `/${entry.key}` || currentPath.startsWith(`/${entry.key}/`);
+            return (
+              <li key={entry.key}>
+                <ModuleLink
+                  entry={entry}
+                  className={`block px-4 py-2 text-sm transition-colors duration-150 ${
+                    active ? "bg-primary-tint font-medium text-primary" : "text-ink-muted hover:bg-surface hover:text-ink"
+                  }`}
+                >
+                  {entry.label}
+                </ModuleLink>
+              </li>
+            );
+          })}
         </ul>
       </nav>
       <div className="flex min-w-0 flex-1 flex-col">
