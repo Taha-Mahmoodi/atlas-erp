@@ -6,15 +6,24 @@
 
 const LOCALE = undefined; // browser locale; industry templates may pin one later
 
-/** "1,234.50 USD" — money is a decimal string + its currency code, never a float. */
+/**
+ * "1,234.50 USD" — money is a decimal string + its currency code, never a float.
+ * An unconfigured tenant's dashboard sends a non-ISO placeholder currency ("—", D-058's
+ * documented "well-formed zero KPIs instead of a 500") — `Intl.NumberFormat` throws
+ * `RangeError` on that, so fall back to a plain number + the raw code rather than crash.
+ */
 export function formatMoney(amount: string | number, currencyCode: string): string {
   const value = typeof amount === "number" ? amount : Number(amount);
   if (!Number.isFinite(value)) return `${amount} ${currencyCode}`;
-  return new Intl.NumberFormat(LOCALE, {
-    style: "currency",
-    currency: currencyCode,
-    currencyDisplay: "code",
-  }).format(value);
+  try {
+    return new Intl.NumberFormat(LOCALE, {
+      style: "currency",
+      currency: currencyCode,
+      currencyDisplay: "code",
+    }).format(value);
+  } catch {
+    return `${new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 2 }).format(value)} ${currencyCode}`;
+  }
 }
 
 /** Quantities keep up to 6 fractional digits (QuantityType) but trim trailing zeros. */

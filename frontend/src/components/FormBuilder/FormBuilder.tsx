@@ -14,7 +14,7 @@ export interface SelectOption {
 export interface FieldDef {
   name: string;
   label: string;
-  type: "text" | "number" | "date" | "select" | "checkbox" | "textarea";
+  type: "text" | "password" | "number" | "date" | "select" | "checkbox" | "textarea";
   required?: boolean;
   placeholder?: string;
   /** For selects. An empty-value option is added automatically unless required. */
