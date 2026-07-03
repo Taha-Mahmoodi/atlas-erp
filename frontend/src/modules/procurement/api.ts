@@ -1,7 +1,7 @@
 /**
  * Typed endpoint calls for the procurement module (STRUCTURE §4): vendors + approved items,
- * approval rules, purchase requisitions, RFQs, purchase orders. Goods receipts and invoice
- * matches land in later slices of PLAN 15.6.
+ * approval rules, purchase requisitions, RFQs, purchase orders, goods receipts. Invoice
+ * matches land in the final slice of PLAN 15.6.
  */
 
 import { api, newIdempotencyKey, type Page } from "@/lib/apiClient";
@@ -11,6 +11,10 @@ import type {
   ApprovalRule,
   ApprovalRuleCreate,
   ApprovalRuleUpdate,
+  GoodsReceipt,
+  GoodsReceiptCreate,
+  GoodsReceiptDetail,
+  GoodsReceiptStatus,
   PurchaseOrder,
   PurchaseOrderCreate,
   PurchaseOrderDetail,
@@ -257,4 +261,39 @@ export function decidePurchaseOrder(
 
 export function cancelPurchaseOrder(purchaseOrderId: string): Promise<PurchaseOrderDetail> {
   return api.post<PurchaseOrderDetail>(`/procurement/purchase-orders/${purchaseOrderId}/cancel`, undefined);
+}
+
+// --- Goods receipts -----------------------------------------------------------
+
+export interface GoodsReceiptFilters {
+  cursor?: string;
+  limit?: number;
+  purchase_order_id?: string;
+  status?: GoodsReceiptStatus;
+  date_from?: string;
+  date_to?: string;
+}
+
+export function listGoodsReceipts(filters: GoodsReceiptFilters = {}): Promise<Page<GoodsReceipt>> {
+  return api.get<Page<GoodsReceipt>>("/procurement/goods-receipts", { params: { ...filters } });
+}
+
+export function getGoodsReceipt(goodsReceiptId: string): Promise<GoodsReceiptDetail> {
+  return api.get<GoodsReceiptDetail>(`/procurement/goods-receipts/${goodsReceiptId}`);
+}
+
+export function createGoodsReceipt(payload: GoodsReceiptCreate): Promise<GoodsReceiptDetail> {
+  return api.post<GoodsReceiptDetail>("/procurement/goods-receipts", payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function postGoodsReceipt(goodsReceiptId: string): Promise<GoodsReceiptDetail> {
+  return api.post<GoodsReceiptDetail>(`/procurement/goods-receipts/${goodsReceiptId}/post`, undefined, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function cancelGoodsReceipt(goodsReceiptId: string): Promise<GoodsReceiptDetail> {
+  return api.post<GoodsReceiptDetail>(`/procurement/goods-receipts/${goodsReceiptId}/cancel`, undefined);
 }

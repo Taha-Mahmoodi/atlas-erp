@@ -1,8 +1,8 @@
 /**
  * Mirrors backend `app/modules/procurement/schemas/{vendors,approvals,requisitions,rfqs,
- * orders}.py` (STRUCTURE §4). Vendor masters + approved items, approval rules, and purchase
- * requisitions shipped first; this slice adds RFQs and purchase orders. Goods receipts and
- * invoice matches land in later slices of PLAN 15.6.
+ * orders,goods_receipts}.py` (STRUCTURE §4). Vendor masters + approved items, approval rules,
+ * purchase requisitions, RFQs, and purchase orders shipped first; this slice adds goods
+ * receipts. Invoice matches land in the final slice of PLAN 15.6.
  */
 
 export type VendorStatus = "ACTIVE" | "BLOCKED" | "INACTIVE";
@@ -308,4 +308,63 @@ export interface PurchaseOrder {
 
 export interface PurchaseOrderDetail extends PurchaseOrder {
   lines: PurchaseOrderLine[];
+}
+
+// --- Goods receipts (mirrors schemas/goods_receipts.py) ----------------------
+//
+// DRAFT -> POSTED (terminal, no un-post) or CANCELLED (DRAFT only). Posting publishes
+// GoodsReceiptPosted: inventory creates the stock RECEIPT moves and finance posts the GR/IR
+// journal, all in the same transaction as the post call — there's no separate "create stock
+// move" step for the frontend to call. item_id/unit_cost are snapshotted server-side from the
+// referenced PO line and are NOT client-settable on the create payload.
+
+export type GoodsReceiptStatus = "DRAFT" | "POSTED" | "CANCELLED";
+
+export interface GoodsReceiptLineCreate {
+  purchase_order_line_id: string;
+  bin_id: string;
+  received_quantity: string;
+  lot_code?: string | null;
+  serial_code?: string | null;
+  requires_inspection?: boolean | null;
+}
+
+export interface GoodsReceiptCreate {
+  purchase_order_id: string;
+  warehouse_id: string;
+  receipt_date?: string | null;
+  notes?: string | null;
+  lines: GoodsReceiptLineCreate[];
+}
+
+export interface GoodsReceiptLine {
+  id: string;
+  line_number: number;
+  purchase_order_line_id: string;
+  item_id: string;
+  bin_id: string;
+  received_quantity: string;
+  unit_cost: string;
+  lot_code: string | null;
+  serial_code: string | null;
+  requires_inspection: boolean;
+}
+
+export interface GoodsReceipt {
+  id: string;
+  gr_number: string;
+  status: GoodsReceiptStatus;
+  purchase_order_id: string;
+  vendor_id: string;
+  warehouse_id: string;
+  receipt_date: string;
+  notes: string | null;
+  posted_at: string | null;
+  document_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GoodsReceiptDetail extends GoodsReceipt {
+  lines: GoodsReceiptLine[];
 }

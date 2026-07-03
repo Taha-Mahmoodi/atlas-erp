@@ -1,7 +1,6 @@
 /**
  * The procurement module's own landing page (STRUCTURE §4: modules/procurement/pages/). Links
- * into this slice's areas; goods receipts and invoice matches land as those slices ship
- * (PLAN 15.6).
+ * into this slice's areas; invoice matches land as the final slice of PLAN 15.6.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -11,6 +10,7 @@ const SECTIONS = [
   { to: "/procurement/requisitions", label: "Requisitions", description: "Internal requests to buy" },
   { to: "/procurement/rfqs", label: "RFQs", description: "Request for quotation and vendor responses" },
   { to: "/procurement/purchase-orders", label: "Purchase Orders", description: "Firm commitments to a vendor" },
+  { to: "/procurement/goods-receipts", label: "Goods Receipts", description: "Receiving against purchase orders" },
   { to: "/procurement/approval-rules", label: "Approval Rules", description: "Value thresholds for requisition/PO approval" },
 ] as const;
 

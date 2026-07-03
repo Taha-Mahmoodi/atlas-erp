@@ -51,6 +51,9 @@ import { WarehouseFormPage } from "@/modules/inventory/pages/WarehouseFormPage";
 import { WarehouseListPage } from "@/modules/inventory/pages/WarehouseListPage";
 import { ApprovalRuleFormPage } from "@/modules/procurement/pages/ApprovalRuleFormPage";
 import { ApprovalRuleListPage } from "@/modules/procurement/pages/ApprovalRuleListPage";
+import { GoodsReceiptDetailPage } from "@/modules/procurement/pages/GoodsReceiptDetailPage";
+import { GoodsReceiptFormPage } from "@/modules/procurement/pages/GoodsReceiptFormPage";
+import { GoodsReceiptListPage } from "@/modules/procurement/pages/GoodsReceiptListPage";
 import { ProcurementHomePage } from "@/modules/procurement/pages/ProcurementHomePage";
 import { PurchaseOrderDetailPage } from "@/modules/procurement/pages/PurchaseOrderDetailPage";
 import { PurchaseOrderFormPage } from "@/modules/procurement/pages/PurchaseOrderFormPage";
@@ -477,6 +480,23 @@ const procurementPurchaseOrderDetailRoute = createRoute({
   component: PurchaseOrderDetailPage,
 });
 
+// Goods receipts (slice 4)
+const procurementGoodsReceiptsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/goods-receipts",
+  component: GoodsReceiptListPage,
+});
+const procurementGoodsReceiptNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/goods-receipts/new",
+  component: GoodsReceiptFormPage,
+});
+const procurementGoodsReceiptDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/goods-receipts/$goodsReceiptId",
+  component: GoodsReceiptDetailPage,
+});
+
 const procurementApprovalRulesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/procurement/approval-rules",
@@ -573,6 +593,9 @@ const routeTree = rootRoute.addChildren([
   procurementPurchaseOrdersRoute,
   procurementPurchaseOrderNewRoute,
   procurementPurchaseOrderDetailRoute,
+  procurementGoodsReceiptsRoute,
+  procurementGoodsReceiptNewRoute,
+  procurementGoodsReceiptDetailRoute,
   procurementApprovalRulesRoute,
   procurementApprovalRuleNewRoute,
   procurementApprovalRuleDetailRoute,
