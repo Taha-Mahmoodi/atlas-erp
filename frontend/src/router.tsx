@@ -13,6 +13,10 @@ import { AccountFormPage } from "@/modules/finance/pages/AccountFormPage";
 import { AccountListPage } from "@/modules/finance/pages/AccountListPage";
 import { ApAgingPage } from "@/modules/finance/pages/ApAgingPage";
 import { ArAgingPage } from "@/modules/finance/pages/ArAgingPage";
+import { AssetDetailPage } from "@/modules/finance/pages/AssetDetailPage";
+import { AssetFormPage } from "@/modules/finance/pages/AssetFormPage";
+import { AssetListPage } from "@/modules/finance/pages/AssetListPage";
+import { AssetRegisterPage } from "@/modules/finance/pages/AssetRegisterPage";
 import { BalanceSheetPage } from "@/modules/finance/pages/BalanceSheetPage";
 import { BankStatementDetailPage } from "@/modules/finance/pages/BankStatementDetailPage";
 import { BankStatementImportPage } from "@/modules/finance/pages/BankStatementImportPage";
@@ -23,6 +27,9 @@ import { CustomerInvoiceFormPage } from "@/modules/finance/pages/CustomerInvoice
 import { CustomerInvoiceListPage } from "@/modules/finance/pages/CustomerInvoiceListPage";
 import { CustomerReceiptFormPage } from "@/modules/finance/pages/CustomerReceiptFormPage";
 import { CustomerReceiptListPage } from "@/modules/finance/pages/CustomerReceiptListPage";
+import { DepreciationRunDetailPage } from "@/modules/finance/pages/DepreciationRunDetailPage";
+import { DepreciationRunFormPage } from "@/modules/finance/pages/DepreciationRunFormPage";
+import { DepreciationRunListPage } from "@/modules/finance/pages/DepreciationRunListPage";
 import { DunningRunPage } from "@/modules/finance/pages/DunningRunPage";
 import { FinanceHomePage } from "@/modules/finance/pages/FinanceHomePage";
 import { ProfitAndLossPage } from "@/modules/finance/pages/ProfitAndLossPage";
@@ -205,6 +212,48 @@ const financeBankStatementDetailRoute = createRoute({
   component: BankStatementDetailPage,
 });
 
+// Fixed assets (slice 6)
+const financeAssetsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/assets",
+  component: AssetListPage,
+});
+const financeAssetNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/assets/new",
+  component: AssetFormPage,
+});
+const financeAssetDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/assets/$assetId",
+  component: AssetDetailPage,
+});
+const financeAssetEditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/assets/$assetId/edit",
+  component: AssetFormPage,
+});
+const financeDepreciationRunsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/depreciation-runs",
+  component: DepreciationRunListPage,
+});
+const financeDepreciationRunNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/depreciation-runs/new",
+  component: DepreciationRunFormPage,
+});
+const financeDepreciationRunDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/depreciation-runs/$runId",
+  component: DepreciationRunDetailPage,
+});
+const financeAssetRegisterRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/asset-register",
+  component: AssetRegisterPage,
+});
+
 // --- Every other module: placeholder until its own slice lands ----------------------------
 
 const moduleRoute = createRoute({
@@ -242,6 +291,14 @@ const routeTree = rootRoute.addChildren([
   financeBankStatementsRoute,
   financeBankStatementImportRoute,
   financeBankStatementDetailRoute,
+  financeAssetsRoute,
+  financeAssetNewRoute,
+  financeAssetDetailRoute,
+  financeAssetEditRoute,
+  financeDepreciationRunsRoute,
+  financeDepreciationRunNewRoute,
+  financeDepreciationRunDetailRoute,
+  financeAssetRegisterRoute,
   moduleRoute,
 ]);
 

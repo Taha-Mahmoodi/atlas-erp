@@ -30,6 +30,23 @@ export class ApiError extends Error {
   }
 }
 
+/** For a Pydantic validation error (`common.validation_error`), `details` is an array of
+ * `{field, message, type}` — every OTHER error code's `details` is a plain object (or
+ * absent). `ApiError.message` alone is just the generic "Request validation failed" for the
+ * array case, which tells the user nothing about which field was wrong — this pulls the
+ * specific per-field messages out when they're present. */
+export function getErrorMessage(error: unknown, fallback: string): string {
+  if (!(error instanceof ApiError)) return fallback;
+  if (Array.isArray(error.details)) {
+    const fieldMessages = error.details
+      .filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
+      .map((entry) => (typeof entry.message === "string" ? entry.message : null))
+      .filter((message): message is string => message !== null);
+    if (fieldMessages.length > 0) return fieldMessages.join("; ");
+  }
+  return error.message || fallback;
+}
+
 /** Keyset page envelope (D-014) — mirrors backend `Page[T]`, snake_case untranslated. */
 export interface Page<T> {
   items: T[];
