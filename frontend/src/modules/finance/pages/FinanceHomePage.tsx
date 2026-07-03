@@ -20,6 +20,9 @@ const SECTIONS = [
   { to: "/finance/balance-sheet", label: "Balance Sheet", description: "Assets, liabilities, and equity as of a date" },
   { to: "/finance/cash-flow", label: "Cash Flow Statement", description: "Indirect-method cash flow over a period" },
   { to: "/finance/bank-statements", label: "Bank Statements", description: "Import and reconcile bank statement lines" },
+  { to: "/finance/assets", label: "Fixed Assets", description: "Register and activate fixed assets" },
+  { to: "/finance/depreciation-runs", label: "Depreciation Runs", description: "Run and review period depreciation" },
+  { to: "/finance/asset-register", label: "Asset Register", description: "Net book value of every asset as of a date" },
 ] as const;
 
 export function FinanceHomePage() {

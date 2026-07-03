@@ -575,3 +575,116 @@ export interface SuggestMatchesResult {
 export interface ClearLineRequest {
   contra_account_id?: string | null;
 }
+
+// --- Fixed assets (mirrors backend assets_schemas.py) -----------------------
+//
+// "Asset accounting lite" (parity doc): register + straight-line/declining-balance
+// depreciation runs posting journals — no disposal/retirement/transfer/revaluation endpoint
+// exists yet, and there's no asset-category/class concept (each asset carries its own three
+// GL account links directly). Net book value is never stored — always a projection via
+// GET /asset-register, same "Universal Journal is truth" pattern as the statements.
+
+export type DepreciationMethod = "STRAIGHT_LINE" | "DECLINING_BALANCE";
+export type AssetStatus = "DRAFT" | "ACTIVE" | "FULLY_DEPRECIATED";
+export type DepreciationRunStatus = "DRAFT" | "POSTED" | "REVERSED";
+
+export interface AssetCreate {
+  name: string;
+  description?: string | null;
+  acquisition_date: string;
+  acquisition_cost: string;
+  salvage_value: string;
+  useful_life_months: number;
+  depreciation_method: DepreciationMethod;
+  declining_rate_percent?: string | null;
+  asset_account_id: string;
+  accumulated_depreciation_account_id: string;
+  depreciation_expense_account_id: string;
+  cost_center_id?: string | null;
+  currency_code?: string | null;
+}
+
+export type AssetUpdate = Partial<Omit<AssetCreate, "currency_code">>;
+
+/** capitalize=true posts the Dr asset / Cr acquisition-clearing journal at activation time;
+ * false skips it (asset already on the books via an opening-balance import). One-time,
+ * one-way choice — no way to capitalize later via a separate call. */
+export interface AssetActivateRequest {
+  capitalize: boolean;
+}
+
+export interface Asset {
+  id: string;
+  asset_number: string | null;
+  name: string;
+  description: string | null;
+  acquisition_date: string;
+  acquisition_cost: string;
+  salvage_value: string;
+  useful_life_months: number;
+  depreciation_method: DepreciationMethod;
+  declining_rate_percent: string | null;
+  status: AssetStatus;
+  asset_account_id: string;
+  accumulated_depreciation_account_id: string;
+  depreciation_expense_account_id: string;
+  cost_center_id: string | null;
+  currency_code: string;
+  capitalized_journal_entry_id: string | null;
+  created_at: string;
+}
+
+export interface DepreciationRunRequest {
+  fiscal_period_id: string;
+  run_date: string;
+}
+
+export interface DepreciationRun {
+  id: string;
+  run_number: string | null;
+  fiscal_period_id: string;
+  run_date: string;
+  status: DepreciationRunStatus;
+  journal_entry_id: string | null;
+  total_amount: string;
+  asset_count: number;
+  created_at: string;
+}
+
+/** accumulated_after/nbv_after are per-entry audit-trail snapshots only — never re-summed
+ * client-side as an authoritative total; always read aggregate NBV from the asset register. */
+export interface DepreciationEntry {
+  id: string;
+  run_id: string;
+  asset_id: string;
+  fiscal_period_id: string;
+  amount: string;
+  accumulated_after: string;
+  nbv_after: string;
+}
+
+export interface AssetRegisterRow {
+  asset_id: string;
+  asset_number: string | null;
+  name: string;
+  status: AssetStatus;
+  currency_code: string;
+  acquisition_cost: string;
+  accumulated_depreciation: string;
+  net_book_value: string;
+}
+
+export interface AssetRegisterReport {
+  as_of: string;
+  items: AssetRegisterRow[];
+}
+
+export interface FiscalPeriod {
+  id: string;
+  fiscal_year_id: string;
+  period_number: number;
+  name: string;
+  start_date: string;
+  end_date: string;
+  status: string;
+}

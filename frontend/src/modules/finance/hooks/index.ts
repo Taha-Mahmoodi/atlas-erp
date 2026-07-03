@@ -5,6 +5,7 @@
  */
 
 export * from "@/modules/finance/hooks/accounts";
+export * from "@/modules/finance/hooks/assets";
 export * from "@/modules/finance/hooks/bank";
 export * from "@/modules/finance/hooks/journal-entries";
 export * from "@/modules/finance/hooks/payables";

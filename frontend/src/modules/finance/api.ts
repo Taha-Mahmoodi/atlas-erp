@@ -13,6 +13,12 @@ import type {
   AccountType,
   AccountUpdate,
   AgingReport,
+  Asset,
+  AssetActivateRequest,
+  AssetCreate,
+  AssetRegisterReport,
+  AssetStatus,
+  AssetUpdate,
   BalanceSheet,
   BankStatement,
   BankStatementDetail,
@@ -28,9 +34,13 @@ import type {
   CustomerReceipt,
   CustomerReceiptCreate,
   CustomerReceiptDetail,
+  DepreciationEntry,
+  DepreciationRun,
+  DepreciationRunRequest,
   DunningRunRequest,
   DunningRunResult,
   EntryStatus,
+  FiscalPeriod,
   InvoiceStatus,
   JournalEntry,
   JournalEntryCreate,
@@ -330,4 +340,79 @@ export function clearLine(
   return api.post<BankStatementLine>(`/finance/bank-statement-lines/${lineId}/clear`, payload, {
     idempotencyKey: newIdempotencyKey(),
   });
+}
+
+// --- Fixed assets --------------------------------------------------------------
+
+export function createAsset(payload: AssetCreate): Promise<Asset> {
+  return api.post<Asset>("/finance/assets", payload);
+}
+
+export function updateAsset(assetId: string, payload: AssetUpdate): Promise<Asset> {
+  return api.patch<Asset>(`/finance/assets/${assetId}`, payload);
+}
+
+export function activateAsset(assetId: string, payload: AssetActivateRequest): Promise<Asset> {
+  return api.post<Asset>(`/finance/assets/${assetId}/activate`, payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export interface AssetFilters {
+  cursor?: string;
+  limit?: number;
+  status?: AssetStatus;
+}
+
+export function listAssets(filters: AssetFilters = {}): Promise<Page<Asset>> {
+  return api.get<Page<Asset>>("/finance/assets", { params: { ...filters } });
+}
+
+export function getAsset(assetId: string): Promise<Asset> {
+  return api.get<Asset>(`/finance/assets/${assetId}`);
+}
+
+/** Resolves to either the finished run (small period, 201) or a job to poll (large period,
+ * PERFORMANCE §3, 202) — the caller distinguishes by checking for `job_id`. */
+export function runDepreciation(
+  payload: DepreciationRunRequest,
+): Promise<DepreciationRun | JobSubmitted> {
+  return api.post<DepreciationRun | JobSubmitted>("/finance/depreciation-runs", payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export interface DepreciationRunFilters {
+  cursor?: string;
+  limit?: number;
+  fiscal_period_id?: string;
+}
+
+export function listDepreciationRuns(
+  filters: DepreciationRunFilters = {},
+): Promise<Page<DepreciationRun>> {
+  return api.get<Page<DepreciationRun>>("/finance/depreciation-runs", { params: { ...filters } });
+}
+
+export function getDepreciationRun(runId: string): Promise<DepreciationRun> {
+  return api.get<DepreciationRun>(`/finance/depreciation-runs/${runId}`);
+}
+
+export function listDepreciationEntries(
+  runId: string,
+  filters: { cursor?: string; limit?: number } = {},
+): Promise<Page<DepreciationEntry>> {
+  return api.get<Page<DepreciationEntry>>(`/finance/depreciation-runs/${runId}/entries`, {
+    params: { ...filters },
+  });
+}
+
+export function getAssetRegister(asOf: string): Promise<AssetRegisterReport> {
+  return api.get<AssetRegisterReport>("/finance/asset-register", { params: { as_of: asOf } });
+}
+
+export function listFiscalPeriods(
+  filters: { cursor?: string; limit?: number } = {},
+): Promise<Page<FiscalPeriod>> {
+  return api.get<Page<FiscalPeriod>>("/finance/fiscal-periods", { params: { ...filters } });
 }
