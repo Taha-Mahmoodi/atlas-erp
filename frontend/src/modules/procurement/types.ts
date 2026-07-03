@@ -1,8 +1,8 @@
 /**
- * Mirrors backend `app/modules/procurement/schemas/{vendors,approvals,requisitions}.py`
- * (STRUCTURE §4). Vendor masters + approved items and approval rules shipped first; this
- * slice adds purchase requisitions. RFQs, POs, goods receipts, and invoice matches land in
- * later slices of PLAN 15.6.
+ * Mirrors backend `app/modules/procurement/schemas/{vendors,approvals,requisitions,rfqs,
+ * orders}.py` (STRUCTURE §4). Vendor masters + approved items, approval rules, and purchase
+ * requisitions shipped first; this slice adds RFQs and purchase orders. Goods receipts and
+ * invoice matches land in later slices of PLAN 15.6.
  */
 
 export type VendorStatus = "ACTIVE" | "BLOCKED" | "INACTIVE";
@@ -152,4 +152,160 @@ export interface Requisition {
 
 export interface RequisitionDetail extends Requisition {
   lines: RequisitionLine[];
+}
+
+export interface RfqFromRequisition {
+  vendor_id: string;
+  currency_code?: string | null;
+  valid_until?: string | null;
+  notes?: string | null;
+}
+
+export interface PurchaseOrderFromRequisition {
+  vendor_id: string;
+  order_date?: string | null;
+  expected_date?: string | null;
+  notes?: string | null;
+}
+
+// --- RFQs (mirrors schemas/rfqs.py) ------------------------------------------
+//
+// DRAFT -> SENT -> QUOTED -> CLOSED, or CANCELLED from any non-terminal state. No approval
+// gate on RFQs — sourcing quotes isn't a financial commitment, only the resulting PO is.
+// Lines carry no price at creation; record-quote fills in quoted_unit_cost per line and
+// advances SENT -> QUOTED.
+
+export type RfqStatus = "DRAFT" | "SENT" | "QUOTED" | "CLOSED" | "CANCELLED";
+
+export interface RfqLineCreate {
+  item_id: string;
+  description?: string | null;
+  quantity: string;
+  uom_id: string;
+}
+
+export interface RfqCreate {
+  vendor_id: string;
+  currency_code: string;
+  valid_until?: string | null;
+  notes?: string | null;
+  lines: RfqLineCreate[];
+}
+
+export interface RfqLineQuote {
+  line_id: string;
+  quoted_unit_cost: string;
+}
+
+export interface RecordQuotePayload {
+  quotes: RfqLineQuote[];
+}
+
+export interface RfqLine {
+  id: string;
+  line_number: number;
+  item_id: string;
+  description: string | null;
+  quantity: string;
+  uom_id: string;
+  quoted_unit_cost: string | null;
+}
+
+export interface Rfq {
+  id: string;
+  rfq_number: string;
+  status: RfqStatus;
+  vendor_id: string;
+  currency_code: string;
+  valid_until: string | null;
+  source_requisition_id: string | null;
+  notes: string | null;
+  document_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RfqDetail extends Rfq {
+  lines: RfqLine[];
+}
+
+export interface PurchaseOrderFromRfq {
+  order_date?: string | null;
+  expected_date?: string | null;
+  notes?: string | null;
+}
+
+// --- Purchase orders (mirrors schemas/orders.py) -----------------------------
+//
+// DRAFT -> (send) -> PENDING_APPROVAL (if a PURCHASE_ORDER approval rule applies) -> APPROVED
+// | REJECTED -> SENT, or DRAFT -> SENT directly when no rule applies. SENT -> (GR posts) ->
+// PARTIALLY_RECEIVED -> RECEIVED -> (match posts, fully received+billed) -> CLOSED.
+// REJECTED/CANCELLED are terminal side-branches. received_quantity is server-maintained
+// (raised by goods-receipt posting, not editable here); billed_quantity exists on the backend
+// model but isn't exposed on the line read schema.
+
+export type PurchaseOrderStatus =
+  | "DRAFT"
+  | "PENDING_APPROVAL"
+  | "APPROVED"
+  | "REJECTED"
+  | "SENT"
+  | "PARTIALLY_RECEIVED"
+  | "RECEIVED"
+  | "CLOSED"
+  | "CANCELLED";
+
+export interface PurchaseOrderLineCreate {
+  item_id: string;
+  description?: string | null;
+  quantity: string;
+  uom_id: string;
+  unit_cost: string;
+  tax_code_id?: string | null;
+}
+
+export interface PurchaseOrderCreate {
+  vendor_id: string;
+  currency_code?: string | null;
+  order_date?: string | null;
+  expected_date?: string | null;
+  notes?: string | null;
+  lines: PurchaseOrderLineCreate[];
+}
+
+export interface PurchaseOrderLine {
+  id: string;
+  line_number: number;
+  item_id: string;
+  description: string | null;
+  quantity: string;
+  uom_id: string;
+  unit_cost: string;
+  line_amount: string;
+  received_quantity: string;
+  tax_code_id: string | null;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  po_number: string;
+  status: PurchaseOrderStatus;
+  vendor_id: string;
+  currency_code: string;
+  order_date: string;
+  expected_date: string | null;
+  payment_terms_days: number;
+  total_amount: string;
+  notes: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  source_requisition_id: string | null;
+  source_rfq_id: string | null;
+  document_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PurchaseOrderDetail extends PurchaseOrder {
+  lines: PurchaseOrderLine[];
 }

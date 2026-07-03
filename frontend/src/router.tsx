@@ -52,9 +52,15 @@ import { WarehouseListPage } from "@/modules/inventory/pages/WarehouseListPage";
 import { ApprovalRuleFormPage } from "@/modules/procurement/pages/ApprovalRuleFormPage";
 import { ApprovalRuleListPage } from "@/modules/procurement/pages/ApprovalRuleListPage";
 import { ProcurementHomePage } from "@/modules/procurement/pages/ProcurementHomePage";
+import { PurchaseOrderDetailPage } from "@/modules/procurement/pages/PurchaseOrderDetailPage";
+import { PurchaseOrderFormPage } from "@/modules/procurement/pages/PurchaseOrderFormPage";
+import { PurchaseOrderListPage } from "@/modules/procurement/pages/PurchaseOrderListPage";
 import { RequisitionDetailPage } from "@/modules/procurement/pages/RequisitionDetailPage";
 import { RequisitionFormPage } from "@/modules/procurement/pages/RequisitionFormPage";
 import { RequisitionListPage } from "@/modules/procurement/pages/RequisitionListPage";
+import { RfqDetailPage } from "@/modules/procurement/pages/RfqDetailPage";
+import { RfqFormPage } from "@/modules/procurement/pages/RfqFormPage";
+import { RfqListPage } from "@/modules/procurement/pages/RfqListPage";
 import { VendorFormPage as ProcurementVendorFormPage } from "@/modules/procurement/pages/VendorFormPage";
 import { VendorListPage as ProcurementVendorListPage } from "@/modules/procurement/pages/VendorListPage";
 import { ProfitAndLossPage } from "@/modules/finance/pages/ProfitAndLossPage";
@@ -439,6 +445,38 @@ const procurementRequisitionEditRoute = createRoute({
   component: RequisitionFormPage,
 });
 
+// RFQs + purchase orders (slice 3)
+const procurementRfqsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/rfqs",
+  component: RfqListPage,
+});
+const procurementRfqNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/rfqs/new",
+  component: RfqFormPage,
+});
+const procurementRfqDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/rfqs/$rfqId",
+  component: RfqDetailPage,
+});
+const procurementPurchaseOrdersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/purchase-orders",
+  component: PurchaseOrderListPage,
+});
+const procurementPurchaseOrderNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/purchase-orders/new",
+  component: PurchaseOrderFormPage,
+});
+const procurementPurchaseOrderDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/purchase-orders/$purchaseOrderId",
+  component: PurchaseOrderDetailPage,
+});
+
 const procurementApprovalRulesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/procurement/approval-rules",
@@ -529,6 +567,12 @@ const routeTree = rootRoute.addChildren([
   procurementRequisitionNewRoute,
   procurementRequisitionDetailRoute,
   procurementRequisitionEditRoute,
+  procurementRfqsRoute,
+  procurementRfqNewRoute,
+  procurementRfqDetailRoute,
+  procurementPurchaseOrdersRoute,
+  procurementPurchaseOrderNewRoute,
+  procurementPurchaseOrderDetailRoute,
   procurementApprovalRulesRoute,
   procurementApprovalRuleNewRoute,
   procurementApprovalRuleDetailRoute,

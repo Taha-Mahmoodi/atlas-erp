@@ -1,7 +1,7 @@
 /**
  * Typed endpoint calls for the procurement module (STRUCTURE §4): vendors + approved items,
- * approval rules, purchase requisitions. RFQs, POs, goods receipts, and invoice matches land
- * in later slices of PLAN 15.6.
+ * approval rules, purchase requisitions, RFQs, purchase orders. Goods receipts and invoice
+ * matches land in later slices of PLAN 15.6.
  */
 
 import { api, newIdempotencyKey, type Page } from "@/lib/apiClient";
@@ -11,11 +11,23 @@ import type {
   ApprovalRule,
   ApprovalRuleCreate,
   ApprovalRuleUpdate,
+  PurchaseOrder,
+  PurchaseOrderCreate,
+  PurchaseOrderDetail,
+  PurchaseOrderFromRequisition,
+  PurchaseOrderFromRfq,
+  PurchaseOrderStatus,
+  RecordQuotePayload,
   Requisition,
   RequisitionCreate,
   RequisitionDetail,
   RequisitionStatus,
   RequisitionUpdate,
+  Rfq,
+  RfqCreate,
+  RfqDetail,
+  RfqFromRequisition,
+  RfqStatus,
   Vendor,
   VendorApprovedItem,
   VendorApprovedItemCreate,
@@ -133,4 +145,116 @@ export function decideRequisition(
 
 export function cancelRequisition(requisitionId: string): Promise<RequisitionDetail> {
   return api.post<RequisitionDetail>(`/procurement/requisitions/${requisitionId}/cancel`, undefined);
+}
+
+export function convertRequisitionToRfq(
+  requisitionId: string,
+  payload: RfqFromRequisition,
+): Promise<RfqDetail> {
+  return api.post<RfqDetail>(`/procurement/requisitions/${requisitionId}/convert-to-rfq`, payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function convertRequisitionToPurchaseOrder(
+  requisitionId: string,
+  payload: PurchaseOrderFromRequisition,
+): Promise<PurchaseOrderDetail> {
+  return api.post<PurchaseOrderDetail>(
+    `/procurement/requisitions/${requisitionId}/convert-to-po`,
+    payload,
+    { idempotencyKey: newIdempotencyKey() },
+  );
+}
+
+// --- RFQs ------------------------------------------------------------------------
+
+export interface RfqFilters {
+  cursor?: string;
+  limit?: number;
+  status?: RfqStatus;
+  vendor_id?: string;
+}
+
+export function listRfqs(filters: RfqFilters = {}): Promise<Page<Rfq>> {
+  return api.get<Page<Rfq>>("/procurement/rfqs", { params: { ...filters } });
+}
+
+export function getRfq(rfqId: string): Promise<RfqDetail> {
+  return api.get<RfqDetail>(`/procurement/rfqs/${rfqId}`);
+}
+
+export function createRfq(payload: RfqCreate): Promise<RfqDetail> {
+  return api.post<RfqDetail>("/procurement/rfqs", payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function sendRfq(rfqId: string): Promise<RfqDetail> {
+  return api.post<RfqDetail>(`/procurement/rfqs/${rfqId}/send`, undefined, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function recordRfqQuote(rfqId: string, payload: RecordQuotePayload): Promise<RfqDetail> {
+  return api.post<RfqDetail>(`/procurement/rfqs/${rfqId}/record-quote`, payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function closeRfq(rfqId: string): Promise<RfqDetail> {
+  return api.post<RfqDetail>(`/procurement/rfqs/${rfqId}/close`, undefined);
+}
+
+export function convertRfqToPurchaseOrder(
+  rfqId: string,
+  payload: PurchaseOrderFromRfq,
+): Promise<PurchaseOrderDetail> {
+  return api.post<PurchaseOrderDetail>(`/procurement/rfqs/${rfqId}/convert-to-po`, payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+// --- Purchase orders ---------------------------------------------------------------
+
+export interface PurchaseOrderFilters {
+  cursor?: string;
+  limit?: number;
+  status?: PurchaseOrderStatus;
+  vendor_id?: string;
+}
+
+export function listPurchaseOrders(filters: PurchaseOrderFilters = {}): Promise<Page<PurchaseOrder>> {
+  return api.get<Page<PurchaseOrder>>("/procurement/purchase-orders", { params: { ...filters } });
+}
+
+export function getPurchaseOrder(purchaseOrderId: string): Promise<PurchaseOrderDetail> {
+  return api.get<PurchaseOrderDetail>(`/procurement/purchase-orders/${purchaseOrderId}`);
+}
+
+export function createPurchaseOrder(payload: PurchaseOrderCreate): Promise<PurchaseOrderDetail> {
+  return api.post<PurchaseOrderDetail>("/procurement/purchase-orders", payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function sendPurchaseOrder(purchaseOrderId: string): Promise<PurchaseOrderDetail> {
+  return api.post<PurchaseOrderDetail>(`/procurement/purchase-orders/${purchaseOrderId}/send`, undefined, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function decidePurchaseOrder(
+  purchaseOrderId: string,
+  payload: ApprovalDecisionPayload,
+): Promise<PurchaseOrderDetail> {
+  return api.post<PurchaseOrderDetail>(
+    `/procurement/purchase-orders/${purchaseOrderId}/decision`,
+    payload,
+    { idempotencyKey: newIdempotencyKey() },
+  );
+}
+
+export function cancelPurchaseOrder(purchaseOrderId: string): Promise<PurchaseOrderDetail> {
+  return api.post<PurchaseOrderDetail>(`/procurement/purchase-orders/${purchaseOrderId}/cancel`, undefined);
 }

@@ -15,9 +15,12 @@ import { useMe } from "@/lib/session";
 import { useItemLookup, useUomOptions } from "@/modules/inventory/hooks";
 import {
   useCancelRequisition,
+  useConvertRequisitionToPurchaseOrder,
+  useConvertRequisitionToRfq,
   useDecideRequisition,
   useRequisition,
   useSubmitRequisition,
+  useVendorOptions,
 } from "@/modules/procurement/hooks";
 
 export function RequisitionDetailPage() {
@@ -25,16 +28,23 @@ export function RequisitionDetailPage() {
   const me = useMe();
   const canManage = (me.data?.permissions ?? []).includes("procurement.requisition.manage");
   const canApprove = (me.data?.permissions ?? []).includes("procurement.requisition.approve");
+  const canCreateRfq = (me.data?.permissions ?? []).includes("procurement.rfq.manage");
+  const canCreatePo = (me.data?.permissions ?? []).includes("procurement.po.manage");
 
   const requisition = useRequisition(requisitionId);
   const items = useItemLookup();
   const uoms = useUomOptions();
+  const vendors = useVendorOptions();
   const submitRequisition = useSubmitRequisition(requisitionId ?? "");
   const decideRequisition = useDecideRequisition(requisitionId ?? "");
   const cancelRequisition = useCancelRequisition(requisitionId ?? "");
+  const convertToRfq = useConvertRequisitionToRfq(requisitionId ?? "");
+  const convertToPo = useConvertRequisitionToPurchaseOrder(requisitionId ?? "");
 
   const [comment, setComment] = useState("");
+  const [convertVendorId, setConvertVendorId] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [convertedTo, setConvertedTo] = useState<{ kind: "rfq" | "po"; id: string } | null>(null);
 
   if (requisition.isPending || !requisition.data) {
     return <p className="text-sm text-ink-muted">Loading…</p>;
@@ -42,6 +52,7 @@ export function RequisitionDetailPage() {
   const data = requisition.data;
   const isDraft = data.status === "DRAFT";
   const isSubmitted = data.status === "SUBMITTED";
+  const isApproved = data.status === "APPROVED";
   const canCancel = data.status === "DRAFT" || data.status === "APPROVED";
 
   const itemLabel = (id: string) => {
@@ -78,6 +89,26 @@ export function RequisitionDetailPage() {
       await cancelRequisition.mutateAsync();
     } catch (caught) {
       setError(getErrorMessage(caught, "Unable to cancel the requisition."));
+    }
+  };
+
+  const convertRfq = async () => {
+    setError(null);
+    try {
+      const rfq = await convertToRfq.mutateAsync({ vendor_id: convertVendorId });
+      setConvertedTo({ kind: "rfq", id: rfq.id });
+    } catch (caught) {
+      setError(getErrorMessage(caught, "Unable to convert the requisition to an RFQ."));
+    }
+  };
+
+  const convertPo = async () => {
+    setError(null);
+    try {
+      const po = await convertToPo.mutateAsync({ vendor_id: convertVendorId });
+      setConvertedTo({ kind: "po", id: po.id });
+    } catch (caught) {
+      setError(getErrorMessage(caught, "Unable to convert the requisition to a purchase order."));
     }
   };
 
@@ -122,6 +153,63 @@ export function RequisitionDetailPage() {
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
         </p>
+      )}
+      {convertedTo && (
+        <p className="mt-4 rounded-control bg-success-tint px-3 py-2 text-xs text-success">
+          {convertedTo.kind === "rfq" ? "RFQ" : "Purchase order"} created —{" "}
+          <Link
+            to={convertedTo.kind === "rfq" ? "/procurement/rfqs/$rfqId" : "/procurement/purchase-orders/$purchaseOrderId"}
+            params={convertedTo.kind === "rfq" ? { rfqId: convertedTo.id } : { purchaseOrderId: convertedTo.id }}
+            className="underline"
+          >
+            view it
+          </Link>
+          .
+        </p>
+      )}
+
+      {isApproved && (canCreateRfq || canCreatePo) && !convertedTo && (
+        <div className="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
+          <h2 className="text-sm font-semibold text-ink">Convert to a sourcing document</h2>
+          <label htmlFor="convert-vendor" className="mb-1 mt-3 block text-xs font-medium text-ink-muted">
+            Vendor
+          </label>
+          <select
+            id="convert-vendor"
+            value={convertVendorId}
+            onChange={(event) => setConvertVendorId(event.target.value)}
+            className="w-full rounded-control border border-line bg-surface px-2 py-1.5 text-sm text-ink"
+          >
+            <option value="">Select vendor</option>
+            {(vendors.data?.items ?? []).map((vendor) => (
+              <option key={vendor.id} value={vendor.id}>
+                {vendor.vendor_code} — {vendor.name}
+              </option>
+            ))}
+          </select>
+          <div className="mt-3 flex gap-2">
+            {canCreateRfq && (
+              <button
+                type="button"
+                onClick={() => void convertRfq()}
+                disabled={!convertVendorId || convertToRfq.isPending}
+                className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-primary disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {convertToRfq.isPending ? "Converting…" : "Convert to RFQ"}
+              </button>
+            )}
+            {canCreatePo && (
+              <button
+                type="button"
+                onClick={() => void convertPo()}
+                disabled={!convertVendorId || convertToPo.isPending}
+                className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {convertToPo.isPending ? "Converting…" : "Convert to PO"}
+              </button>
+            )}
+          </div>
+        </div>
       )}
 
       <dl className="mt-6 grid grid-cols-3 gap-4 text-sm">
