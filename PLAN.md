@@ -126,7 +126,7 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 - [x] 15.1 Scaffold: Vite + React 18 + TS strict, Tailwind, TanStack Router/Query, `lib/apiClient.ts`, `lib/auth.ts`, `lib/queryClient.ts`, `lib/format.ts`, typecheck/build green in CI
 - [x] 15.2 Design system: DataGrid, FormBuilder, Kanban, KpiCard, DocFlowViewer (ERP-agnostic, tested)
 - [x] 15.3 App shell: login, role-based home pages with tiles + KPIs, navigation
-- [ ] 15.4 Finance UIs (COA, journal entries + posting, AP/AR workbenches, statements, bank rec, assets)
+- [x] 15.4 Finance UIs (COA, journal entries + posting, AP/AR workbenches, statements, bank rec, assets)
 - [ ] 15.5 Inventory UIs (items, stock overview, moves, counts)
 - [ ] 15.6 Procurement UIs (vendors, requisitions, RFQs, POs, receipts, match)
 - [ ] 15.7 Sales UIs (customers, pricing, quotes, orders, deliveries, invoices, returns)

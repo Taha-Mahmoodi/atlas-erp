@@ -8,7 +8,7 @@
 /** Module keys with a real static route registered in router.tsx (15.4+). ModuleLink.tsx
  * switches on this literal union so navigation stays type-safe as slices land — extend it
  * (and its switch in ModuleLink) one entry at a time, never widen to a bare `string`. */
-export type StaticModuleRoute = "finance";
+export type StaticModuleRoute = "finance" | "inventory";
 
 export interface ModuleEntry {
   key: string;
@@ -23,7 +23,7 @@ export interface ModuleEntry {
 
 export const MODULES: ModuleEntry[] = [
   { key: "finance", label: "Finance", permissionPrefix: "finance.", description: "Journal, AP/AR, statements, bank rec, assets", route: "finance" },
-  { key: "inventory", label: "Inventory", permissionPrefix: "inventory.", description: "Items, stock, moves, counts" },
+  { key: "inventory", label: "Inventory", permissionPrefix: "inventory.", description: "Items, stock, moves, counts", route: "inventory" },
   { key: "procurement", label: "Procurement", permissionPrefix: "procurement.", description: "Vendors, requisitions, POs, receipts" },
   { key: "sales", label: "Sales", permissionPrefix: "sales.", description: "Customers, quotes, orders, deliveries, invoices" },
   { key: "manufacturing", label: "Manufacturing", permissionPrefix: "manufacturing.", description: "BOMs, work centers, production, MRP" },

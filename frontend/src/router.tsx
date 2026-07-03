@@ -32,6 +32,13 @@ import { DepreciationRunFormPage } from "@/modules/finance/pages/DepreciationRun
 import { DepreciationRunListPage } from "@/modules/finance/pages/DepreciationRunListPage";
 import { DunningRunPage } from "@/modules/finance/pages/DunningRunPage";
 import { FinanceHomePage } from "@/modules/finance/pages/FinanceHomePage";
+import { InventoryHomePage } from "@/modules/inventory/pages/InventoryHomePage";
+import { ItemCategoryFormPage } from "@/modules/inventory/pages/ItemCategoryFormPage";
+import { ItemCategoryListPage } from "@/modules/inventory/pages/ItemCategoryListPage";
+import { ItemFormPage } from "@/modules/inventory/pages/ItemFormPage";
+import { ItemListPage } from "@/modules/inventory/pages/ItemListPage";
+import { UomFormPage } from "@/modules/inventory/pages/UomFormPage";
+import { UomListPage } from "@/modules/inventory/pages/UomListPage";
 import { ProfitAndLossPage } from "@/modules/finance/pages/ProfitAndLossPage";
 import { TrialBalancePage } from "@/modules/finance/pages/TrialBalancePage";
 import { JournalEntryDetailPage } from "@/modules/finance/pages/JournalEntryDetailPage";
@@ -254,6 +261,61 @@ const financeAssetRegisterRoute = createRoute({
   component: AssetRegisterPage,
 });
 
+// --- Inventory (PLAN 15.5) -----------------------------------------------------------------
+
+const inventoryHomeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory",
+  component: InventoryHomePage,
+});
+
+// Item masters (slice 1)
+const inventoryItemCategoriesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/item-categories",
+  component: ItemCategoryListPage,
+});
+const inventoryItemCategoryNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/item-categories/new",
+  component: ItemCategoryFormPage,
+});
+const inventoryItemCategoryDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/item-categories/$categoryId",
+  component: ItemCategoryFormPage,
+});
+const inventoryUomsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/uoms",
+  component: UomListPage,
+});
+const inventoryUomNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/uoms/new",
+  component: UomFormPage,
+});
+const inventoryUomDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/uoms/$uomId",
+  component: UomFormPage,
+});
+const inventoryItemsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/items",
+  component: ItemListPage,
+});
+const inventoryItemNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/items/new",
+  component: ItemFormPage,
+});
+const inventoryItemDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/items/$itemId",
+  component: ItemFormPage,
+});
+
 // --- Every other module: placeholder until its own slice lands ----------------------------
 
 const moduleRoute = createRoute({
@@ -299,6 +361,16 @@ const routeTree = rootRoute.addChildren([
   financeDepreciationRunNewRoute,
   financeDepreciationRunDetailRoute,
   financeAssetRegisterRoute,
+  inventoryHomeRoute,
+  inventoryItemCategoriesRoute,
+  inventoryItemCategoryNewRoute,
+  inventoryItemCategoryDetailRoute,
+  inventoryUomsRoute,
+  inventoryUomNewRoute,
+  inventoryUomDetailRoute,
+  inventoryItemsRoute,
+  inventoryItemNewRoute,
+  inventoryItemDetailRoute,
   moduleRoute,
 ]);
 

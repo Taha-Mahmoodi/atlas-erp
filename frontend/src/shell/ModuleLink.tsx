@@ -27,6 +27,12 @@ export function ModuleLink({
           {children}
         </Link>
       );
+    case "inventory":
+      return (
+        <Link to="/inventory" {...(className ? { className } : {})}>
+          {children}
+        </Link>
+      );
     default:
       return (
         <Link
