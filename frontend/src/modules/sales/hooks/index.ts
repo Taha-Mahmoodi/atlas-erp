@@ -5,6 +5,7 @@
  */
 
 export * from "@/modules/sales/hooks/customers";
+export * from "@/modules/sales/hooks/deliveries";
 export * from "@/modules/sales/hooks/orders";
 export * from "@/modules/sales/hooks/pricing";
 export * from "@/modules/sales/hooks/quotes";

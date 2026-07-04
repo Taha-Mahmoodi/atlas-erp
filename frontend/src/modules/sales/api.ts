@@ -1,10 +1,10 @@
 /**
  * Typed endpoint calls for the sales module (STRUCTURE §4): customers, customer groups, price
- * lists + their line items, the price-quote resolution lookup (slice 1), and quotes + sales
- * orders + ATP preview (slice 2). Customers/groups/price-lists are plain master data — no
- * idempotency keys (D-013 applies to document-creating endpoints only, per the backend's
- * actual routers). Quote/order create+send+accept+reject+convert+confirm+credit-release ARE
- * idempotent; their `cancel`/`PATCH`/ATP-preview calls are not.
+ * lists + their line items, the price-quote resolution lookup (slice 1), quotes + sales orders
+ * + ATP preview (slice 2), and deliveries (slice 3). Customers/groups/price-lists are plain
+ * master data — no idempotency keys (D-013 applies to document-creating endpoints only, per
+ * the backend's actual routers). Quote/order/delivery create+post+send+accept+reject+convert+
+ * confirm+credit-release ARE idempotent; every `cancel`/`PATCH`/ATP-preview call is not.
  */
 
 import { api, newIdempotencyKey, type Page } from "@/lib/apiClient";
@@ -19,6 +19,10 @@ import type {
   CustomerGroupUpdate,
   CustomerStatus,
   CustomerUpdate,
+  Delivery,
+  DeliveryCreate,
+  DeliveryDetail,
+  DeliveryStatus,
   PriceList,
   PriceListCreate,
   PriceListItem,
@@ -232,4 +236,37 @@ export function releaseSalesOrderCredit(orderId: string): Promise<SalesOrderDeta
 
 export function checkAtp(payload: AtpCheckRequest): Promise<AtpCheckResponse> {
   return api.post<AtpCheckResponse>("/sales/orders/atp", payload);
+}
+
+// --- Deliveries -----------------------------------------------------------------
+
+export interface DeliveryFilters {
+  cursor?: string;
+  limit?: number;
+  sales_order_id?: string;
+  status?: DeliveryStatus;
+  date_from?: string;
+  date_to?: string;
+}
+
+export function listDeliveries(filters: DeliveryFilters = {}): Promise<Page<Delivery>> {
+  return api.get<Page<Delivery>>("/sales/deliveries", { params: { ...filters } });
+}
+
+export function getDelivery(deliveryId: string): Promise<DeliveryDetail> {
+  return api.get<DeliveryDetail>(`/sales/deliveries/${deliveryId}`);
+}
+
+export function createDelivery(payload: DeliveryCreate): Promise<DeliveryDetail> {
+  return api.post<DeliveryDetail>("/sales/deliveries", payload, { idempotencyKey: newIdempotencyKey() });
+}
+
+export function postDelivery(deliveryId: string): Promise<DeliveryDetail> {
+  return api.post<DeliveryDetail>(`/sales/deliveries/${deliveryId}/post`, undefined, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function cancelDelivery(deliveryId: string): Promise<DeliveryDetail> {
+  return api.post<DeliveryDetail>(`/sales/deliveries/${deliveryId}/cancel`, undefined);
 }

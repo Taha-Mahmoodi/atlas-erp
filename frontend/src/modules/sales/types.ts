@@ -311,3 +311,64 @@ export interface AtpCheckResponse {
   on_date: string;
   lines: AtpLineResult[];
 }
+
+// --- Deliveries (slice 3/4) --------------------------------------------------------
+//
+// DRAFT -> POSTED (terminal — corrections happen via a return in slice 4) or CANCELLED (from
+// DRAFT only). No distinct "backorder" entity: an order just stays PARTIALLY_DELIVERED while
+// any line's delivered_quantity < ordered_quantity, and further deliveries can be created
+// against it (CONFIRMED or PARTIALLY_DELIVERED order) until fully delivered. Posting is
+// synchronous — it publishes DeliveryShipped in the same transaction, which inventory turns
+// into a stock ISSUE move per line and finance posts the COGS journal for.
+
+export type DeliveryStatus = "DRAFT" | "POSTED" | "CANCELLED";
+
+export interface DeliveryLineCreate {
+  sales_order_line_id: string;
+  bin_id: string;
+  quantity: string;
+  lot_code?: string | null;
+  serial_code?: string | null;
+}
+
+export interface DeliveryCreate {
+  sales_order_id: string;
+  warehouse_id: string;
+  delivery_date?: string | null;
+  shipping_address?: string | null;
+  notes?: string | null;
+  lines: DeliveryLineCreate[];
+}
+
+export interface DeliveryLine {
+  id: string;
+  line_number: number;
+  sales_order_line_id: string;
+  // Server-snapshotted from the order line, never client-supplied.
+  item_id: string;
+  bin_id: string;
+  quantity: string;
+  lot_code: string | null;
+  serial_code: string | null;
+}
+
+export interface Delivery {
+  id: string;
+  delivery_number: string;
+  status: DeliveryStatus;
+  sales_order_id: string;
+  // Server-snapshotted from the order at create.
+  customer_id: string;
+  warehouse_id: string;
+  delivery_date: string;
+  shipping_address: string | null;
+  notes: string | null;
+  posted_at: string | null;
+  document_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DeliveryDetail extends Delivery {
+  lines: DeliveryLine[];
+}

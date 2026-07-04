@@ -77,6 +77,9 @@ import { CustomerListPage } from "@/modules/sales/pages/CustomerListPage";
 import { PriceListFormPage } from "@/modules/sales/pages/PriceListFormPage";
 import { PriceListListPage } from "@/modules/sales/pages/PriceListListPage";
 import { PriceQuoteLookupPage } from "@/modules/sales/pages/PriceQuoteLookupPage";
+import { DeliveryDetailPage } from "@/modules/sales/pages/DeliveryDetailPage";
+import { DeliveryFormPage } from "@/modules/sales/pages/DeliveryFormPage";
+import { DeliveryListPage } from "@/modules/sales/pages/DeliveryListPage";
 import { QuoteDetailPage } from "@/modules/sales/pages/QuoteDetailPage";
 import { QuoteFormPage } from "@/modules/sales/pages/QuoteFormPage";
 import { QuoteListPage } from "@/modules/sales/pages/QuoteListPage";
@@ -655,6 +658,23 @@ const salesOrderEditRoute = createRoute({
   component: SalesOrderFormPage,
 });
 
+// Deliveries (slice 3)
+const salesDeliveriesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/deliveries",
+  component: DeliveryListPage,
+});
+const salesDeliveryNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/deliveries/new",
+  component: DeliveryFormPage,
+});
+const salesDeliveryDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/deliveries/$deliveryId",
+  component: DeliveryDetailPage,
+});
+
 // --- Every other module: placeholder until its own slice lands ----------------------------
 
 const moduleRoute = createRoute({
@@ -764,6 +784,9 @@ const routeTree = rootRoute.addChildren([
   salesOrderNewRoute,
   salesOrderDetailRoute,
   salesOrderEditRoute,
+  salesDeliveriesRoute,
+  salesDeliveryNewRoute,
+  salesDeliveryDetailRoute,
   moduleRoute,
 ]);
 
