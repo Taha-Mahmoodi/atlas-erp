@@ -77,7 +77,13 @@ import { CustomerListPage } from "@/modules/sales/pages/CustomerListPage";
 import { PriceListFormPage } from "@/modules/sales/pages/PriceListFormPage";
 import { PriceListListPage } from "@/modules/sales/pages/PriceListListPage";
 import { PriceQuoteLookupPage } from "@/modules/sales/pages/PriceQuoteLookupPage";
+import { QuoteDetailPage } from "@/modules/sales/pages/QuoteDetailPage";
+import { QuoteFormPage } from "@/modules/sales/pages/QuoteFormPage";
+import { QuoteListPage } from "@/modules/sales/pages/QuoteListPage";
 import { SalesHomePage } from "@/modules/sales/pages/SalesHomePage";
+import { SalesOrderDetailPage } from "@/modules/sales/pages/SalesOrderDetailPage";
+import { SalesOrderFormPage } from "@/modules/sales/pages/SalesOrderFormPage";
+import { SalesOrderListPage } from "@/modules/sales/pages/SalesOrderListPage";
 import { ProfitAndLossPage } from "@/modules/finance/pages/ProfitAndLossPage";
 import { TrialBalancePage } from "@/modules/finance/pages/TrialBalancePage";
 import { JournalEntryDetailPage } from "@/modules/finance/pages/JournalEntryDetailPage";
@@ -607,6 +613,48 @@ const salesPriceQuoteRoute = createRoute({
   component: PriceQuoteLookupPage,
 });
 
+// Quotes + sales orders (slice 2)
+const salesQuotesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/quotes",
+  component: QuoteListPage,
+});
+const salesQuoteNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/quotes/new",
+  component: QuoteFormPage,
+});
+const salesQuoteDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/quotes/$quoteId",
+  component: QuoteDetailPage,
+});
+const salesQuoteEditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/quotes/$quoteId/edit",
+  component: QuoteFormPage,
+});
+const salesOrdersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/orders",
+  component: SalesOrderListPage,
+});
+const salesOrderNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/orders/new",
+  component: SalesOrderFormPage,
+});
+const salesOrderDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/orders/$orderId",
+  component: SalesOrderDetailPage,
+});
+const salesOrderEditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/orders/$orderId/edit",
+  component: SalesOrderFormPage,
+});
+
 // --- Every other module: placeholder until its own slice lands ----------------------------
 
 const moduleRoute = createRoute({
@@ -708,6 +756,14 @@ const routeTree = rootRoute.addChildren([
   salesPriceListNewRoute,
   salesPriceListDetailRoute,
   salesPriceQuoteRoute,
+  salesQuotesRoute,
+  salesQuoteNewRoute,
+  salesQuoteDetailRoute,
+  salesQuoteEditRoute,
+  salesOrdersRoute,
+  salesOrderNewRoute,
+  salesOrderDetailRoute,
+  salesOrderEditRoute,
   moduleRoute,
 ]);
 

@@ -1,12 +1,17 @@
 /**
- * Typed endpoint calls for the sales module (STRUCTURE §4): customers, customer groups,
- * price lists + their line items, and the price-quote resolution lookup. Slice 1 of PLAN 15.7.
- * None of these are financial/stock-moving documents (D-013) — no idempotency keys, matching
- * the backend's actual routers (only quote/order/delivery/billing/return use Idempotent).
+ * Typed endpoint calls for the sales module (STRUCTURE §4): customers, customer groups, price
+ * lists + their line items, the price-quote resolution lookup (slice 1), and quotes + sales
+ * orders + ATP preview (slice 2). Customers/groups/price-lists are plain master data — no
+ * idempotency keys (D-013 applies to document-creating endpoints only, per the backend's
+ * actual routers). Quote/order create+send+accept+reject+convert+confirm+credit-release ARE
+ * idempotent; their `cancel`/`PATCH`/ATP-preview calls are not.
  */
 
-import { api, type Page } from "@/lib/apiClient";
+import { api, newIdempotencyKey, type Page } from "@/lib/apiClient";
 import type {
+  AtpCheckRequest,
+  AtpCheckResponse,
+  ConvertQuoteToOrder,
   Customer,
   CustomerCreate,
   CustomerGroup,
@@ -21,6 +26,16 @@ import type {
   PriceListStatus,
   PriceListUpdate,
   PriceQuote,
+  Quote,
+  QuoteCreate,
+  QuoteDetail,
+  QuoteStatus,
+  QuoteUpdate,
+  SalesOrder,
+  SalesOrderCreate,
+  SalesOrderDetail,
+  SalesOrderStatus,
+  SalesOrderUpdate,
 } from "@/modules/sales/types";
 
 export interface CustomerFilters {
@@ -119,4 +134,102 @@ export interface PriceQuoteParams {
 
 export function getPriceQuote(params: PriceQuoteParams): Promise<PriceQuote> {
   return api.get<PriceQuote>("/sales/price-quote", { params: { ...params } });
+}
+
+// --- Quotes -----------------------------------------------------------------------
+
+export interface QuoteFilters {
+  cursor?: string;
+  limit?: number;
+  status?: QuoteStatus;
+  customer_id?: string;
+}
+
+export function listQuotes(filters: QuoteFilters = {}): Promise<Page<Quote>> {
+  return api.get<Page<Quote>>("/sales/quotes", { params: { ...filters } });
+}
+
+export function getQuote(quoteId: string): Promise<QuoteDetail> {
+  return api.get<QuoteDetail>(`/sales/quotes/${quoteId}`);
+}
+
+export function createQuote(payload: QuoteCreate): Promise<QuoteDetail> {
+  return api.post<QuoteDetail>("/sales/quotes", payload, { idempotencyKey: newIdempotencyKey() });
+}
+
+export function updateQuote(quoteId: string, payload: QuoteUpdate): Promise<QuoteDetail> {
+  return api.patch<QuoteDetail>(`/sales/quotes/${quoteId}`, payload);
+}
+
+export function sendQuote(quoteId: string): Promise<QuoteDetail> {
+  return api.post<QuoteDetail>(`/sales/quotes/${quoteId}/send`, undefined, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function acceptQuote(quoteId: string): Promise<QuoteDetail> {
+  return api.post<QuoteDetail>(`/sales/quotes/${quoteId}/accept`, undefined, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function rejectQuote(quoteId: string): Promise<QuoteDetail> {
+  return api.post<QuoteDetail>(`/sales/quotes/${quoteId}/reject`, undefined, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function cancelQuote(quoteId: string): Promise<QuoteDetail> {
+  return api.post<QuoteDetail>(`/sales/quotes/${quoteId}/cancel`, undefined);
+}
+
+export function convertQuoteToOrder(quoteId: string, payload: ConvertQuoteToOrder): Promise<SalesOrderDetail> {
+  return api.post<SalesOrderDetail>(`/sales/quotes/${quoteId}/convert-to-order`, payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+// --- Sales orders -------------------------------------------------------------------
+
+export interface SalesOrderFilters {
+  cursor?: string;
+  limit?: number;
+  status?: SalesOrderStatus;
+  customer_id?: string;
+}
+
+export function listSalesOrders(filters: SalesOrderFilters = {}): Promise<Page<SalesOrder>> {
+  return api.get<Page<SalesOrder>>("/sales/orders", { params: { ...filters } });
+}
+
+export function getSalesOrder(orderId: string): Promise<SalesOrderDetail> {
+  return api.get<SalesOrderDetail>(`/sales/orders/${orderId}`);
+}
+
+export function createSalesOrder(payload: SalesOrderCreate): Promise<SalesOrderDetail> {
+  return api.post<SalesOrderDetail>("/sales/orders", payload, { idempotencyKey: newIdempotencyKey() });
+}
+
+export function updateSalesOrder(orderId: string, payload: SalesOrderUpdate): Promise<SalesOrderDetail> {
+  return api.patch<SalesOrderDetail>(`/sales/orders/${orderId}`, payload);
+}
+
+export function cancelSalesOrder(orderId: string): Promise<SalesOrderDetail> {
+  return api.post<SalesOrderDetail>(`/sales/orders/${orderId}/cancel`, undefined);
+}
+
+export function confirmSalesOrder(orderId: string): Promise<SalesOrderDetail> {
+  return api.post<SalesOrderDetail>(`/sales/orders/${orderId}/confirm`, undefined, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function releaseSalesOrderCredit(orderId: string): Promise<SalesOrderDetail> {
+  return api.post<SalesOrderDetail>(`/sales/orders/${orderId}/credit-release`, undefined, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function checkAtp(payload: AtpCheckRequest): Promise<AtpCheckResponse> {
+  return api.post<AtpCheckResponse>("/sales/orders/atp", payload);
 }

@@ -1,6 +1,7 @@
 /**
- * The sales module's own landing page (STRUCTURE §4: modules/sales/pages/). Slice 1/4 of PLAN
- * 15.7 — customers and pricing; quotes/orders/deliveries/billing/returns land in later slices.
+ * The sales module's own landing page (STRUCTURE §4: modules/sales/pages/). Slices 1-2/4 of
+ * PLAN 15.7 — customers, pricing, quotes, and orders; deliveries/billing/returns land in later
+ * slices.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -10,6 +11,8 @@ const SECTIONS = [
   { to: "/sales/customer-groups", label: "Customer Groups", description: "Grouping used by price lists" },
   { to: "/sales/price-lists", label: "Price Lists", description: "Condition-style pricing per currency/group/date" },
   { to: "/sales/price-quote", label: "Price Quote", description: "Look up what a customer would pay for an item" },
+  { to: "/sales/quotes", label: "Quotes", description: "Customer quotes and their conversion to orders" },
+  { to: "/sales/orders", label: "Sales Orders", description: "Confirmed commitments, ATP and credit checks" },
 ] as const;
 
 export function SalesHomePage() {
