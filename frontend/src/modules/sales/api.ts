@@ -1,16 +1,21 @@
 /**
  * Typed endpoint calls for the sales module (STRUCTURE §4): customers, customer groups, price
  * lists + their line items, the price-quote resolution lookup (slice 1), quotes + sales orders
- * + ATP preview (slice 2), and deliveries (slice 3). Customers/groups/price-lists are plain
- * master data — no idempotency keys (D-013 applies to document-creating endpoints only, per
- * the backend's actual routers). Quote/order/delivery create+post+send+accept+reject+convert+
- * confirm+credit-release ARE idempotent; every `cancel`/`PATCH`/ATP-preview call is not.
+ * + ATP preview (slice 2), deliveries (slice 3), and billing + RMA returns (slice 4, final).
+ * Customers/groups/price-lists are plain master data — no idempotency keys (D-013 applies to
+ * document-creating endpoints only, per the backend's actual routers). Every other create/
+ * post/send/accept/reject/convert/confirm/credit-release endpoint IS idempotent; every
+ * `cancel`/`PATCH`/ATP-preview call is not.
  */
 
 import { api, newIdempotencyKey, type Page } from "@/lib/apiClient";
 import type {
   AtpCheckRequest,
   AtpCheckResponse,
+  Billing,
+  BillingCreate,
+  BillingDetail,
+  BillingStatus,
   ConvertQuoteToOrder,
   Customer,
   CustomerCreate,
@@ -35,6 +40,10 @@ import type {
   QuoteDetail,
   QuoteStatus,
   QuoteUpdate,
+  Return,
+  ReturnCreate,
+  ReturnDetail,
+  ReturnStatus,
   SalesOrder,
   SalesOrderCreate,
   SalesOrderDetail,
@@ -269,4 +278,70 @@ export function postDelivery(deliveryId: string): Promise<DeliveryDetail> {
 
 export function cancelDelivery(deliveryId: string): Promise<DeliveryDetail> {
   return api.post<DeliveryDetail>(`/sales/deliveries/${deliveryId}/cancel`, undefined);
+}
+
+// --- Billing --------------------------------------------------------------------
+
+export interface BillingFilters {
+  cursor?: string;
+  limit?: number;
+  sales_order_id?: string;
+  status?: BillingStatus;
+  date_from?: string;
+  date_to?: string;
+}
+
+export function listBillings(filters: BillingFilters = {}): Promise<Page<Billing>> {
+  return api.get<Page<Billing>>("/sales/billings", { params: { ...filters } });
+}
+
+export function getBilling(billingId: string): Promise<BillingDetail> {
+  return api.get<BillingDetail>(`/sales/billings/${billingId}`);
+}
+
+export function createBilling(payload: BillingCreate): Promise<BillingDetail> {
+  return api.post<BillingDetail>("/sales/billings", payload, { idempotencyKey: newIdempotencyKey() });
+}
+
+export function postBilling(billingId: string): Promise<BillingDetail> {
+  return api.post<BillingDetail>(`/sales/billings/${billingId}/post`, undefined, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function cancelBilling(billingId: string): Promise<BillingDetail> {
+  return api.post<BillingDetail>(`/sales/billings/${billingId}/cancel`, undefined);
+}
+
+// --- Returns (RMA) ----------------------------------------------------------------
+
+export interface ReturnFilters {
+  cursor?: string;
+  limit?: number;
+  sales_order_id?: string;
+  status?: ReturnStatus;
+  date_from?: string;
+  date_to?: string;
+}
+
+export function listReturns(filters: ReturnFilters = {}): Promise<Page<Return>> {
+  return api.get<Page<Return>>("/sales/returns", { params: { ...filters } });
+}
+
+export function getReturn(returnId: string): Promise<ReturnDetail> {
+  return api.get<ReturnDetail>(`/sales/returns/${returnId}`);
+}
+
+export function createReturn(payload: ReturnCreate): Promise<ReturnDetail> {
+  return api.post<ReturnDetail>("/sales/returns", payload, { idempotencyKey: newIdempotencyKey() });
+}
+
+export function postReturn(returnId: string): Promise<ReturnDetail> {
+  return api.post<ReturnDetail>(`/sales/returns/${returnId}/post`, undefined, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function cancelReturn(returnId: string): Promise<ReturnDetail> {
+  return api.post<ReturnDetail>(`/sales/returns/${returnId}/cancel`, undefined);
 }

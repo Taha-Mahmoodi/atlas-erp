@@ -129,7 +129,7 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 - [x] 15.4 Finance UIs (COA, journal entries + posting, AP/AR workbenches, statements, bank rec, assets)
 - [x] 15.5 Inventory UIs (items, stock overview, moves, counts)
 - [x] 15.6 Procurement UIs (vendors, requisitions, RFQs, POs, receipts, match)
-- [ ] 15.7 Sales UIs (customers, pricing, quotes, orders, deliveries, invoices, returns)
+- [x] 15.7 Sales UIs (customers, pricing, quotes, orders, deliveries, invoices, returns)
 - [ ] 15.8 Manufacturing UIs (BOMs, work centers, routings, production orders, MRP results)
 - [ ] 15.9 Quality + Maintenance UIs (inspection lots, equipment, maintenance orders)
 - [ ] 15.10 HR UIs (employees, org chart, leave, time, payroll run)

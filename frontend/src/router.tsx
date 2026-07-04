@@ -77,6 +77,9 @@ import { CustomerListPage } from "@/modules/sales/pages/CustomerListPage";
 import { PriceListFormPage } from "@/modules/sales/pages/PriceListFormPage";
 import { PriceListListPage } from "@/modules/sales/pages/PriceListListPage";
 import { PriceQuoteLookupPage } from "@/modules/sales/pages/PriceQuoteLookupPage";
+import { BillingDetailPage } from "@/modules/sales/pages/BillingDetailPage";
+import { BillingFormPage } from "@/modules/sales/pages/BillingFormPage";
+import { BillingListPage } from "@/modules/sales/pages/BillingListPage";
 import { DeliveryDetailPage } from "@/modules/sales/pages/DeliveryDetailPage";
 import { DeliveryFormPage } from "@/modules/sales/pages/DeliveryFormPage";
 import { DeliveryListPage } from "@/modules/sales/pages/DeliveryListPage";
@@ -87,6 +90,9 @@ import { SalesHomePage } from "@/modules/sales/pages/SalesHomePage";
 import { SalesOrderDetailPage } from "@/modules/sales/pages/SalesOrderDetailPage";
 import { SalesOrderFormPage } from "@/modules/sales/pages/SalesOrderFormPage";
 import { SalesOrderListPage } from "@/modules/sales/pages/SalesOrderListPage";
+import { ReturnDetailPage } from "@/modules/sales/pages/ReturnDetailPage";
+import { ReturnFormPage } from "@/modules/sales/pages/ReturnFormPage";
+import { ReturnListPage } from "@/modules/sales/pages/ReturnListPage";
 import { ProfitAndLossPage } from "@/modules/finance/pages/ProfitAndLossPage";
 import { TrialBalancePage } from "@/modules/finance/pages/TrialBalancePage";
 import { JournalEntryDetailPage } from "@/modules/finance/pages/JournalEntryDetailPage";
@@ -675,6 +681,38 @@ const salesDeliveryDetailRoute = createRoute({
   component: DeliveryDetailPage,
 });
 
+// Billing + returns (slice 4, FINAL)
+const salesBillingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/billings",
+  component: BillingListPage,
+});
+const salesBillingNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/billings/new",
+  component: BillingFormPage,
+});
+const salesBillingDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/billings/$billingId",
+  component: BillingDetailPage,
+});
+const salesReturnsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/returns",
+  component: ReturnListPage,
+});
+const salesReturnNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/returns/new",
+  component: ReturnFormPage,
+});
+const salesReturnDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/returns/$returnId",
+  component: ReturnDetailPage,
+});
+
 // --- Every other module: placeholder until its own slice lands ----------------------------
 
 const moduleRoute = createRoute({
@@ -787,6 +825,12 @@ const routeTree = rootRoute.addChildren([
   salesDeliveriesRoute,
   salesDeliveryNewRoute,
   salesDeliveryDetailRoute,
+  salesBillingsRoute,
+  salesBillingNewRoute,
+  salesBillingDetailRoute,
+  salesReturnsRoute,
+  salesReturnNewRoute,
+  salesReturnDetailRoute,
   moduleRoute,
 ]);
 

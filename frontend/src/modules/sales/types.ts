@@ -372,3 +372,134 @@ export interface Delivery {
 export interface DeliveryDetail extends Delivery {
   lines: DeliveryLine[];
 }
+
+// --- Billing (slice 4/4, final) -----------------------------------------------------
+//
+// DRAFT -> POSTED (terminal) or CANCELLED (from DRAFT only). A wholly separate sales-side
+// model from finance's CustomerInvoice — linked only via docflow, never a cross-module FK.
+// Posting raises the order line's invoiced_quantity and publishes BillingInvoiced, which
+// finance turns into a real posted CustomerInvoice (Dr AR control gross / Cr sales revenue
+// net / Cr output tax) in the same transaction. A billing anchors to order LINES (not a
+// specific delivery) and can span multiple deliveries; delivery_line_id is an optional
+// docflow pointer, not a hard requirement. Cap: quantity <= delivered_quantity -
+// invoiced_quantity, enforced at create AND re-checked at post (422 sales.over_billing).
+
+export type BillingStatus = "DRAFT" | "POSTED" | "CANCELLED";
+
+export interface BillingLineCreate {
+  sales_order_line_id: string;
+  delivery_line_id?: string | null;
+  quantity: string;
+}
+
+export interface BillingCreate {
+  sales_order_id: string;
+  billing_date?: string | null;
+  notes?: string | null;
+  // true bills every line's full delivered-minus-invoiced gap and ignores `lines`.
+  bill_all_delivered?: boolean;
+  lines: BillingLineCreate[];
+}
+
+export interface BillingLine {
+  id: string;
+  line_number: number;
+  sales_order_line_id: string;
+  delivery_line_id: string | null;
+  // Server-snapshotted from the order line, never client-supplied.
+  item_id: string;
+  quantity: string;
+  unit_price: string;
+  discount_type: "PERCENT" | "AMOUNT" | null;
+  discount_value: string | null;
+  tax_code_id: string | null;
+  line_amount: string;
+}
+
+export interface Billing {
+  id: string;
+  billing_number: string;
+  status: BillingStatus;
+  sales_order_id: string;
+  customer_id: string;
+  currency_code: string;
+  billing_date: string;
+  payment_terms_days: number;
+  total_amount: string;
+  notes: string | null;
+  posted_at: string | null;
+  document_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BillingDetail extends Billing {
+  lines: BillingLine[];
+}
+
+// --- Returns (RMA, slice 4/4, final) -------------------------------------------------
+//
+// DRAFT -> POSTED (terminal) or CANCELLED (from DRAFT only). Anchors to the ORDER (+ order
+// line), not a specific billing/invoice or delivery — cap is invoiced-not-yet-returned:
+// quantity <= invoiced_quantity - returned_quantity, enforced at create AND re-checked at
+// post (422 sales.over_return). Posting reverses BOTH legs in one transaction: publishes
+// ReturnReceived (inventory RECEIPT move at book cost, Dr Inventory / Cr COGS, reversing the
+// original delivery's issue) and ReturnCredited (finance posts a CustomerInvoice-shaped
+// credit note, Dr revenue / Dr output tax / Cr AR control -- same machinery as billing, just
+// sign-flipped; "credit note" is not a separate model). Raises returned_quantity.
+
+export type ReturnStatus = "DRAFT" | "POSTED" | "CANCELLED";
+
+export interface ReturnLineCreate {
+  sales_order_line_id: string;
+  bin_id: string;
+  quantity: string;
+  lot_code?: string | null;
+  serial_code?: string | null;
+}
+
+export interface ReturnCreate {
+  sales_order_id: string;
+  warehouse_id: string;
+  return_date?: string | null;
+  reason?: string | null;
+  notes?: string | null;
+  lines: ReturnLineCreate[];
+}
+
+export interface ReturnLine {
+  id: string;
+  line_number: number;
+  sales_order_line_id: string;
+  // Server-snapshotted from the order line, never client-supplied.
+  item_id: string;
+  bin_id: string;
+  quantity: string;
+  unit_price: string;
+  tax_code_id: string | null;
+  line_amount: string;
+  lot_code: string | null;
+  serial_code: string | null;
+}
+
+export interface Return {
+  id: string;
+  return_number: string;
+  status: ReturnStatus;
+  sales_order_id: string;
+  customer_id: string;
+  warehouse_id: string;
+  currency_code: string;
+  return_date: string;
+  reason: string | null;
+  total_amount: string;
+  notes: string | null;
+  posted_at: string | null;
+  document_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReturnDetail extends Return {
+  lines: ReturnLine[];
+}

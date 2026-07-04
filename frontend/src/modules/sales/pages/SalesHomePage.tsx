@@ -1,7 +1,7 @@
 /**
- * The sales module's own landing page (STRUCTURE §4: modules/sales/pages/). Slices 1-3/4 of
- * PLAN 15.7 — customers, pricing, quotes, orders, and deliveries; billing/returns land in the
- * final slice.
+ * The sales module's own landing page (STRUCTURE §4: modules/sales/pages/). Final slice of
+ * PLAN 15.7 — every area now has real UI: customers, pricing, quotes, orders, deliveries,
+ * billing, and returns.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -14,6 +14,8 @@ const SECTIONS = [
   { to: "/sales/quotes", label: "Quotes", description: "Customer quotes and their conversion to orders" },
   { to: "/sales/orders", label: "Sales Orders", description: "Confirmed commitments, ATP and credit checks" },
   { to: "/sales/deliveries", label: "Deliveries", description: "Shipping against confirmed orders" },
+  { to: "/sales/billings", label: "Billings", description: "Invoice deliveries; posts a real AR invoice in finance" },
+  { to: "/sales/returns", label: "Returns", description: "RMA — reverses both COGS and revenue" },
 ] as const;
 
 export function SalesHomePage() {
