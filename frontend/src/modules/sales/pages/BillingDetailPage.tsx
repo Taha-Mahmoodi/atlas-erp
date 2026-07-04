@@ -1,0 +1,141 @@
+/**
+ * The billing workbench (STRUCTURE §4): post or cancel a draft billing. Posting is synchronous
+ * — it publishes BillingInvoiced in the same transaction, which finance turns into a real
+ * posted CustomerInvoice (Dr AR control gross / Cr sales revenue net / Cr output tax). There is
+ * no "view AR invoice" link here since the two are only connected via docflow, not a shared id
+ * (D-042 precedent) — the resulting invoice is visible via finance's own AR pages. POSTED is
+ * terminal (corrections happen via a return); CANCELLED only from DRAFT.
+ */
+
+import { useParams } from "@tanstack/react-router";
+import { useState } from "react";
+
+import { getErrorMessage } from "@/lib/apiClient";
+import { formatMoney, formatQuantity } from "@/lib/format";
+import { useMe } from "@/lib/session";
+import { useItemLookup } from "@/modules/inventory/hooks";
+import { useBilling, useCancelBilling, useCustomerOptions, usePostBilling } from "@/modules/sales/hooks";
+
+export function BillingDetailPage() {
+  const { billingId } = useParams({ strict: false });
+  const me = useMe();
+  const canManage = (me.data?.permissions ?? []).includes("sales.billing.manage");
+  const canPost = (me.data?.permissions ?? []).includes("sales.billing.post");
+
+  const billing = useBilling(billingId);
+  const items = useItemLookup();
+  const customers = useCustomerOptions();
+  const postBilling = usePostBilling(billingId ?? "");
+  const cancelBilling = useCancelBilling(billingId ?? "");
+
+  const [error, setError] = useState<string | null>(null);
+
+  if (billing.isPending || !billing.data) {
+    return <p className="text-sm text-ink-muted">Loading…</p>;
+  }
+  const data = billing.data;
+  const isDraft = data.status === "DRAFT";
+
+  const itemLabel = (id: string) => {
+    const item = items.data?.items.find((i) => i.id === id);
+    return item ? `${item.item_code} — ${item.name}` : id;
+  };
+  const customerLabel = (id: string) => {
+    const customer = customers.data?.items.find((c) => c.id === id);
+    return customer ? `${customer.customer_code} — ${customer.name}` : id;
+  };
+
+  const post = async () => {
+    setError(null);
+    try {
+      await postBilling.mutateAsync();
+    } catch (caught) {
+      setError(getErrorMessage(caught, "Unable to post the billing."));
+    }
+  };
+
+  const cancel = async () => {
+    setError(null);
+    try {
+      await cancelBilling.mutateAsync();
+    } catch (caught) {
+      setError(getErrorMessage(caught, "Unable to cancel the billing."));
+    }
+  };
+
+  return (
+    <div className="mx-auto max-w-4xl">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-ink">{data.billing_number}</h1>
+        <div className="flex gap-2">
+          {isDraft && canManage && (
+            <button
+              type="button"
+              onClick={() => void cancel()}
+              disabled={cancelBilling.isPending}
+              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              Cancel
+            </button>
+          )}
+          {isDraft && canPost && (
+            <button
+              type="button"
+              onClick={() => void post()}
+              disabled={postBilling.isPending}
+              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              {postBilling.isPending ? "Posting…" : "Post"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {error && (
+        <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
+          {error}
+        </p>
+      )}
+
+      <dl className="mt-6 grid grid-cols-4 gap-4 text-sm">
+        <div>
+          <dt className="text-xs text-ink-muted">Status</dt>
+          <dd className="text-ink">{data.status}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-ink-muted">Customer</dt>
+          <dd className="text-ink">{customerLabel(data.customer_id)}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-ink-muted">Billing date</dt>
+          <dd className="text-ink">{data.billing_date}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-ink-muted">Total</dt>
+          <dd className="text-ink">{formatMoney(data.total_amount, data.currency_code)}</dd>
+        </div>
+      </dl>
+
+      <table className="mt-6 w-full border-collapse text-[13px]">
+        <thead>
+          <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+            <th className="py-2 pr-2">Item</th>
+            <th className="py-2 pr-2 text-right">Quantity</th>
+            <th className="py-2 pr-2 text-right">Unit price</th>
+            <th className="py-2 pr-2 text-right">Line amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.lines.map((line) => (
+            <tr key={line.id} className="border-b border-line last:border-b-0">
+              <td className="py-1.5 pr-2 text-ink">{itemLabel(line.item_id)}</td>
+              <td className="py-1.5 pr-2 text-right tabular-nums">{formatQuantity(line.quantity)}</td>
+              <td className="py-1.5 pr-2 text-right tabular-nums">{formatMoney(line.unit_price, data.currency_code)}</td>
+              <td className="py-1.5 pr-2 text-right tabular-nums">{formatMoney(line.line_amount, data.currency_code)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}

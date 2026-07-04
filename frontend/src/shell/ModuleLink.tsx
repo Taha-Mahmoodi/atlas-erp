@@ -33,6 +33,18 @@ export function ModuleLink({
           {children}
         </Link>
       );
+    case "procurement":
+      return (
+        <Link to="/procurement" {...(className ? { className } : {})}>
+          {children}
+        </Link>
+      );
+    case "sales":
+      return (
+        <Link to="/sales" {...(className ? { className } : {})}>
+          {children}
+        </Link>
+      );
     default:
       return (
         <Link

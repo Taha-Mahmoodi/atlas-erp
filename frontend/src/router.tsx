@@ -49,6 +49,50 @@ import { UomFormPage } from "@/modules/inventory/pages/UomFormPage";
 import { UomListPage } from "@/modules/inventory/pages/UomListPage";
 import { WarehouseFormPage } from "@/modules/inventory/pages/WarehouseFormPage";
 import { WarehouseListPage } from "@/modules/inventory/pages/WarehouseListPage";
+import { ApprovalRuleFormPage } from "@/modules/procurement/pages/ApprovalRuleFormPage";
+import { ApprovalRuleListPage } from "@/modules/procurement/pages/ApprovalRuleListPage";
+import { GoodsReceiptDetailPage } from "@/modules/procurement/pages/GoodsReceiptDetailPage";
+import { GoodsReceiptFormPage } from "@/modules/procurement/pages/GoodsReceiptFormPage";
+import { GoodsReceiptListPage } from "@/modules/procurement/pages/GoodsReceiptListPage";
+import { InvoiceMatchDetailPage } from "@/modules/procurement/pages/InvoiceMatchDetailPage";
+import { InvoiceMatchFormPage } from "@/modules/procurement/pages/InvoiceMatchFormPage";
+import { InvoiceMatchListPage } from "@/modules/procurement/pages/InvoiceMatchListPage";
+import { MatchToleranceFormPage } from "@/modules/procurement/pages/MatchToleranceFormPage";
+import { ProcurementHomePage } from "@/modules/procurement/pages/ProcurementHomePage";
+import { PurchaseOrderDetailPage } from "@/modules/procurement/pages/PurchaseOrderDetailPage";
+import { PurchaseOrderFormPage } from "@/modules/procurement/pages/PurchaseOrderFormPage";
+import { PurchaseOrderListPage } from "@/modules/procurement/pages/PurchaseOrderListPage";
+import { RequisitionDetailPage } from "@/modules/procurement/pages/RequisitionDetailPage";
+import { RequisitionFormPage } from "@/modules/procurement/pages/RequisitionFormPage";
+import { RequisitionListPage } from "@/modules/procurement/pages/RequisitionListPage";
+import { RfqDetailPage } from "@/modules/procurement/pages/RfqDetailPage";
+import { RfqFormPage } from "@/modules/procurement/pages/RfqFormPage";
+import { RfqListPage } from "@/modules/procurement/pages/RfqListPage";
+import { VendorFormPage as ProcurementVendorFormPage } from "@/modules/procurement/pages/VendorFormPage";
+import { VendorListPage as ProcurementVendorListPage } from "@/modules/procurement/pages/VendorListPage";
+import { CustomerFormPage } from "@/modules/sales/pages/CustomerFormPage";
+import { CustomerGroupFormPage } from "@/modules/sales/pages/CustomerGroupFormPage";
+import { CustomerGroupListPage } from "@/modules/sales/pages/CustomerGroupListPage";
+import { CustomerListPage } from "@/modules/sales/pages/CustomerListPage";
+import { PriceListFormPage } from "@/modules/sales/pages/PriceListFormPage";
+import { PriceListListPage } from "@/modules/sales/pages/PriceListListPage";
+import { PriceQuoteLookupPage } from "@/modules/sales/pages/PriceQuoteLookupPage";
+import { BillingDetailPage } from "@/modules/sales/pages/BillingDetailPage";
+import { BillingFormPage } from "@/modules/sales/pages/BillingFormPage";
+import { BillingListPage } from "@/modules/sales/pages/BillingListPage";
+import { DeliveryDetailPage } from "@/modules/sales/pages/DeliveryDetailPage";
+import { DeliveryFormPage } from "@/modules/sales/pages/DeliveryFormPage";
+import { DeliveryListPage } from "@/modules/sales/pages/DeliveryListPage";
+import { QuoteDetailPage } from "@/modules/sales/pages/QuoteDetailPage";
+import { QuoteFormPage } from "@/modules/sales/pages/QuoteFormPage";
+import { QuoteListPage } from "@/modules/sales/pages/QuoteListPage";
+import { SalesHomePage } from "@/modules/sales/pages/SalesHomePage";
+import { SalesOrderDetailPage } from "@/modules/sales/pages/SalesOrderDetailPage";
+import { SalesOrderFormPage } from "@/modules/sales/pages/SalesOrderFormPage";
+import { SalesOrderListPage } from "@/modules/sales/pages/SalesOrderListPage";
+import { ReturnDetailPage } from "@/modules/sales/pages/ReturnDetailPage";
+import { ReturnFormPage } from "@/modules/sales/pages/ReturnFormPage";
+import { ReturnListPage } from "@/modules/sales/pages/ReturnListPage";
 import { ProfitAndLossPage } from "@/modules/finance/pages/ProfitAndLossPage";
 import { TrialBalancePage } from "@/modules/finance/pages/TrialBalancePage";
 import { JournalEntryDetailPage } from "@/modules/finance/pages/JournalEntryDetailPage";
@@ -385,6 +429,290 @@ const inventoryStockCountDetailRoute = createRoute({
   component: StockCountDetailPage,
 });
 
+// --- Procurement (PLAN 15.6) ---------------------------------------------------------------
+
+const procurementHomeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement",
+  component: ProcurementHomePage,
+});
+
+// Vendors + approval rules (slice 1)
+const procurementVendorsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/vendors",
+  component: ProcurementVendorListPage,
+});
+const procurementVendorNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/vendors/new",
+  component: ProcurementVendorFormPage,
+});
+const procurementVendorDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/vendors/$vendorId",
+  component: ProcurementVendorFormPage,
+});
+// Requisitions (slice 2)
+const procurementRequisitionsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/requisitions",
+  component: RequisitionListPage,
+});
+const procurementRequisitionNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/requisitions/new",
+  component: RequisitionFormPage,
+});
+const procurementRequisitionDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/requisitions/$requisitionId",
+  component: RequisitionDetailPage,
+});
+const procurementRequisitionEditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/requisitions/$requisitionId/edit",
+  component: RequisitionFormPage,
+});
+
+// RFQs + purchase orders (slice 3)
+const procurementRfqsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/rfqs",
+  component: RfqListPage,
+});
+const procurementRfqNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/rfqs/new",
+  component: RfqFormPage,
+});
+const procurementRfqDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/rfqs/$rfqId",
+  component: RfqDetailPage,
+});
+const procurementPurchaseOrdersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/purchase-orders",
+  component: PurchaseOrderListPage,
+});
+const procurementPurchaseOrderNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/purchase-orders/new",
+  component: PurchaseOrderFormPage,
+});
+const procurementPurchaseOrderDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/purchase-orders/$purchaseOrderId",
+  component: PurchaseOrderDetailPage,
+});
+
+// Goods receipts (slice 4)
+const procurementGoodsReceiptsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/goods-receipts",
+  component: GoodsReceiptListPage,
+});
+const procurementGoodsReceiptNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/goods-receipts/new",
+  component: GoodsReceiptFormPage,
+});
+const procurementGoodsReceiptDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/goods-receipts/$goodsReceiptId",
+  component: GoodsReceiptDetailPage,
+});
+
+// Invoice matches + match tolerance (slice 5, FINAL)
+const procurementInvoiceMatchesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/invoice-matches",
+  component: InvoiceMatchListPage,
+});
+const procurementInvoiceMatchNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/invoice-matches/new",
+  component: InvoiceMatchFormPage,
+});
+const procurementInvoiceMatchDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/invoice-matches/$invoiceMatchId",
+  component: InvoiceMatchDetailPage,
+});
+const procurementMatchTolerancesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/match-tolerances",
+  component: MatchToleranceFormPage,
+});
+
+const procurementApprovalRulesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/approval-rules",
+  component: ApprovalRuleListPage,
+});
+const procurementApprovalRuleNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/approval-rules/new",
+  component: ApprovalRuleFormPage,
+});
+const procurementApprovalRuleDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/procurement/approval-rules/$ruleId",
+  component: ApprovalRuleFormPage,
+});
+
+// --- Sales (PLAN 15.7) ----------------------------------------------------------------------
+
+const salesHomeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales",
+  component: SalesHomePage,
+});
+
+// Customers + customer groups + pricing (slice 1)
+const salesCustomersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/customers",
+  component: CustomerListPage,
+});
+const salesCustomerNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/customers/new",
+  component: CustomerFormPage,
+});
+const salesCustomerDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/customers/$customerId",
+  component: CustomerFormPage,
+});
+const salesCustomerGroupsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/customer-groups",
+  component: CustomerGroupListPage,
+});
+const salesCustomerGroupNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/customer-groups/new",
+  component: CustomerGroupFormPage,
+});
+const salesCustomerGroupDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/customer-groups/$customerGroupId",
+  component: CustomerGroupFormPage,
+});
+const salesPriceListsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/price-lists",
+  component: PriceListListPage,
+});
+const salesPriceListNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/price-lists/new",
+  component: PriceListFormPage,
+});
+const salesPriceListDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/price-lists/$priceListId",
+  component: PriceListFormPage,
+});
+const salesPriceQuoteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/price-quote",
+  component: PriceQuoteLookupPage,
+});
+
+// Quotes + sales orders (slice 2)
+const salesQuotesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/quotes",
+  component: QuoteListPage,
+});
+const salesQuoteNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/quotes/new",
+  component: QuoteFormPage,
+});
+const salesQuoteDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/quotes/$quoteId",
+  component: QuoteDetailPage,
+});
+const salesQuoteEditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/quotes/$quoteId/edit",
+  component: QuoteFormPage,
+});
+const salesOrdersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/orders",
+  component: SalesOrderListPage,
+});
+const salesOrderNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/orders/new",
+  component: SalesOrderFormPage,
+});
+const salesOrderDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/orders/$orderId",
+  component: SalesOrderDetailPage,
+});
+const salesOrderEditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/orders/$orderId/edit",
+  component: SalesOrderFormPage,
+});
+
+// Deliveries (slice 3)
+const salesDeliveriesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/deliveries",
+  component: DeliveryListPage,
+});
+const salesDeliveryNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/deliveries/new",
+  component: DeliveryFormPage,
+});
+const salesDeliveryDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/deliveries/$deliveryId",
+  component: DeliveryDetailPage,
+});
+
+// Billing + returns (slice 4, FINAL)
+const salesBillingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/billings",
+  component: BillingListPage,
+});
+const salesBillingNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/billings/new",
+  component: BillingFormPage,
+});
+const salesBillingDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/billings/$billingId",
+  component: BillingDetailPage,
+});
+const salesReturnsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/returns",
+  component: ReturnListPage,
+});
+const salesReturnNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/returns/new",
+  component: ReturnFormPage,
+});
+const salesReturnDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/returns/$returnId",
+  component: ReturnDetailPage,
+});
+
 // --- Every other module: placeholder until its own slice lands ----------------------------
 
 const moduleRoute = createRoute({
@@ -451,6 +779,58 @@ const routeTree = rootRoute.addChildren([
   inventoryStockCountsRoute,
   inventoryStockCountNewRoute,
   inventoryStockCountDetailRoute,
+  procurementHomeRoute,
+  procurementVendorsRoute,
+  procurementVendorNewRoute,
+  procurementVendorDetailRoute,
+  procurementRequisitionsRoute,
+  procurementRequisitionNewRoute,
+  procurementRequisitionDetailRoute,
+  procurementRequisitionEditRoute,
+  procurementRfqsRoute,
+  procurementRfqNewRoute,
+  procurementRfqDetailRoute,
+  procurementPurchaseOrdersRoute,
+  procurementPurchaseOrderNewRoute,
+  procurementPurchaseOrderDetailRoute,
+  procurementGoodsReceiptsRoute,
+  procurementGoodsReceiptNewRoute,
+  procurementGoodsReceiptDetailRoute,
+  procurementInvoiceMatchesRoute,
+  procurementInvoiceMatchNewRoute,
+  procurementInvoiceMatchDetailRoute,
+  procurementMatchTolerancesRoute,
+  procurementApprovalRulesRoute,
+  procurementApprovalRuleNewRoute,
+  procurementApprovalRuleDetailRoute,
+  salesHomeRoute,
+  salesCustomersRoute,
+  salesCustomerNewRoute,
+  salesCustomerDetailRoute,
+  salesCustomerGroupsRoute,
+  salesCustomerGroupNewRoute,
+  salesCustomerGroupDetailRoute,
+  salesPriceListsRoute,
+  salesPriceListNewRoute,
+  salesPriceListDetailRoute,
+  salesPriceQuoteRoute,
+  salesQuotesRoute,
+  salesQuoteNewRoute,
+  salesQuoteDetailRoute,
+  salesQuoteEditRoute,
+  salesOrdersRoute,
+  salesOrderNewRoute,
+  salesOrderDetailRoute,
+  salesOrderEditRoute,
+  salesDeliveriesRoute,
+  salesDeliveryNewRoute,
+  salesDeliveryDetailRoute,
+  salesBillingsRoute,
+  salesBillingNewRoute,
+  salesBillingDetailRoute,
+  salesReturnsRoute,
+  salesReturnNewRoute,
+  salesReturnDetailRoute,
   moduleRoute,
 ]);
 
