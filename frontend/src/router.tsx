@@ -70,6 +70,14 @@ import { RfqFormPage } from "@/modules/procurement/pages/RfqFormPage";
 import { RfqListPage } from "@/modules/procurement/pages/RfqListPage";
 import { VendorFormPage as ProcurementVendorFormPage } from "@/modules/procurement/pages/VendorFormPage";
 import { VendorListPage as ProcurementVendorListPage } from "@/modules/procurement/pages/VendorListPage";
+import { CustomerFormPage } from "@/modules/sales/pages/CustomerFormPage";
+import { CustomerGroupFormPage } from "@/modules/sales/pages/CustomerGroupFormPage";
+import { CustomerGroupListPage } from "@/modules/sales/pages/CustomerGroupListPage";
+import { CustomerListPage } from "@/modules/sales/pages/CustomerListPage";
+import { PriceListFormPage } from "@/modules/sales/pages/PriceListFormPage";
+import { PriceListListPage } from "@/modules/sales/pages/PriceListListPage";
+import { PriceQuoteLookupPage } from "@/modules/sales/pages/PriceQuoteLookupPage";
+import { SalesHomePage } from "@/modules/sales/pages/SalesHomePage";
 import { ProfitAndLossPage } from "@/modules/finance/pages/ProfitAndLossPage";
 import { TrialBalancePage } from "@/modules/finance/pages/TrialBalancePage";
 import { JournalEntryDetailPage } from "@/modules/finance/pages/JournalEntryDetailPage";
@@ -539,6 +547,66 @@ const procurementApprovalRuleDetailRoute = createRoute({
   component: ApprovalRuleFormPage,
 });
 
+// --- Sales (PLAN 15.7) ----------------------------------------------------------------------
+
+const salesHomeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales",
+  component: SalesHomePage,
+});
+
+// Customers + customer groups + pricing (slice 1)
+const salesCustomersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/customers",
+  component: CustomerListPage,
+});
+const salesCustomerNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/customers/new",
+  component: CustomerFormPage,
+});
+const salesCustomerDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/customers/$customerId",
+  component: CustomerFormPage,
+});
+const salesCustomerGroupsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/customer-groups",
+  component: CustomerGroupListPage,
+});
+const salesCustomerGroupNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/customer-groups/new",
+  component: CustomerGroupFormPage,
+});
+const salesCustomerGroupDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/customer-groups/$customerGroupId",
+  component: CustomerGroupFormPage,
+});
+const salesPriceListsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/price-lists",
+  component: PriceListListPage,
+});
+const salesPriceListNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/price-lists/new",
+  component: PriceListFormPage,
+});
+const salesPriceListDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/price-lists/$priceListId",
+  component: PriceListFormPage,
+});
+const salesPriceQuoteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sales/price-quote",
+  component: PriceQuoteLookupPage,
+});
+
 // --- Every other module: placeholder until its own slice lands ----------------------------
 
 const moduleRoute = createRoute({
@@ -629,6 +697,17 @@ const routeTree = rootRoute.addChildren([
   procurementApprovalRulesRoute,
   procurementApprovalRuleNewRoute,
   procurementApprovalRuleDetailRoute,
+  salesHomeRoute,
+  salesCustomersRoute,
+  salesCustomerNewRoute,
+  salesCustomerDetailRoute,
+  salesCustomerGroupsRoute,
+  salesCustomerGroupNewRoute,
+  salesCustomerGroupDetailRoute,
+  salesPriceListsRoute,
+  salesPriceListNewRoute,
+  salesPriceListDetailRoute,
+  salesPriceQuoteRoute,
   moduleRoute,
 ]);
 
