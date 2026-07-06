@@ -27,6 +27,28 @@ services:
     ports:
       - "8000:8000"
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      # slim image has no curl — probe the health endpoint with stdlib urllib.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/v1/health').status==200 else 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # One-shot demo seed: waits for the API to be healthy, then bootstraps the acme tenant +
+  # superuser and populates every module. Opt-in via ATLAS_SEED_DEMO (default 1 here);
+  # seed.py refuses to run against a prod DB unless ATLAS_SEED_DEMO=force. Runs once and exits.
+  seed:
+    build: ./backend
+    environment:
+      ATLAS_DATABASE_URL: postgresql+asyncpg://atlas:atlas@db:5432/atlas
+      ATLAS_JWT_SECRET: ${ATLAS_JWT_SECRET:-insecure-demo-secret-change-me}
+      ATLAS_API: http://backend:8000/api/v1
+      ATLAS_SEED_DEMO: ${ATLAS_SEED_DEMO:-1}
+    depends_on:
+      backend:
+        condition: service_healthy
+    command: python seed.py
+    restart: "no"
 
   # frontend service arrives in Phase 15 (frontend design system + module UIs).
 
