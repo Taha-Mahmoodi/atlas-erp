@@ -156,7 +156,7 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 
 Design spec: `docs/research/fieldforce-tracking-design-spec.md`. New module `fieldforce`: real-time marketer/sales-rep tracking (location, zones, tasks, goals) via an Android tablet client, plus a standalone-sellable distribution profile of the same code.
 
-- [ ] 18.0 STRUCTURE.md amendment (add `tablet/` to the canonical tree) + GITHUB-WORKFLOW.md amendment (permit long-lived `product/*` packaging branches) + `product/fieldforce-standalone` branch cut from `dev`
+- [x] 18.0 STRUCTURE.md amendment (add `tablet/` to the canonical tree) + GITHUB-WORKFLOW.md amendment (permit long-lived `product/*` packaging branches) + `product/fieldforce-standalone` branch cut from `dev`
 - [ ] 18.1 Slice A — `fieldforce` core: field-rep profiles (linked to HR employees), regions/territories/zones (flat assignment + optional hierarchy), location-ping ingestion + archival job, live-map endpoint, geofence-violation detection; tablet-client spike validating Android background location behavior first
 - [ ] 18.2 Slice B — visits (geofence-gated check-in/out, optional CRM/Sales links, photos) and tasks
 - [ ] 18.3 Slice C — goal/KPI definitions (activity-count, sales-value via `sales/queries.py`, custom via Reporting's generic report builder) and target-vs-achievement reporting
