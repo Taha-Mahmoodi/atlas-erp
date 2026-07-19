@@ -14,6 +14,7 @@ Place this file at the repo root alongside CLAUDE.md, and add this line to CLAUD
 - **`main` = production.** Always releasable. Nothing is ever committed directly to `main`. It only ever receives merges from `dev` via a promotion PR (section 5).
 - **`dev` = integration.** All work lands here first, via short-lived feature branches.
 - **Feature branches** are cut from `dev`, named `feat/<module>-<short-slug>`, `fix/<issue-number>-<short-slug>`, or `docs/<short-slug>`. One branch = one task from PLAN.md or one issue. Delete the branch after its PR merges. Never let a feature branch live longer than one task — long-lived feature branches are how you lose state across compactions.
+- **Product packaging branches** (`product/<slug>`) are long-lived, like `main`/`dev`, but carry ONLY packaging/config diffs (docker-compose profiles, README framing, default industry-template/module-toggle selection) on top of `dev` — never their own logic changes. Periodically fast-forward-merged from `dev` (never the reverse), same CI-must-pass rule as `main`/`dev`. Used to distribute a subset of Atlas as a standalone product (e.g. `product/fieldforce-standalone`, D-063).
 - Set `main` as the default branch on GitHub, and enable branch protection on both `main` and `dev` requiring CI to pass before merge (`gh api` or repo settings).
 
 # 3. Commit Discipline
