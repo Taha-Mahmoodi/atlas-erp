@@ -9,7 +9,7 @@ Place this file at the repo root alongside CLAUDE.md, and add this line to CLAUD
 3. Create labels: `bug`, `enhancement`, `tech-debt`, `module:finance`, `module:inventory`, `module:procurement`, `module:sales`, `module:manufacturing`, `module:hr`, `module:core`, `module:frontend`, `module:docs`, `severity:blocker`, `severity:major`, `severity:minor`, `found-during-build`.
 4. Create a CI workflow at `.github/workflows/ci.yml` that runs on every PR: backend lint (ruff) + pytest, frontend typecheck + build. A red CI run blocks merging — no exceptions, including for you.
 
-# 2. Branch Model — exactly two long-lived branches
+# 2. Branch Model — two core long-lived branches, plus long-lived product-packaging branches
 
 - **`main` = production.** Always releasable. Nothing is ever committed directly to `main`. It only ever receives merges from `dev` via a promotion PR (section 5).
 - **`dev` = integration.** All work lands here first, via short-lived feature branches.
