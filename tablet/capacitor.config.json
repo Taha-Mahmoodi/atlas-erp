@@ -1,0 +1,8 @@
+{
+  "appId": "com.atlaserp.fieldforce",
+  "appName": "Atlas Field Force",
+  "webDir": "dist",
+  "android": {
+    "useLegacyBridge": true
+  }
+}

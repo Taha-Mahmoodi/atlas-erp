@@ -102,3 +102,27 @@ jobs:
           if [ ! -f frontend/package.json ]; then echo "frontend not present yet — skipping"; exit 0; fi
           cd frontend
           npm run build
+
+  tablet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Typecheck
+        run: |
+          if [ ! -f tablet/package.json ]; then echo "tablet not present yet — skipping"; exit 0; fi
+          cd tablet
+          npm ci
+          npm run typecheck
+      - name: Tests (vitest)
+        run: |
+          if [ ! -f tablet/package.json ]; then echo "tablet not present yet — skipping"; exit 0; fi
+          cd tablet
+          npm run test
+      - name: Build
+        run: |
+          if [ ! -f tablet/package.json ]; then echo "tablet not present yet — skipping"; exit 0; fi
+          cd tablet
+          npm run build
