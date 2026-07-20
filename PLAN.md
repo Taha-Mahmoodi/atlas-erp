@@ -152,21 +152,6 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 
 **Promotion → `main` as v1.0.0.**
 
-## Phase 18 — Field Force Tracking (post-v1.0.0, outside the S/4HANA parity scope)
-
-Design spec: `docs/research/fieldforce-tracking-design-spec.md`. New module `fieldforce`: real-time marketer/sales-rep tracking (location, zones, tasks, goals) via an Android tablet client, plus a standalone-sellable distribution profile of the same code.
-
-- [ ] 18.0 STRUCTURE.md amendment (add `tablet/` to the canonical tree) + GITHUB-WORKFLOW.md amendment (permit long-lived `product/*` packaging branches) + `product/fieldforce-standalone` branch cut from `dev`
-- [ ] 18.1 Slice A — `fieldforce` core: field-rep profiles (linked to HR employees), regions/territories/zones (flat assignment + optional hierarchy), location-ping ingestion + archival job, live-map endpoint, geofence-violation detection; tablet-client spike validating Android background location behavior first
-- [ ] 18.2 Slice B — visits (geofence-gated check-in/out, optional CRM/Sales links, photos) and tasks
-- [ ] 18.3 Slice C — goal/KPI definitions (activity-count, sales-value via `sales/queries.py`, custom via Reporting's generic report builder) and target-vs-achievement reporting
-- [ ] 18.4 Slice D — in-field order capture reading Sales item/pricing, `FieldOrderCaptured` event → `sales/handlers.py` creates the real quote through Sales's existing ATP/credit-limit-checked flow
-- [ ] 18.5 Slice E — tablet offline queue (local SQLite, idempotency keys on every write) and 300+-rep scale hardening (perf-suite bulk-ingestion case)
-- [ ] 18.6 Standalone distribution: new industry-template/toggle profile (core, hr, crm, sales, inventory, finance, reporting, fieldforce), packaged docker-compose + README on `product/fieldforce-standalone`
-- [ ] 18.7 `docs/modules/fieldforce.md` guide; reconcile open risks from the design spec (§8)
-
-**Promotion → `main` as v1.1.0** (and `product/fieldforce-standalone` fast-forwarded from `dev`).
-
 ## Scope-cut rule
 
 If scope must be cut: cut frontend polish before backend correctness, and module breadth before financial-engine depth. Every cut lands in the parity doc in the same PR that makes it.
