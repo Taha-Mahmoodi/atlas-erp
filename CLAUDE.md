@@ -44,5 +44,4 @@ Tests and commits accompany every step, never batched at the end. If scope must 
 - `uv` and `python3.12` live at `~/.local/bin/` (not on default PATH in fresh shells; invoke as `~/.local/bin/uv`).
 - Backend commands run from `backend/`: `uv sync`, `uv run pytest -q`, `uv run ruff check .`
 - Frontend commands run from `frontend/`: `npm ci`, `npm run typecheck`, `npm run build`.
-- Tablet client (`tablet/`) needs Java 17+ and the Android SDK (platform-tools + a platform ≥ API 33) to build/run. On this machine: `brew install --cask temurin@17` then `brew install --cask android-commandlinetools`, then accept licenses (`sdkmanager --licenses`) and install `sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"`. Verify with `adb --version` and `java -version`.
 - GitHub repo: `Taha-Mahmoodi/atlas-erp` (public). CI = `.github/workflows/ci.yml`, jobs `backend` + `frontend`; both are required status checks on `main` and `dev`.
