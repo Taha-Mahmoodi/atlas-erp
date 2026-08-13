@@ -89,7 +89,7 @@ export function ProjectListPage() {
           rowKey={(row) => row.id}
           onRowClick={(row) => void navigate({ to: "/projects/$projectId", params: { projectId: row.id } })}
           loading={projects.isPending}
-          emptyMessage="No projects yet."
+          emptyMessage={status ? "No projects match this filter." : "No projects yet."}
           hasMore={projects.hasNextPage}
           onLoadMore={() => void projects.fetchNextPage()}
           loadingMore={projects.isFetchingNextPage}
