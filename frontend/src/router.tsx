@@ -84,6 +84,19 @@ import { RfqFormPage } from "@/modules/procurement/pages/RfqFormPage";
 import { RfqListPage } from "@/modules/procurement/pages/RfqListPage";
 import { VendorFormPage as ProcurementVendorFormPage } from "@/modules/procurement/pages/VendorFormPage";
 import { VendorListPage as ProcurementVendorListPage } from "@/modules/procurement/pages/VendorListPage";
+import { BomFormPage } from "@/modules/manufacturing/pages/BomFormPage";
+import { BomListPage } from "@/modules/manufacturing/pages/BomListPage";
+import { ManufacturingHomePage } from "@/modules/manufacturing/pages/ManufacturingHomePage";
+import { MrpRunDetailPage } from "@/modules/manufacturing/pages/MrpRunDetailPage";
+import { MrpRunFormPage } from "@/modules/manufacturing/pages/MrpRunFormPage";
+import { MrpRunListPage } from "@/modules/manufacturing/pages/MrpRunListPage";
+import { ProductionOrderDetailPage } from "@/modules/manufacturing/pages/ProductionOrderDetailPage";
+import { ProductionOrderFormPage } from "@/modules/manufacturing/pages/ProductionOrderFormPage";
+import { ProductionOrderListPage } from "@/modules/manufacturing/pages/ProductionOrderListPage";
+import { RoutingFormPage } from "@/modules/manufacturing/pages/RoutingFormPage";
+import { RoutingListPage } from "@/modules/manufacturing/pages/RoutingListPage";
+import { WorkCenterFormPage } from "@/modules/manufacturing/pages/WorkCenterFormPage";
+import { WorkCenterListPage } from "@/modules/manufacturing/pages/WorkCenterListPage";
 import { CustomerFormPage } from "@/modules/sales/pages/CustomerFormPage";
 import { CustomerGroupFormPage } from "@/modules/sales/pages/CustomerGroupFormPage";
 import { CustomerGroupListPage } from "@/modules/sales/pages/CustomerGroupListPage";
@@ -828,6 +841,95 @@ const adminNumberSequencesRoute = createRoute({
   component: NumberSequenceListPage,
 });
 
+// --- Manufacturing (PLAN 15.8) -------------------------------------------------------------
+
+const manufacturingHomeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/manufacturing",
+  component: ManufacturingHomePage,
+});
+
+// Masters: work centers, BOMs, routings (slice 1)
+const manufacturingWorkCentersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/manufacturing/work-centers",
+  component: WorkCenterListPage,
+});
+const manufacturingWorkCenterNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/manufacturing/work-centers/new",
+  component: WorkCenterFormPage,
+});
+const manufacturingWorkCenterDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/manufacturing/work-centers/$workCenterId",
+  component: WorkCenterFormPage,
+});
+const manufacturingBomsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/manufacturing/boms",
+  component: BomListPage,
+});
+const manufacturingBomNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/manufacturing/boms/new",
+  component: BomFormPage,
+});
+const manufacturingBomDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/manufacturing/boms/$bomId",
+  component: BomFormPage,
+});
+const manufacturingRoutingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/manufacturing/routings",
+  component: RoutingListPage,
+});
+const manufacturingRoutingNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/manufacturing/routings/new",
+  component: RoutingFormPage,
+});
+const manufacturingRoutingDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/manufacturing/routings/$routingId",
+  component: RoutingFormPage,
+});
+
+// Production orders (slice 2)
+const manufacturingProductionOrdersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/manufacturing/production-orders",
+  component: ProductionOrderListPage,
+});
+const manufacturingProductionOrderNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/manufacturing/production-orders/new",
+  component: ProductionOrderFormPage,
+});
+const manufacturingProductionOrderDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/manufacturing/production-orders/$orderId",
+  component: ProductionOrderDetailPage,
+});
+
+// MRP (slice 3, FINAL)
+const manufacturingMrpRunsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/manufacturing/mrp/runs",
+  component: MrpRunListPage,
+});
+const manufacturingMrpRunNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/manufacturing/mrp/runs/new",
+  component: MrpRunFormPage,
+});
+const manufacturingMrpRunDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/manufacturing/mrp/runs/$runId",
+  component: MrpRunDetailPage,
+});
+
 // --- Every other module: placeholder until its own slice lands ----------------------------
 
 const moduleRoute = createRoute({
@@ -964,6 +1066,22 @@ const routeTree = rootRoute.addChildren([
   adminRoleDetailRoute,
   adminAuditLogsRoute,
   adminNumberSequencesRoute,
+  manufacturingHomeRoute,
+  manufacturingWorkCentersRoute,
+  manufacturingWorkCenterNewRoute,
+  manufacturingWorkCenterDetailRoute,
+  manufacturingBomsRoute,
+  manufacturingBomNewRoute,
+  manufacturingBomDetailRoute,
+  manufacturingRoutingsRoute,
+  manufacturingRoutingNewRoute,
+  manufacturingRoutingDetailRoute,
+  manufacturingProductionOrdersRoute,
+  manufacturingProductionOrderNewRoute,
+  manufacturingProductionOrderDetailRoute,
+  manufacturingMrpRunsRoute,
+  manufacturingMrpRunNewRoute,
+  manufacturingMrpRunDetailRoute,
   moduleRoute,
 ]);
 
