@@ -7,7 +7,9 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
+import { getErrorMessage } from "@/lib/apiClient";
 import { formatDate } from "@/lib/format";
+import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
 import { useCurrencyOptions, useExchangeRates } from "@/modules/finance/hooks";
 import type { ExchangeRate, RateType } from "@/modules/finance/types";
@@ -31,6 +33,8 @@ export function ExchangeRateListPage() {
   const [toCode, setToCode] = useState("");
   const [rateType, setRateType] = useState<RateType | "">("");
 
+  const me = useMe();
+  const canManage = (me.data?.permissions ?? []).includes("finance.fx.manage");
   const currencies = useCurrencyOptions();
   const rates = useExchangeRates({
     ...(fromCode ? { from_currency_code: fromCode } : {}),
@@ -44,12 +48,14 @@ export function ExchangeRateListPage() {
     <div>
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-ink">Exchange Rates</h1>
-        <Link
-          to="/finance/exchange-rates/new"
-          className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
-        >
-          New rate
-        </Link>
+        {canManage && (
+          <Link
+            to="/finance/exchange-rates/new"
+            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
+          >
+            New rate
+          </Link>
+        )}
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -82,17 +88,23 @@ export function ExchangeRateListPage() {
       </div>
 
       <div className="mt-4">
-        <DataGrid
-          columns={COLUMNS}
-          rows={rows}
-          rowKey={(row) => row.id}
-          loading={rates.isPending}
-          emptyMessage="No exchange rates match these filters."
-          hasMore={rates.hasNextPage}
-          onLoadMore={() => void rates.fetchNextPage()}
-          loadingMore={rates.isFetchingNextPage}
-          label="Exchange rates"
-        />
+        {rates.isError ? (
+          <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-sm text-danger">
+            {getErrorMessage(rates.error, "Unable to load exchange rates.")}
+          </p>
+        ) : (
+          <DataGrid
+            columns={COLUMNS}
+            rows={rows}
+            rowKey={(row) => row.id}
+            loading={rates.isPending}
+            emptyMessage="No exchange rates match these filters."
+            hasMore={rates.hasNextPage}
+            onLoadMore={() => void rates.fetchNextPage()}
+            loadingMore={rates.isFetchingNextPage}
+            label="Exchange rates"
+          />
+        )}
       </div>
     </div>
   );

@@ -6,6 +6,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 
 import { formatDateTime } from "@/lib/format";
+import { getErrorMessage } from "@/lib/apiClient";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
 import { useRoles } from "@/modules/admin/hooks";
 import type { Role } from "@/modules/admin/types";
@@ -40,18 +41,24 @@ export function RoleListPage() {
       </div>
 
       <div className="mt-4">
-        <DataGrid
-          columns={COLUMNS}
-          rows={rows}
-          rowKey={(row) => row.id}
-          onRowClick={(row) => void navigate({ to: "/admin/roles/$roleId", params: { roleId: row.id } })}
-          loading={roles.isPending}
-          emptyMessage="No roles yet."
-          hasMore={roles.hasNextPage}
-          onLoadMore={() => void roles.fetchNextPage()}
-          loadingMore={roles.isFetchingNextPage}
-          label="Roles"
-        />
+        {roles.isError ? (
+          <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-sm text-danger">
+            {getErrorMessage(roles.error, "Unable to load roles.")}
+          </p>
+        ) : (
+          <DataGrid
+            columns={COLUMNS}
+            rows={rows}
+            rowKey={(row) => row.id}
+            onRowClick={(row) => void navigate({ to: "/admin/roles/$roleId", params: { roleId: row.id } })}
+            loading={roles.isPending}
+            emptyMessage="No roles yet."
+            hasMore={roles.hasNextPage}
+            onLoadMore={() => void roles.fetchNextPage()}
+            loadingMore={roles.isFetchingNextPage}
+            label="Roles"
+          />
+        )}
       </div>
     </div>
   );
