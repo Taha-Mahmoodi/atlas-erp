@@ -40,6 +40,8 @@ BASE = os.environ.get("ATLAS_API", "http://localhost:8000/api/v1")
 PASSWORD = "correct-horse-battery"
 TODAY = date(2026, 7, 6)
 START = date(2026, 4, 6)  # ~3 months of history
+OPENING = date(2026, 3, 30)  # opening stock lands just BEFORE the window so its valuation
+# offset (price-difference) doesn't distort the 3-month P&L
 WEEKS = [START + timedelta(days=7 * i) for i in range(13)]
 MONTHS = [  # (first day, last day) of each fully-seeded month
     (date(2026, 4, 1), date(2026, 4, 30)),
@@ -116,8 +118,8 @@ PROFILES = [
                     ("V-FAST", "FastShip Logistics")],
         "customers": [("C-NORTH", "Northwind Traders"), ("C-CONTOSO", "Contoso Retail"),
                       ("C-FABRIKAM", "Fabrikam Inc")],
-        "employees": [("E-1001", "Alice", "Johnson", "60000"), ("E-1002", "Bob", "Smith", "54000"),
-                      ("E-1003", "Carol", "Nguyen", "72000")],
+        "employees": [("E-1001", "Alice", "Johnson", "5000"), ("E-1002", "Bob", "Smith", "4500"),
+                      ("E-1003", "Carol", "Nguyen", "6000")],
         "department": ("D-OPS", "Operations"),
         "projects": [("PRJ-ERP", "ERP Rollout", "150000"), ("PRJ-WEB", "Webshop Launch", "60000")],
         "flows": {"mfg": True, "quality": True, "maintenance": True, "projects": True,
@@ -159,8 +161,8 @@ PROFILES = [
                     ("V-FRT", "Interstate Freight")],
         "customers": [("C-MERID", "Meridian Equipment"), ("C-DELTA", "Delta Process Systems"),
                       ("C-NORD", "Nordwind Industrial")],
-        "employees": [("E-2001", "Marta", "Kovacs", "58000"), ("E-2002", "Dev", "Patel", "52000"),
-                      ("E-2003", "Lena", "Fischer", "76000")],
+        "employees": [("E-2001", "Marta", "Kovacs", "4800"), ("E-2002", "Dev", "Patel", "4300"),
+                      ("E-2003", "Lena", "Fischer", "6300")],
         "department": ("D-PROD", "Production"),
         "projects": [("PRJ-LINE2", "Assembly Line 2 Expansion", "250000")],
         "flows": {"mfg": True, "quality": True, "maintenance": True, "projects": True,
@@ -199,8 +201,8 @@ PROFILES = [
                     ("V-PKG", "PackRight Supplies")],
         "customers": [("C-CAFE", "Corner Cafe Group"), ("C-HOTEL", "Grandview Hotels"),
                       ("C-WEB", "Webshop Walk-in")],
-        "employees": [("E-3001", "Tomas", "Ruiz", "38000"), ("E-3002", "Ana", "Silva", "36000"),
-                      ("E-3003", "Piet", "de Vries", "52000")],
+        "employees": [("E-3001", "Tomas", "Ruiz", "3200"), ("E-3002", "Ana", "Silva", "3000"),
+                      ("E-3003", "Piet", "de Vries", "4300")],
         "department": ("D-STORE", "Store Operations"),
         "projects": [],
         "flows": {"mfg": False, "quality": False, "maintenance": False, "projects": False,
@@ -234,8 +236,8 @@ PROFILES = [
                     ("V-TRVL", "Corporate Travel Desk")],
         "customers": [("C-APEX", "Apex Capital"), ("C-HG", "Harbor & Gray LLP"),
                       ("C-LUMEN", "Lumen Health Group")],
-        "employees": [("E-4001", "Ingrid", "Bauer", "95000"), ("E-4002", "Noah", "Clarke", "88000"),
-                      ("E-4003", "Sofia", "Marino", "120000")],
+        "employees": [("E-4001", "Ingrid", "Bauer", "7900"), ("E-4002", "Noah", "Clarke", "7300"),
+                      ("E-4003", "Sofia", "Marino", "10000")],
         "department": ("D-CONSULT", "Consulting"),
         "projects": [("ENG-APEX", "Apex Capital — ERP Advisory", "180000"),
                      ("ENG-HG", "Harbor & Gray — Compliance Audit", "90000")],
@@ -274,8 +276,8 @@ PROFILES = [
                     ("V-LINEN", "CleanLinen Services")],
         "customers": [("C-CASC", "Cascade Health Plan"), ("C-ALVA", "J. Alvarez"),
                       ("C-CHEN", "M. Chen")],
-        "employees": [("E-5001", "Grace", "Okafor", "82000"), ("E-5002", "Liam", "Byrne", "64000"),
-                      ("E-5003", "Yuki", "Tanaka", "110000")],
+        "employees": [("E-5001", "Grace", "Okafor", "6800"), ("E-5002", "Liam", "Byrne", "5300"),
+                      ("E-5003", "Yuki", "Tanaka", "9200")],
         "department": ("D-CLIN", "Clinical"),
         "projects": [],
         "flows": {"mfg": False, "quality": True, "maintenance": True, "projects": False,
@@ -313,8 +315,8 @@ PROFILES = [
                     ("V-RENT", "HeavyRent Equipment")],
         "customers": [("C-CITY", "City of Ashford"), ("C-RIVDEV", "Riverside Developments"),
                       ("C-NHA", "Northgate Housing Assoc")],
-        "employees": [("E-6001", "Owen", "Gallagher", "62000"), ("E-6002", "Priya", "Nair", "58000"),
-                      ("E-6003", "Marek", "Novak", "84000")],
+        "employees": [("E-6001", "Owen", "Gallagher", "5200"), ("E-6002", "Priya", "Nair", "4800"),
+                      ("E-6003", "Marek", "Novak", "7000")],
         "department": ("D-SITE", "Site Operations"),
         "projects": [("PRJ-TOWER", "Riverside Tower — Phase 1", "1200000"),
                      ("PRJ-DEPOT", "Hillcrest Depot Refit", "400000")],
@@ -467,7 +469,10 @@ def empty(path: str) -> bool:
 
 
 # ── Finance ──────────────────────────────────────────────────────────────────
-_GROUP_NAMES = {"1": "Assets", "2": "Liabilities", "3": "Equity", "4": "Revenue", "5": "Expenses"}
+_GROUP_NAMES = {
+    "1": "Assets", "2": "Liabilities", "3": "Equity", "4": "Revenue", "5": "Expenses",
+    "6": "Operating Expenses",  # seed-created 6xxx accounts on template tenants
+}
 
 
 def seed_finance(p: dict) -> dict:
@@ -483,7 +488,9 @@ def seed_finance(p: dict) -> dict:
             {"code": "STD", "name": "Standard VAT 10%", "rate_percent": "10", "jurisdiction": "US"},
         )
         get_or_create(
-            "/finance/tax-codes", "code", {"code": "ZERO", "name": "Zero Rated", "rate_percent": "0"}
+            "/finance/tax-codes",
+            "code",
+            {"code": "ZERO", "name": "Zero Rated", "rate_percent": "0"},
         )
     ctx["currency"] = "USD"
 
@@ -539,9 +546,9 @@ def seed_finance(p: dict) -> dict:
         "code",
         {"code": "FY2026", "name": "Fiscal Year 2026", "start_date": "2026-01-01"},
     )
-    # open every period the 3-month window touches (April..July)
+    # open every period the window touches (March, for the opening stock, through July)
     for per in items(f"/finance/fiscal-periods?fiscal_year_id={fy['id']}"):
-        overlaps = per["start_date"] <= TODAY.isoformat() and per["end_date"] >= START.isoformat()
+        overlaps = per["start_date"] <= TODAY.isoformat() and per["end_date"] >= OPENING.isoformat()
         if overlaps and per["status"] != "OPEN":
             post(f"/finance/fiscal-periods/{per['id']}/open")
 
@@ -675,7 +682,7 @@ def seed_inventory(p: dict, fin: dict) -> dict:
                     "item_id": it_ids[code],
                     "quantity": qty,
                     "to_bin_id": ctx["bin"],
-                    "move_date": START.isoformat(),
+                    "move_date": OPENING.isoformat(),
                     "unit_cost": cost or "1.00",
                     "reference": "Opening stock",
                 },
@@ -1144,7 +1151,7 @@ def seed_manufacturing(p: dict, fin: dict, inv: dict) -> None:
             },
         )
         if bom:
-            for comp, qty_per in zip(comps, ("4", "1")):
+            for comp, qty_per in zip(comps, ("4", "1"), strict=False):
                 post(
                     f"/manufacturing/boms/{bom['id']}/components",
                     {
