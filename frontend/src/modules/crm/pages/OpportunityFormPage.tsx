@@ -17,6 +17,11 @@ import type { OpportunityLineCreate } from "@/modules/crm/types";
 import { useItemOptions } from "@/modules/inventory/hooks";
 import { useCustomerOptions } from "@/modules/sales/hooks";
 
+/** API decimal strings ("40.000000") → clean number-input seeds ("40"). Pure string trim — no float precision risk. */
+function trimDecimal(value: string | null | undefined): string {
+  return value ? value.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "") : "";
+}
+
 function fieldsFor(customerOptions: { value: string; label: string }[]): FieldDef[] {
   return [
     { name: "name", label: "Deal name", type: "text", required: true, span: 1 },
@@ -63,8 +68,8 @@ export function OpportunityFormPage() {
         email: opportunity.data.email ?? "",
         customer_id: opportunity.data.customer_id ?? "",
         currency_code: opportunity.data.currency_code,
-        estimated_value: opportunity.data.estimated_value,
-        probability_percent: opportunity.data.probability_percent ?? "",
+        estimated_value: trimDecimal(opportunity.data.estimated_value),
+        probability_percent: trimDecimal(opportunity.data.probability_percent),
         expected_close_date: opportunity.data.expected_close_date ?? "",
         notes: opportunity.data.notes ?? "",
       });
@@ -72,8 +77,8 @@ export function OpportunityFormPage() {
         opportunity.data.lines.map((line) => ({
           item_id: line.item_id,
           description: line.description,
-          quantity: line.quantity,
-          estimated_unit_price: line.estimated_unit_price,
+          quantity: trimDecimal(line.quantity),
+          estimated_unit_price: trimDecimal(line.estimated_unit_price),
         })),
       );
     }

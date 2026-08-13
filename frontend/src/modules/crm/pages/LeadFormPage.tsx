@@ -12,6 +12,11 @@ import { FormBuilder, type FieldDef, type FormValues } from "@/components/FormBu
 import { useCreateLead, useLead, useUpdateLead } from "@/modules/crm/hooks";
 import type { LeadUpdate } from "@/modules/crm/types";
 
+/** API decimal strings ("25000.000000") → clean number-input seeds ("25000"). Pure string trim — no float precision risk. */
+function trimDecimal(value: string | null | undefined): string {
+  return value ? value.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "") : "";
+}
+
 // ponytail: owner_employee_id is omitted — hr has no frontend employee-picker surface yet;
 // add it when the HR UI slice ships one (the field stays null-able server-side).
 const FIELDS: FieldDef[] = [
@@ -45,7 +50,7 @@ export function LeadFormPage() {
         email: lead.data.email ?? "",
         phone: lead.data.phone ?? "",
         source: lead.data.source ?? "",
-        estimated_value: lead.data.estimated_value ?? "",
+        estimated_value: trimDecimal(lead.data.estimated_value),
         currency_code: lead.data.currency_code ?? "",
         notes: lead.data.notes ?? "",
       });
