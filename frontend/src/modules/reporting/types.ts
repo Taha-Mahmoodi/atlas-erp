@@ -40,3 +40,70 @@ export interface DashboardResponse {
   otd_percent?: OtdKpi;
   wip_value?: MoneyKpi;
 }
+
+// --- Report builder (D-059) — mirrors the ReportSpec/ReportResult/catalog schemas -----------
+
+export type ReportFilterOperator =
+  | "eq"
+  | "ne"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte"
+  | "in"
+  | "like"
+  | "between"
+  | "is_null";
+
+export type ReportAggregationFunc = "count" | "sum" | "avg" | "min" | "max";
+
+export type ReportColumnType = "str" | "number" | "date" | "bool";
+
+export interface ReportColumnDescriptor {
+  name: string;
+  label: string;
+  type: ReportColumnType;
+  filterable: boolean;
+  groupable: boolean;
+  is_aggregatable: boolean;
+}
+
+/** The entities-list endpoint already filters this catalog to the caller's role (D-059). */
+export interface ReportEntityDescriptor {
+  key: string;
+  label: string;
+  columns: ReportColumnDescriptor[];
+}
+
+export interface ReportEntityList {
+  entities: ReportEntityDescriptor[];
+}
+
+/** Value shape depends on operator: scalar, list for IN, [low, high] for BETWEEN, bool for IS_NULL. */
+export interface ReportFilter {
+  column: string;
+  operator: ReportFilterOperator;
+  value?: unknown;
+}
+
+export interface ReportAggregation {
+  column?: string | null;
+  func: ReportAggregationFunc;
+  alias?: string | null;
+}
+
+export interface ReportSpec {
+  entity: string;
+  columns?: string[];
+  filters?: ReportFilter[];
+  group_by?: string[];
+  aggregations?: ReportAggregation[];
+  limit?: number | null;
+}
+
+export interface ReportResult {
+  columns: string[];
+  rows: Record<string, unknown>[];
+  row_count: number;
+  truncated: boolean;
+}

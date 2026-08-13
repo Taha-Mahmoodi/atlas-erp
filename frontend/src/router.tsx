@@ -103,6 +103,9 @@ import { VendorBillFormPage } from "@/modules/finance/pages/VendorBillFormPage";
 import { VendorBillListPage } from "@/modules/finance/pages/VendorBillListPage";
 import { VendorPaymentFormPage } from "@/modules/finance/pages/VendorPaymentFormPage";
 import { VendorPaymentListPage } from "@/modules/finance/pages/VendorPaymentListPage";
+import { DashboardPage } from "@/modules/reporting/pages/DashboardPage";
+import { ReportBuilderPage } from "@/modules/reporting/pages/ReportBuilderPage";
+import { ReportingHomePage } from "@/modules/reporting/pages/ReportingHomePage";
 import { AuthGate } from "@/shell/AuthGate";
 import { HomePage } from "@/shell/HomePage";
 import { ModulePlaceholderPage } from "@/shell/ModulePlaceholderPage";
@@ -713,6 +716,24 @@ const salesReturnDetailRoute = createRoute({
   component: ReturnDetailPage,
 });
 
+// --- Reporting (PLAN 15.12) ----------------------------------------------------------------
+
+const reportingHomeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/reporting",
+  component: ReportingHomePage,
+});
+const reportingDashboardRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/reporting/dashboard",
+  component: DashboardPage,
+});
+const reportingReportBuilderRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/reporting/report-builder",
+  component: ReportBuilderPage,
+});
+
 // --- Every other module: placeholder until its own slice lands ----------------------------
 
 const moduleRoute = createRoute({
@@ -831,6 +852,9 @@ const routeTree = rootRoute.addChildren([
   salesReturnsRoute,
   salesReturnNewRoute,
   salesReturnDetailRoute,
+  reportingHomeRoute,
+  reportingDashboardRoute,
+  reportingReportBuilderRoute,
   moduleRoute,
 ]);
 

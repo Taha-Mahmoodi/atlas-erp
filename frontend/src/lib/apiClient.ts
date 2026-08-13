@@ -128,6 +128,28 @@ export const api = {
     request<T>("DELETE", path, undefined, options),
 };
 
+/** POST whose success body is raw bytes, not JSON (the reporting streaming CSV export):
+ * same bearer + one-shot 401 refresh-and-retry discipline as `request`, but resolves to a
+ * Blob the caller hands to `URL.createObjectURL` for download. */
+export async function postBlob(path: string, body: unknown, retryOn401 = true): Promise<Blob> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const token = getAccessToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(buildUrl(path), {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+    credentials: "same-origin",
+  });
+  if (response.status === 401 && retryOn401) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) return postBlob(path, body, false);
+    clearSession();
+  }
+  if (!response.ok) throw await parseError(response);
+  return response.blob();
+}
+
 /** A fresh D-013 idempotency key for document-creating POSTs. */
 export function newIdempotencyKey(): string {
   return crypto.randomUUID();
