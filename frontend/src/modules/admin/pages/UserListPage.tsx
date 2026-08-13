@@ -6,6 +6,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 
 import { formatDateTime } from "@/lib/format";
+import { getErrorMessage } from "@/lib/apiClient";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
 import { useUsers } from "@/modules/admin/hooks";
 import type { User } from "@/modules/admin/types";
@@ -40,18 +41,24 @@ export function UserListPage() {
       </div>
 
       <div className="mt-4">
-        <DataGrid
-          columns={COLUMNS}
-          rows={rows}
-          rowKey={(row) => row.id}
-          onRowClick={(row) => void navigate({ to: "/admin/users/$userId", params: { userId: row.id } })}
-          loading={users.isPending}
-          emptyMessage="No users yet."
-          hasMore={users.hasNextPage}
-          onLoadMore={() => void users.fetchNextPage()}
-          loadingMore={users.isFetchingNextPage}
-          label="Users"
-        />
+        {users.isError ? (
+          <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-sm text-danger">
+            {getErrorMessage(users.error, "Unable to load users.")}
+          </p>
+        ) : (
+          <DataGrid
+            columns={COLUMNS}
+            rows={rows}
+            rowKey={(row) => row.id}
+            onRowClick={(row) => void navigate({ to: "/admin/users/$userId", params: { userId: row.id } })}
+            loading={users.isPending}
+            emptyMessage="No users yet."
+            hasMore={users.hasNextPage}
+            onLoadMore={() => void users.fetchNextPage()}
+            loadingMore={users.isFetchingNextPage}
+            label="Users"
+          />
+        )}
       </div>
     </div>
   );

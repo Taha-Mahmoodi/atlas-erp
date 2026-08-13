@@ -4,6 +4,7 @@
  * this page is a pure viewer.
  */
 
+import { getErrorMessage } from "@/lib/apiClient";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
 import { useNumberSequences } from "@/modules/admin/hooks";
 import type { NumberSequence } from "@/modules/admin/types";
@@ -33,17 +34,23 @@ export function NumberSequenceListPage() {
         edited so document numbering stays gapless.
       </p>
       <div className="mt-4">
-        <DataGrid
-          columns={COLUMNS}
-          rows={rows}
-          rowKey={(row) => row.id}
-          loading={sequences.isPending}
-          emptyMessage="No number sequences yet — they appear when the first numbered document posts."
-          hasMore={sequences.hasNextPage}
-          onLoadMore={() => void sequences.fetchNextPage()}
-          loadingMore={sequences.isFetchingNextPage}
-          label="Number sequences"
-        />
+        {sequences.isError ? (
+          <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-sm text-danger">
+            {getErrorMessage(sequences.error, "Unable to load number sequences.")}
+          </p>
+        ) : (
+          <DataGrid
+            columns={COLUMNS}
+            rows={rows}
+            rowKey={(row) => row.id}
+            loading={sequences.isPending}
+            emptyMessage="No number sequences yet — they appear when the first numbered document posts."
+            hasMore={sequences.hasNextPage}
+            onLoadMore={() => void sequences.fetchNextPage()}
+            loadingMore={sequences.isFetchingNextPage}
+            label="Number sequences"
+          />
+        )}
       </div>
     </div>
   );

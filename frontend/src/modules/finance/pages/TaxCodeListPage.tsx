@@ -6,6 +6,8 @@
 
 import { Link, useNavigate } from "@tanstack/react-router";
 
+import { getErrorMessage } from "@/lib/apiClient";
+import { formatPercent } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
 import { useTaxCodesPage } from "@/modules/finance/hooks";
@@ -17,7 +19,7 @@ const COLUMNS: DataGridColumn<TaxCode>[] = [
   {
     key: "rate_percent",
     header: "Rate",
-    render: (row) => <span className="tabular-nums">{row.rate_percent}%</span>,
+    render: (row) => <span className="tabular-nums">{formatPercent(row.rate_percent)}</span>,
     align: "right",
     width: "90px",
   },
@@ -53,6 +55,11 @@ export function TaxCodeListPage() {
       </div>
 
       <div className="mt-4">
+        {taxCodes.isError ? (
+          <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-sm text-danger">
+            {getErrorMessage(taxCodes.error, "Unable to load tax codes.")}
+          </p>
+        ) : (
         <DataGrid
           columns={COLUMNS}
           rows={rows}
@@ -70,6 +77,7 @@ export function TaxCodeListPage() {
           loadingMore={taxCodes.isFetchingNextPage}
           label="Tax codes"
         />
+        )}
       </div>
     </div>
   );

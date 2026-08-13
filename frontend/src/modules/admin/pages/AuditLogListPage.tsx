@@ -9,6 +9,7 @@
 import { useState } from "react";
 
 import { formatDateTime } from "@/lib/format";
+import { getErrorMessage } from "@/lib/apiClient";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
 import { AuditDiffView } from "@/modules/admin/components/AuditDiffView";
 import type { AuditLogFilters } from "@/modules/admin/api";
@@ -140,19 +141,25 @@ export function AuditLogListPage() {
       </form>
 
       <div className="mt-4">
-        <DataGrid
-          columns={COLUMNS}
-          rows={rows}
-          rowKey={(row) => row.id}
-          onRowClick={(row) => setSelected((prev) => (prev?.id === row.id ? null : row))}
-          loading={logs.isPending}
-          emptyMessage="No audit entries match these filters."
-          hasMore={logs.hasNextPage}
-          onLoadMore={() => void logs.fetchNextPage()}
-          loadingMore={logs.isFetchingNextPage}
-          density="compact"
-          label="Audit log"
-        />
+        {logs.isError ? (
+          <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-sm text-danger">
+            {getErrorMessage(logs.error, "Unable to load the audit log.")}
+          </p>
+        ) : (
+          <DataGrid
+            columns={COLUMNS}
+            rows={rows}
+            rowKey={(row) => row.id}
+            onRowClick={(row) => setSelected((prev) => (prev?.id === row.id ? null : row))}
+            loading={logs.isPending}
+            emptyMessage="No audit entries match these filters."
+            hasMore={logs.hasNextPage}
+            onLoadMore={() => void logs.fetchNextPage()}
+            loadingMore={logs.isFetchingNextPage}
+            density="compact"
+            label="Audit log"
+          />
+        )}
       </div>
 
       {selected && (
