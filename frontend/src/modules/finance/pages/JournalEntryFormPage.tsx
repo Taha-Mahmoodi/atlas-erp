@@ -12,6 +12,7 @@ import { ApiError } from "@/lib/apiClient";
 import { JournalLinesEditor } from "@/modules/finance/components/JournalLinesEditor";
 import { useAccountOptions, useCreateJournalEntry } from "@/modules/finance/hooks";
 import type { JournalLineCreate } from "@/modules/finance/types";
+import { useProjects, useWbsElements } from "@/modules/projects/hooks";
 
 const CONTROL =
   "w-full rounded-control border border-line bg-surface px-3 py-1.5 text-sm text-ink transition-colors duration-150 hover:border-ink-faint";
@@ -28,11 +29,23 @@ export function JournalEntryFormPage() {
   const [postingDate, setPostingDate] = useState(today());
   const [currencyCode, setCurrencyCode] = useState("USD");
   const [description, setDescription] = useState("");
+  const [projectId, setProjectId] = useState("");
   const [lines, setLines] = useState<JournalLineCreate[]>([
     { account_id: "", transaction_debit_amount: "", transaction_credit_amount: "" },
     { account_id: "", transaction_debit_amount: "", transaction_credit_amount: "" },
   ]);
   const [error, setError] = useState<string | null>(null);
+
+  // Project dimension (issue #162): pick a project in the header, tag lines with its WBS
+  // elements (a WBS-element id is the wire `project_id`, D-056). Cross-module hook reuse,
+  // the useVendorOptions/useCustomerOptions precedent.
+  // ponytail: one project per entry; per-line project pickers if cross-project entries matter.
+  const projects = useProjects({ status: "ACTIVE", limit: 200 });
+  const wbsElements = useWbsElements(projectId || undefined);
+  const changeProject = (value: string) => {
+    setProjectId(value);
+    setLines((prev) => prev.map((line) => ({ ...line, project_id: null })));
+  };
 
   // The editor leaves the not-in-use side as "" for a cleaner empty cell while typing; the
   // backend's Decimal field rejects an empty string outright ("Input should be a valid
@@ -115,10 +128,28 @@ export function JournalEntryFormPage() {
             className={CONTROL}
           />
         </div>
+        <div>
+          <label htmlFor="project" className="mb-1 block text-xs font-medium text-ink-muted">
+            Project (line WBS pickers)
+          </label>
+          <select id="project" value={projectId} onChange={(event) => changeProject(event.target.value)} className={CONTROL}>
+            <option value="">None</option>
+            {(projects.data?.pages.flatMap((page) => page.items) ?? []).map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.code} — {project.name}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="mt-6">
-        <JournalLinesEditor lines={lines} accounts={accounts.data?.items ?? []} onChange={setLines} />
+        <JournalLinesEditor
+          lines={lines}
+          accounts={accounts.data?.items ?? []}
+          wbsElements={wbsElements.data?.items ?? []}
+          onChange={setLines}
+        />
       </div>
 
       <button
