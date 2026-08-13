@@ -38,7 +38,7 @@ export function GoodsReceiptFormPage() {
   const [warehouseId, setWarehouseId] = useState("");
   const [receiptDate, setReceiptDate] = useState(today());
   const [notes, setNotes] = useState("");
-  const [lineInputs, setLineInputs] = useState<Record<string, Partial<{ quantity: string; binId: string; lotCode: string }>>>({});
+  const [lineInputs, setLineInputs] = useState<Record<string, Partial<{ quantity: string; binId: string; lotCode: string; inspect: boolean }>>>({});
   const [error, setError] = useState<string | null>(null);
 
   const order = usePurchaseOrder(purchaseOrderId || undefined);
@@ -48,7 +48,7 @@ export function GoodsReceiptFormPage() {
   const openQuantity = (quantity: string, receivedQuantity: string) =>
     (Number(quantity) - Number(receivedQuantity)).toString();
 
-  const setLineInput = (lineId: string, patch: Partial<{ quantity: string; binId: string; lotCode: string }>) => {
+  const setLineInput = (lineId: string, patch: Partial<{ quantity: string; binId: string; lotCode: string; inspect: boolean }>) => {
     setLineInputs((prev) => ({ ...prev, [lineId]: { ...prev[lineId], ...patch } }));
   };
 
@@ -61,6 +61,7 @@ export function GoodsReceiptFormPage() {
         bin_id: input?.binId ?? "",
         received_quantity: quantity,
         lot_code: input?.lotCode || null,
+        requires_inspection: input?.inspect ?? false,
       };
     })
     .filter((line) => line.bin_id && (Number(line.received_quantity) || 0) > 0);
@@ -170,6 +171,7 @@ export function GoodsReceiptFormPage() {
                   <th className="w-28 py-2 pr-2 text-right">Receive now</th>
                   <th className="py-2 pr-2">Bin</th>
                   <th className="py-2 pr-2">Lot code</th>
+                  <th className="py-2 pr-2 text-center">Inspect</th>
                 </tr>
               </thead>
               <tbody>
@@ -211,6 +213,14 @@ export function GoodsReceiptFormPage() {
                           value={input?.lotCode ?? ""}
                           onChange={(event) => setLineInput(line.id, { lotCode: event.target.value })}
                           className="w-full rounded-control border border-line bg-surface px-2 py-1 text-sm"
+                        />
+                      </td>
+                      <td className="py-1.5 pr-2 text-center">
+                        <input
+                          type="checkbox"
+                          aria-label={`Requires inspection — line ${line.line_number}`}
+                          checked={input?.inspect ?? false}
+                          onChange={(event) => setLineInput(line.id, { inspect: event.target.checked })}
                         />
                       </td>
                     </tr>
