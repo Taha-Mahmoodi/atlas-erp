@@ -23,6 +23,8 @@ const SECTIONS = [
   { to: "/finance/assets", label: "Fixed Assets", description: "Register and activate fixed assets" },
   { to: "/finance/depreciation-runs", label: "Depreciation Runs", description: "Run and review period depreciation" },
   { to: "/finance/asset-register", label: "Asset Register", description: "Net book value of every asset as of a date" },
+  { to: "/finance/tax-codes", label: "Tax Codes", description: "Tax rates and their GL account wiring" },
+  { to: "/finance/exchange-rates", label: "Exchange Rates", description: "Currency rates by date, pair, and type" },
 ] as const;
 
 export function FinanceHomePage() {

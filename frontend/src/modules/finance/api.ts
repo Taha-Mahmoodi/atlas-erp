@@ -40,6 +40,8 @@ import type {
   DunningRunRequest,
   DunningRunResult,
   EntryStatus,
+  ExchangeRate,
+  ExchangeRateCreate,
   FiscalPeriod,
   InvoiceStatus,
   JournalEntry,
@@ -47,8 +49,11 @@ import type {
   JournalEntryDetail,
   JournalEntryReverseRequest,
   ProfitAndLoss,
+  RateType,
   SuggestMatchesResult,
   TaxCode,
+  TaxCodeCreate,
+  TaxCodeUpdate,
   TrialBalance,
   VendorBill,
   VendorBillCreate,
@@ -415,4 +420,46 @@ export function listFiscalPeriods(
   filters: { cursor?: string; limit?: number } = {},
 ): Promise<Page<FiscalPeriod>> {
   return api.get<Page<FiscalPeriod>>("/finance/fiscal-periods", { params: { ...filters } });
+}
+
+// --- Settings: tax codes + exchange rates (PLAN 15.12) --------------------------
+// The picker-shaped listTaxCodes/listCurrencies above stay untouched (their four form-page
+// consumers depend on the active-only 100-row shape); these are the settings-page calls.
+
+export interface TaxCodeFilters {
+  cursor?: string;
+  limit?: number;
+  is_active?: boolean;
+}
+
+export function listTaxCodesPage(filters: TaxCodeFilters = {}): Promise<Page<TaxCode>> {
+  return api.get<Page<TaxCode>>("/finance/tax-codes", { params: { ...filters } });
+}
+
+export function getTaxCode(taxCodeId: string): Promise<TaxCode> {
+  return api.get<TaxCode>(`/finance/tax-codes/${taxCodeId}`);
+}
+
+export function createTaxCode(payload: TaxCodeCreate): Promise<TaxCode> {
+  return api.post<TaxCode>("/finance/tax-codes", payload);
+}
+
+export function updateTaxCode(taxCodeId: string, payload: TaxCodeUpdate): Promise<TaxCode> {
+  return api.patch<TaxCode>(`/finance/tax-codes/${taxCodeId}`, payload);
+}
+
+export interface ExchangeRateFilters {
+  cursor?: string;
+  limit?: number;
+  from_currency_code?: string;
+  to_currency_code?: string;
+  rate_type?: RateType;
+}
+
+export function listExchangeRates(filters: ExchangeRateFilters = {}): Promise<Page<ExchangeRate>> {
+  return api.get<Page<ExchangeRate>>("/finance/exchange-rates", { params: { ...filters } });
+}
+
+export function createExchangeRate(payload: ExchangeRateCreate): Promise<ExchangeRate> {
+  return api.post<ExchangeRate>("/finance/exchange-rates", payload);
 }

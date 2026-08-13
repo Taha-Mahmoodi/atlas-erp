@@ -688,3 +688,51 @@ export interface FiscalPeriod {
   end_date: string;
   status: string;
 }
+
+// --- Settings: tax codes + exchange rates (PLAN 15.12) --------------------------
+// Write shapes for the finance settings pages the admin home cross-links. Decimal
+// values (rate_percent, rate) stay strings on the wire (D-015).
+
+export interface TaxCodeCreate {
+  code: string;
+  name: string;
+  rate_percent: string;
+  jurisdiction?: string | null;
+  is_inclusive?: boolean;
+  is_active?: boolean;
+  tax_payable_account_id?: string | null;
+  tax_receivable_account_id?: string | null;
+}
+
+/** Partial update; `code` is immutable after creation and deliberately absent. */
+export interface TaxCodeUpdate {
+  name?: string;
+  rate_percent?: string;
+  jurisdiction?: string | null;
+  is_inclusive?: boolean;
+  is_active?: boolean;
+  tax_payable_account_id?: string | null;
+  tax_receivable_account_id?: string | null;
+}
+
+/** D-019: SPOT = posting-time translation; CLOSING = period-end revaluation. */
+export type RateType = "SPOT" | "CLOSING";
+
+export interface ExchangeRate {
+  id: string;
+  rate_date: string;
+  from_currency_code: string;
+  to_currency_code: string;
+  rate_type: RateType;
+  rate: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExchangeRateCreate {
+  rate_date: string;
+  from_currency_code: string;
+  to_currency_code: string;
+  rate_type?: RateType;
+  rate: string;
+}
