@@ -4,7 +4,8 @@
  * this slice (D-013/D-047) — masters carry no gapless number, unlike production orders/MRP.
  */
 
-import { api, type Page } from "@/lib/apiClient";
+import { api, newIdempotencyKey, type Page } from "@/lib/apiClient";
+import type { JobSubmitted } from "@/lib/jobs";
 import type {
   Bom,
   BomComponent,
@@ -12,6 +13,21 @@ import type {
   BomCreate,
   BomStatus,
   BomUpdate,
+  CapacityLoad,
+  FinishOrderRequest,
+  IssueComponentsRequest,
+  MrpRun,
+  MrpRunRequest,
+  MrpRunStatus,
+  MrpRunSummary,
+  PlannedOrder,
+  PlannedOrderConvertRequest,
+  PlannedOrderStatus,
+  PlannedOrderType,
+  ProductionOrder,
+  ProductionOrderCreate,
+  ProductionOrderDetail,
+  ProductionOrderStatus,
   Routing,
   RoutingCreate,
   RoutingOperation,
@@ -136,4 +152,122 @@ export function createRoutingOperation(
 
 export function deleteRoutingOperation(routingId: string, operationId: string): Promise<void> {
   return api.delete<void>(`/manufacturing/routings/${routingId}/operations/${operationId}`);
+}
+
+// --- Production orders ----------------------------------------------------------------
+// Document-creating/posting POSTs (create, issue, finish) carry a D-013 idempotency key —
+// unlike the masters above (D-047: masters carry no gapless number and no key).
+
+export interface ProductionOrderFilters {
+  cursor?: string;
+  limit?: number;
+  item_id?: string;
+  status?: ProductionOrderStatus;
+}
+
+export function listProductionOrders(
+  filters: ProductionOrderFilters = {},
+): Promise<Page<ProductionOrder>> {
+  return api.get<Page<ProductionOrder>>("/manufacturing/production-orders", {
+    params: { ...filters },
+  });
+}
+
+export function getProductionOrder(orderId: string): Promise<ProductionOrderDetail> {
+  return api.get<ProductionOrderDetail>(`/manufacturing/production-orders/${orderId}`);
+}
+
+export function createProductionOrder(payload: ProductionOrderCreate): Promise<ProductionOrderDetail> {
+  return api.post<ProductionOrderDetail>("/manufacturing/production-orders", payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function releaseProductionOrder(orderId: string): Promise<ProductionOrderDetail> {
+  return api.post<ProductionOrderDetail>(`/manufacturing/production-orders/${orderId}/release`, undefined);
+}
+
+export function issueComponents(
+  orderId: string,
+  payload: IssueComponentsRequest,
+): Promise<ProductionOrderDetail> {
+  return api.post<ProductionOrderDetail>(
+    `/manufacturing/production-orders/${orderId}/issue-components`,
+    payload,
+    { idempotencyKey: newIdempotencyKey() },
+  );
+}
+
+export function finishProductionOrder(
+  orderId: string,
+  payload: FinishOrderRequest,
+): Promise<ProductionOrderDetail> {
+  return api.post<ProductionOrderDetail>(`/manufacturing/production-orders/${orderId}/finish`, payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function cancelProductionOrder(orderId: string): Promise<ProductionOrderDetail> {
+  return api.post<ProductionOrderDetail>(`/manufacturing/production-orders/${orderId}/cancel`, undefined);
+}
+
+// --- MRP ------------------------------------------------------------------------------
+// The run submit is ALWAYS a 202 background job (D-049) — poll via lib/jobs. Submit and
+// convert are idempotent (D-013).
+
+export interface MrpRunFilters {
+  cursor?: string;
+  limit?: number;
+  status?: MrpRunStatus;
+}
+
+export function runMrp(payload: MrpRunRequest): Promise<JobSubmitted> {
+  return api.post<JobSubmitted>("/manufacturing/mrp/runs", payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function listMrpRuns(filters: MrpRunFilters = {}): Promise<Page<MrpRun>> {
+  return api.get<Page<MrpRun>>("/manufacturing/mrp/runs", { params: { ...filters } });
+}
+
+export function getMrpRun(runId: string): Promise<MrpRunSummary> {
+  return api.get<MrpRunSummary>(`/manufacturing/mrp/runs/${runId}`);
+}
+
+export interface PlannedOrderFilters {
+  cursor?: string;
+  limit?: number;
+  order_type?: PlannedOrderType;
+  status?: PlannedOrderStatus;
+}
+
+export function listPlannedOrders(
+  runId: string,
+  filters: PlannedOrderFilters = {},
+): Promise<Page<PlannedOrder>> {
+  return api.get<Page<PlannedOrder>>(`/manufacturing/mrp/runs/${runId}/planned-orders`, {
+    params: { ...filters },
+  });
+}
+
+export function getRunCapacity(runId: string): Promise<CapacityLoad[]> {
+  return api.get<CapacityLoad[]>(`/manufacturing/mrp/runs/${runId}/capacity`);
+}
+
+export function firmPlannedOrder(plannedOrderId: string): Promise<PlannedOrder> {
+  return api.post<PlannedOrder>(`/manufacturing/planned-orders/${plannedOrderId}/firm`, undefined);
+}
+
+export function convertPlannedOrder(
+  plannedOrderId: string,
+  payload: PlannedOrderConvertRequest,
+): Promise<PlannedOrder> {
+  return api.post<PlannedOrder>(`/manufacturing/planned-orders/${plannedOrderId}/convert`, payload, {
+    idempotencyKey: newIdempotencyKey(),
+  });
+}
+
+export function cancelPlannedOrder(plannedOrderId: string): Promise<PlannedOrder> {
+  return api.post<PlannedOrder>(`/manufacturing/planned-orders/${plannedOrderId}/cancel`, undefined);
 }

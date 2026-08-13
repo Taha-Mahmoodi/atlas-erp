@@ -1,3 +1,9 @@
+/**
+ * Master-data hooks (work centers, BOMs, routings) — the flat hooks.ts split into
+ * hooks/{masters,production,mrp}.ts behind a barrel once production orders + MRP pushed it
+ * past ~400 lines, the finance/inventory/sales convention.
+ */
+
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
