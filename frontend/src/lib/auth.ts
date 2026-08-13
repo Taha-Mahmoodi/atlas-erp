@@ -68,8 +68,21 @@ export async function login(payload: LoginRequest): Promise<void> {
  * Rotate the refresh cookie into a fresh access token. Returns false when the session is
  * gone (expired/revoked refresh) — callers then route to login. Used by the api client's
  * one-shot 401 retry and by app boot to resume a session without re-entering credentials.
+ *
+ * Single-flight (#158): D-008 rotates the refresh token on every use, so two concurrent
+ * POSTs (AuthGate's boot refresh double-fired under StrictMode, plus the api client's 401
+ * retry) race and the loser 401s in the console. All concurrent callers share one request.
  */
-export async function refreshAccessToken(): Promise<boolean> {
+let refreshInFlight: Promise<boolean> | null = null;
+
+export function refreshAccessToken(): Promise<boolean> {
+  refreshInFlight ??= doRefreshAccessToken().finally(() => {
+    refreshInFlight = null;
+  });
+  return refreshInFlight;
+}
+
+async function doRefreshAccessToken(): Promise<boolean> {
   const response = await fetch(`${BASE_URL}/refresh`, {
     method: "POST",
     headers: { Accept: "application/json" },
