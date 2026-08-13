@@ -97,6 +97,17 @@ import { RoutingFormPage } from "@/modules/manufacturing/pages/RoutingFormPage";
 import { RoutingListPage } from "@/modules/manufacturing/pages/RoutingListPage";
 import { WorkCenterFormPage } from "@/modules/manufacturing/pages/WorkCenterFormPage";
 import { WorkCenterListPage } from "@/modules/manufacturing/pages/WorkCenterListPage";
+import { InspectionLotDetailPage } from "@/modules/quality/pages/InspectionLotDetailPage";
+import { InspectionLotListPage } from "@/modules/quality/pages/InspectionLotListPage";
+import { QualityHomePage } from "@/modules/quality/pages/QualityHomePage";
+import { EquipmentFormPage } from "@/modules/maintenance/pages/EquipmentFormPage";
+import { EquipmentListPage } from "@/modules/maintenance/pages/EquipmentListPage";
+import { MaintenanceHomePage } from "@/modules/maintenance/pages/MaintenanceHomePage";
+import { MaintenanceOrderDetailPage } from "@/modules/maintenance/pages/MaintenanceOrderDetailPage";
+import { MaintenanceOrderFormPage } from "@/modules/maintenance/pages/MaintenanceOrderFormPage";
+import { MaintenanceOrderListPage } from "@/modules/maintenance/pages/MaintenanceOrderListPage";
+import { MaintenancePlanFormPage } from "@/modules/maintenance/pages/MaintenancePlanFormPage";
+import { MaintenancePlanListPage } from "@/modules/maintenance/pages/MaintenancePlanListPage";
 import { CustomerFormPage } from "@/modules/sales/pages/CustomerFormPage";
 import { CustomerGroupFormPage } from "@/modules/sales/pages/CustomerGroupFormPage";
 import { CustomerGroupListPage } from "@/modules/sales/pages/CustomerGroupListPage";
@@ -930,6 +941,77 @@ const manufacturingMrpRunDetailRoute = createRoute({
   component: MrpRunDetailPage,
 });
 
+// --- Quality (PLAN 15.9) --------------------------------------------------------------------
+
+const qualityHomeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/quality",
+  component: QualityHomePage,
+});
+const qualityInspectionLotsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/quality/inspection-lots",
+  component: InspectionLotListPage,
+});
+const qualityInspectionLotDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/quality/inspection-lots/$lotId",
+  component: InspectionLotDetailPage,
+});
+
+// --- Maintenance (PLAN 15.9) ----------------------------------------------------------------
+
+const maintenanceHomeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/maintenance",
+  component: MaintenanceHomePage,
+});
+const maintenanceEquipmentRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/maintenance/equipment",
+  component: EquipmentListPage,
+});
+const maintenanceEquipmentNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/maintenance/equipment/new",
+  component: EquipmentFormPage,
+});
+const maintenanceEquipmentDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/maintenance/equipment/$equipmentId",
+  component: EquipmentFormPage,
+});
+const maintenanceOrdersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/maintenance/orders",
+  component: MaintenanceOrderListPage,
+});
+const maintenanceOrderNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/maintenance/orders/new",
+  component: MaintenanceOrderFormPage,
+});
+const maintenanceOrderDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/maintenance/orders/$orderId",
+  component: MaintenanceOrderDetailPage,
+});
+const maintenancePlansRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/maintenance/plans",
+  component: MaintenancePlanListPage,
+});
+const maintenancePlanNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/maintenance/plans/new",
+  component: MaintenancePlanFormPage,
+});
+const maintenancePlanDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/maintenance/plans/$planId",
+  component: MaintenancePlanFormPage,
+});
+
 // --- Every other module: placeholder until its own slice lands ----------------------------
 
 const moduleRoute = createRoute({
@@ -1082,6 +1164,19 @@ const routeTree = rootRoute.addChildren([
   manufacturingMrpRunsRoute,
   manufacturingMrpRunNewRoute,
   manufacturingMrpRunDetailRoute,
+  qualityHomeRoute,
+  qualityInspectionLotsRoute,
+  qualityInspectionLotDetailRoute,
+  maintenanceHomeRoute,
+  maintenanceEquipmentRoute,
+  maintenanceEquipmentNewRoute,
+  maintenanceEquipmentDetailRoute,
+  maintenanceOrdersRoute,
+  maintenanceOrderNewRoute,
+  maintenanceOrderDetailRoute,
+  maintenancePlansRoute,
+  maintenancePlanNewRoute,
+  maintenancePlanDetailRoute,
   moduleRoute,
 ]);
 

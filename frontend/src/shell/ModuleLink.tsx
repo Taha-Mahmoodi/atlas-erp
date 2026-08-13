@@ -63,6 +63,18 @@ export function ModuleLink({
           {children}
         </Link>
       );
+    case "quality":
+      return (
+        <Link to="/quality" {...(className ? { className } : {})}>
+          {children}
+        </Link>
+      );
+    case "maintenance":
+      return (
+        <Link to="/maintenance" {...(className ? { className } : {})}>
+          {children}
+        </Link>
+      );
     default:
       return (
         <Link
