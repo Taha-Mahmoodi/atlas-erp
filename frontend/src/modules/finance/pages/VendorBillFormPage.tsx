@@ -12,6 +12,7 @@ import { useAccountOptions, useCreateVendorBill, useTaxCodes } from "@/modules/f
 import { BillLinesEditor } from "@/modules/finance/components/BillLinesEditor";
 import type { VendorBillLineCreate } from "@/modules/finance/types";
 import { useVendorOptions } from "@/modules/procurement/hooks";
+import { useProjects, useWbsElements } from "@/modules/projects/hooks";
 
 const CONTROL =
   "w-full rounded-control border border-line bg-surface px-3 py-1.5 text-sm text-ink transition-colors duration-150 hover:border-ink-faint";
@@ -34,8 +35,20 @@ export function VendorBillFormPage() {
   const [apAccountId, setApAccountId] = useState("");
   const [externalRef, setExternalRef] = useState("");
   const [description, setDescription] = useState("");
+  const [projectId, setProjectId] = useState("");
   const [lines, setLines] = useState<VendorBillLineCreate[]>([{ account_id: "", net_amount: "" }]);
   const [error, setError] = useState<string | null>(null);
+
+  // Project dimension (issue #162): pick a project in the header, tag lines with its WBS
+  // elements (a WBS-element id is the wire `project_id`, D-056). Cross-module hook reuse,
+  // the useVendorOptions/useCustomerOptions precedent.
+  // ponytail: one project per bill; per-line project pickers if cross-project bills matter.
+  const projects = useProjects({ status: "ACTIVE", limit: 200 });
+  const wbsElements = useWbsElements(projectId || undefined);
+  const changeProject = (value: string) => {
+    setProjectId(value);
+    setLines((prev) => prev.map((line) => ({ ...line, project_id: null })));
+  };
 
   const validLines = lines.filter((line) => line.account_id && (Number(line.net_amount) || 0) > 0);
   const canSubmit = Boolean(partnerId && apAccountId && validLines.length > 0);
@@ -156,7 +169,20 @@ export function VendorBillFormPage() {
             className={CONTROL}
           />
         </div>
-        <div className="col-span-3">
+        <div>
+          <label htmlFor="project" className="mb-1 block text-xs font-medium text-ink-muted">
+            Project (line WBS pickers)
+          </label>
+          <select id="project" value={projectId} onChange={(event) => changeProject(event.target.value)} className={CONTROL}>
+            <option value="">None</option>
+            {(projects.data?.pages.flatMap((page) => page.items) ?? []).map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.code} — {project.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="col-span-2">
           <label htmlFor="description" className="mb-1 block text-xs font-medium text-ink-muted">
             Description
           </label>
@@ -175,6 +201,7 @@ export function VendorBillFormPage() {
           lines={lines}
           accounts={accounts.data?.items ?? []}
           taxCodes={taxCodes.data?.items ?? []}
+          wbsElements={wbsElements.data?.items ?? []}
           onChange={setLines}
         />
       </div>

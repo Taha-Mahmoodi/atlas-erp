@@ -7,10 +7,13 @@
  */
 
 import type { Account, JournalLineCreate } from "@/modules/finance/types";
+import type { WbsElement } from "@/modules/projects/types";
 
 export interface JournalLinesEditorProps {
   lines: JournalLineCreate[];
   accounts: Account[];
+  /** WBS-element options for the per-line project dimension (of the page's selected project). */
+  wbsElements: WbsElement[];
   onChange: (lines: JournalLineCreate[]) => void;
 }
 
@@ -22,7 +25,7 @@ function sum(lines: JournalLineCreate[], field: "transaction_debit_amount" | "tr
   return lines.reduce((total, line) => total + (Number(line[field]) || 0), 0);
 }
 
-export function JournalLinesEditor({ lines, accounts, onChange }: JournalLinesEditorProps) {
+export function JournalLinesEditor({ lines, accounts, wbsElements, onChange }: JournalLinesEditorProps) {
   const updateLine = (index: number, patch: Partial<JournalLineCreate>) => {
     onChange(lines.map((line, i) => (i === index ? { ...line, ...patch } : line)));
   };
@@ -41,6 +44,7 @@ export function JournalLinesEditor({ lines, accounts, onChange }: JournalLinesEd
           <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
             <th className="py-2 pr-2">Account</th>
             <th className="py-2 pr-2">Description</th>
+            <th className="py-2 pr-2">WBS element</th>
             <th className="w-32 py-2 pr-2 text-right">Debit</th>
             <th className="w-32 py-2 pr-2 text-right">Credit</th>
             <th className="w-10 py-2" />
@@ -71,6 +75,22 @@ export function JournalLinesEditor({ lines, accounts, onChange }: JournalLinesEd
                   onChange={(event) => updateLine(index, { description: event.target.value })}
                   className="w-full rounded-control border border-line bg-surface px-2 py-1 text-sm"
                 />
+              </td>
+              <td className="py-1.5 pr-2">
+                <select
+                  aria-label="WBS element"
+                  value={line.project_id ?? ""}
+                  onChange={(event) => updateLine(index, { project_id: event.target.value || null })}
+                  disabled={wbsElements.length === 0}
+                  className="w-full rounded-control border border-line bg-surface px-2 py-1 text-sm disabled:opacity-45"
+                >
+                  <option value="">None</option>
+                  {wbsElements.map((wbs) => (
+                    <option key={wbs.id} value={wbs.id}>
+                      {wbs.code} — {wbs.name}
+                    </option>
+                  ))}
+                </select>
               </td>
               <td className="py-1.5 pr-2">
                 <input

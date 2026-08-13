@@ -109,6 +109,8 @@ export interface JournalLineCreate {
   description?: string | null;
   transaction_debit_amount: string;
   transaction_credit_amount: string;
+  /** Project dimension: a WBS-element id (the costing object, D-056), wire name `project_id`. */
+  project_id?: string | null;
 }
 
 export interface JournalEntryCreate {
@@ -168,6 +170,8 @@ export interface VendorBillLineCreate {
   description?: string | null;
   net_amount: string;
   tax_code_id?: string | null;
+  /** Project dimension: a WBS-element id (the costing object, D-056), wire name `project_id`. */
+  project_id?: string | null;
 }
 
 export interface VendorBillCreate {

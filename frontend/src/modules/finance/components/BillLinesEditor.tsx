@@ -7,11 +7,14 @@
 
 import type { TaxCode, VendorBillLineCreate } from "@/modules/finance/types";
 import type { Account } from "@/modules/finance/types";
+import type { WbsElement } from "@/modules/projects/types";
 
 export interface BillLinesEditorProps {
   lines: VendorBillLineCreate[];
   accounts: Account[];
   taxCodes: TaxCode[];
+  /** WBS-element options for the per-line project dimension (of the page's selected project). */
+  wbsElements: WbsElement[];
   onChange: (lines: VendorBillLineCreate[]) => void;
 }
 
@@ -19,7 +22,7 @@ function emptyLine(): VendorBillLineCreate {
   return { account_id: "", net_amount: "" };
 }
 
-export function BillLinesEditor({ lines, accounts, taxCodes, onChange }: BillLinesEditorProps) {
+export function BillLinesEditor({ lines, accounts, taxCodes, wbsElements, onChange }: BillLinesEditorProps) {
   const updateLine = (index: number, patch: Partial<VendorBillLineCreate>) => {
     onChange(lines.map((line, i) => (i === index ? { ...line, ...patch } : line)));
   };
@@ -36,6 +39,7 @@ export function BillLinesEditor({ lines, accounts, taxCodes, onChange }: BillLin
             <th className="py-2 pr-2">Account</th>
             <th className="py-2 pr-2">Description</th>
             <th className="py-2 pr-2">Tax code</th>
+            <th className="py-2 pr-2">WBS element</th>
             <th className="w-32 py-2 pr-2 text-right">Net amount</th>
             <th className="w-10 py-2" />
           </tr>
@@ -78,6 +82,22 @@ export function BillLinesEditor({ lines, accounts, taxCodes, onChange }: BillLin
                   {taxCodes.map((tax) => (
                     <option key={tax.id} value={tax.id}>
                       {tax.code} ({tax.rate_percent}%)
+                    </option>
+                  ))}
+                </select>
+              </td>
+              <td className="py-1.5 pr-2">
+                <select
+                  aria-label="WBS element"
+                  value={line.project_id ?? ""}
+                  onChange={(event) => updateLine(index, { project_id: event.target.value || null })}
+                  disabled={wbsElements.length === 0}
+                  className="w-full rounded-control border border-line bg-surface px-2 py-1 text-sm disabled:opacity-45"
+                >
+                  <option value="">None</option>
+                  {wbsElements.map((wbs) => (
+                    <option key={wbs.id} value={wbs.id}>
+                      {wbs.code} — {wbs.name}
                     </option>
                   ))}
                 </select>
