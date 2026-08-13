@@ -87,6 +87,12 @@ export function ModuleLink({
           {children}
         </Link>
       );
+    case "hr":
+      return (
+        <Link to="/hr" {...(className ? { className } : {})}>
+          {children}
+        </Link>
+      );
     default:
       return (
         <Link
