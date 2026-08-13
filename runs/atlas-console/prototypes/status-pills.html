@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>T5 prototype — status pills @ 40-row density</title>
+<style>
+/* Inter Variable, self-hosted from the repo (frontend/dist). Fallback: system-ui. */
+@font-face{
+  font-family:'Inter Variable';
+  src:url('file:///Users/taha/Documents/atlas-erp/frontend/dist/assets/inter-latin-wght-normal-Dx4kXJAl.woff2') format('woff2');
+  font-weight:100 900; font-style:normal; font-display:swap;
+}
+/* JetBrains Mono Variable NOT in repo — fallback stack renders (noted in verdict). */
+:root{
+  --bg:#f7f7f8; --card:#ffffff; --ink:#17181c; --ink2:#6b6d76; --line:#e9e9ee;
+  --acc:#3f5bf6; --acc-t:#edf0fe;
+  --ok-bg:#e7f6ed; --ok-tx:#177a48;
+  --warn-bg:#fbf1de; --warn-tx:#94650c;
+  --bad-bg:#fbe9e7; --bad-tx:#b23425;
+  --shadow:0 1px 2px rgba(23,24,28,.04), 0 10px 28px -8px rgba(23,24,28,.09);
+  --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+.dark{
+  --bg:#131418; --card:#1b1c22; --ink:#eeeef2; --ink2:#9a9ca8; --line:#2a2c35;
+  --acc:#93a5ff; --acc-t:#232637;
+  --ok-bg:#1b2f24; --ok-tx:#7fd6a4;
+  --warn-bg:#332a17; --warn-tx:#e4b566;
+  --bad-bg:#361f1c; --bad-tx:#eb9486;
+  --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 28px -8px rgba(0,0,0,.4);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:'Inter Variable',Inter,system-ui,sans-serif;
+  font-size:13px; font-weight:450; line-height:20px;
+  padding:28px 36px;
+}
+.gray body, body.gray{ filter:grayscale(1); }
+.wrap{ max-width:1120px; margin:0 auto; }
+.panel{
+  background:var(--card); border:1px solid var(--line); border-radius:14px;
+  box-shadow:var(--shadow); padding:4px 14px;
+}
+table{ border-collapse:collapse; width:100%; }
+th{
+  font-family:var(--mono); font-size:10.5px; font-weight:600;
+  letter-spacing:.065em; text-transform:uppercase; color:var(--ink2);
+  padding:8px 10px; border-bottom:1px solid var(--line); text-align:left;
+}
+td{ font-size:13px; padding:11px 10px; border-bottom:1px solid var(--line); }
+.compact td{ padding:8px 10px; }
+tr:last-child td{ border-bottom:none; }
+td.num, th.num{ text-align:right; font-variant-numeric:tabular-nums; }
+td .id{ font-size:11px; font-weight:500; color:var(--ink2); font-family:var(--mono); }
+td b{ font-weight:550; }
+.rowact{
+  width:40px; text-align:center;
+}
+.rowact button{
+  border:0; background:transparent; color:var(--ink2); font:inherit;
+  font-size:15px; line-height:20px; padding:2px 6px; border-radius:6px; cursor:pointer;
+}
+/*PILL-CSS-START*/
+.pill{
+  display:inline-flex; align-items:center; gap:5px; height:24px;
+  padding:0 10px; border-radius:999px; font-size:12px; font-weight:500;
+}
+.pill .dot{ width:7px; height:7px; border-radius:50%; background:currentColor; flex:none; }
+.pill.ok{ background:var(--ok-bg); color:var(--ok-tx); }
+.pill.warn{ background:var(--warn-bg); color:var(--warn-tx); }
+.pill.bad{ background:var(--bad-bg); color:var(--bad-tx); }
+.pill.mute{ background:transparent; border:1px dashed var(--line); color:var(--ink2); }
+/*PILL-CSS-END*/
+.pagerow{
+  display:flex; justify-content:space-between; margin-top:12px;
+  font-size:12.5px; color:var(--ink2);
+}
+.pagerow b{ color:var(--ink); font-weight:550; }
+#bench{
+  position:fixed; right:10px; bottom:10px; z-index:9;
+  font-family:var(--mono); font-size:11px; line-height:16px;
+  background:var(--card); color:var(--ink); border:1px solid var(--line);
+  border-radius:8px; padding:6px 10px; box-shadow:var(--shadow);
+  white-space:pre; display:none;
+}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="panel">
+    <table>
+      <thead><tr>
+        <th style="width:30px"></th><th>Item</th><th>Category</th>
+        <th class="num">Qty on hand</th><th class="num">Reorder pt</th>
+        <th>Vendor</th><th>Status</th><th style="width:40px"></th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div class="pagerow"><span id="showing">Showing 1–40 of 214</span><span>Prev · <b>1</b> 2 3 … 27 · Next</span></div>
+</main>
+<div id="bench" aria-hidden="true"></div>
+<script>
+// Static data. The approved 9 items (frames + BRKR) extended to 40 — structure-only
+// stand-in rows, no factual claims; item/vendor/warehouse terminology lock held.
+const D=[ // [name, id, category, qty, reorder, vendor, status] — status: ok|warn|bad|mute
+["Hex Bolt M6×20","ITM-BOLT-M6X20","Fasteners","1,240","300","Acme Fastening","ok"],
+["Hex Bolt M8×25","ITM-BOLT-M8X25","Fasteners","86","150","Acme Fastening","warn"],
+["Terminal Block 6-Pos","ITM-TERM-6POS","Electrical","0","60","Voltix","mute"],
+["Copper Bar 2in","ITM-CUBAR-2IN","Raw material","0","20","Meridian Metals","bad"],
+["Safety Glasses, Clear","ITM-SAFE-GLASS","Safety","480","100","Guardian Safety","ok"],
+["Digital Caliper 6in","ITM-CAL-6IN","Tooling","4","8","Precision Tool","warn"],
+["Epoxy Resin, 1L","ITM-EPOX-1L","Adhesives","90","40","BondTech","ok"],
+["Ball Valve 1/2in","ITM-VALV-BALL","Plumbing","38","40","FlowLine","warn"],
+["Circuit Breaker 20A","ITM-BRKR-20A","Electrical","55","60","Voltix","warn"],
+["Hex Nut M6","ITM-NUT-M6","Fasteners","3,150","600","Acme Fastening","ok"],
+["Flat Washer M8","ITM-WASH-M8","Fasteners","2,410","500","Acme Fastening","ok"],
+["Lock Washer M6","ITM-WASH-L-M6","Fasteners","940","250","Northgate Supply","ok"],
+["Socket Cap Screw M5×16","ITM-SCS-M5X16","Fasteners","112","200","Acme Fastening","warn"],
+["Threaded Rod M10, 1m","ITM-ROD-M10-1M","Fasteners","64","30","Northgate Supply","ok"],
+["Cable Tie 200mm","ITM-TIE-200","Electrical","5,800","1,000","Voltix","ok"],
+["Wire 14AWG, Red, 100m","ITM-WIRE-14R","Electrical","22","25","Voltix","warn"],
+["Relay 24V DPDT","ITM-RLY-24DPDT","Electrical","0","40","Voltix","bad"],
+["Conduit 20mm, 3m","ITM-COND-20","Electrical","210","80","Northgate Supply","ok"],
+["Steel Sheet 1.5mm","ITM-STL-SHT-15","Raw material","146","60","Meridian Metals","ok"],
+["Aluminum Angle 25×25","ITM-ALU-ANG-25","Raw material","88","40","Meridian Metals","ok"],
+["Brass Rod 10mm","ITM-BRS-ROD-10","Raw material","0","15","Meridian Metals","mute"],
+["Nitrile Gloves L","ITM-GLV-NIT-L","Safety","1,900","400","Guardian Safety","ok"],
+["Ear Plugs, Foam","ITM-EAR-FOAM","Safety","260","300","Guardian Safety","warn"],
+["Hard Hat, White","ITM-HAT-WHT","Safety","74","30","Guardian Safety","ok"],
+["Hi-Vis Vest XL","ITM-VEST-XL","Safety","0","50","Guardian Safety","bad"],
+["Torque Wrench 3/8in","ITM-TWR-38","Tooling","12","6","Precision Tool","ok"],
+["Drill Bit Set HSS","ITM-DRL-HSS","Tooling","9","10","Precision Tool","warn"],
+["End Mill 6mm 4FL","ITM-EM-6-4FL","Tooling","31","20","Precision Tool","ok"],
+["Feeler Gauge Set","ITM-FLR-SET","Tooling","0","5","Precision Tool","mute"],
+["Thread Locker, Blue","ITM-TLK-BLU","Adhesives","140","50","BondTech","ok"],
+["CA Glue 50g","ITM-CA-50","Adhesives","0","30","BondTech","bad"],
+["Silicone Sealant","ITM-SIL-SEAL","Adhesives","76","40","BondTech","ok"],
+["Pipe Elbow 1/2in 90°","ITM-ELB-12-90","Plumbing","310","100","FlowLine","ok"],
+["PTFE Tape 12mm","ITM-PTFE-12","Plumbing","520","150","FlowLine","ok"],
+["Check Valve 3/4in","ITM-CHKV-34","Plumbing","17","20","FlowLine","warn"],
+["O-Ring Kit, Metric","ITM-ORING-KIT","Seals","44","20","Delta Seals","ok"],
+["Shaft Seal 25×40×7","ITM-SEAL-25407","Seals","28","30","Delta Seals","warn"],
+["Bearing 6204-2RS","ITM-BRG-6204","Bearings","96","40","Ferrum Industrial","ok"],
+["Bearing 608ZZ","ITM-BRG-608","Bearings","350","120","Ferrum Industrial","ok"],
+["Grease, Lithium 400g","ITM-GRS-LI-400","Lubricants","62","25","Ferrum Industrial","ok"],
+];
+const LABEL={ok:"In stock",warn:"Low stock",bad:"Out of stock",mute:"Draft"};
+const q=new URLSearchParams(location.search);
+const theme=q.get("theme")||"light", state=q.get("state")||"default";
+if(theme==="dark") document.documentElement.classList.add("dark");
+if(state==="compact") document.documentElement.classList.add("compact");
+if(state==="gray") document.body.classList.add("gray");
+const rows = state==="stress" ? Array.from({length:5},()=>D).flat() : D;
+document.getElementById("rows").innerHTML = rows.map(([n,id,cat,qty,re,v,s])=>
+  `<tr><td>☐</td><td><b>${n}</b><br><span class="id">${id}</span></td><td>${cat}</td>`+
+  `<td class="num">${qty}</td><td class="num" style="color:var(--ink2)">${re}</td><td>${v}</td>`+
+  `<td><span class="pill ${s}">${s==="mute"?"":'<span class="dot"></span>'}${LABEL[s]}</span></td>`+
+  `<td class="rowact"><button aria-label="Actions for ${id}">⋯</button></td></tr>`).join("");
+document.getElementById("showing").textContent=`Showing 1–${rows.length} of 214`;
+
+// Pills are static — no animation, no reduced-motion delta by construction.
+// Scroll benchmark: rAF-driven programmatic scroll, ~10s, delta histogram.
+// Auto-runs with ?bench=1; result painted into #bench and on window.__benchResult.
+window.runScrollBench=function(dur=10000){
+  return new Promise(res=>{
+    const el=document.getElementById("bench");
+    el.style.display="block"; el.textContent="bench running…";
+    const max=document.documentElement.scrollHeight-innerHeight;
+    const deltas=[]; let prev,start;
+    function frame(t){
+      if(start===undefined){start=t;prev=t;requestAnimationFrame(frame);return;}
+      deltas.push(t-prev); prev=t;
+      const p=(t-start)/dur;
+      // ping-pong sweep: 4 full passes over the run
+      const ph=(p*4)%2; scrollTo(0, max*(ph<1?ph:2-ph));
+      if(t-start<dur){requestAnimationFrame(frame);return;}
+      deltas.sort((a,b)=>a-b);
+      const mean=deltas.reduce((a,b)=>a+b,0)/deltas.length;
+      const r={
+        frames:deltas.length,
+        meanFps:+(1000/mean).toFixed(1),
+        medianFps:+(1000/deltas[deltas.length>>1]).toFixed(1),
+        p1LowFps:+(1000/deltas[Math.floor(deltas.length*0.99)]).toFixed(1),
+        worstMs:+deltas[deltas.length-1].toFixed(1),
+        droppedOver20ms:deltas.filter(d=>d>20).length,
+        viewport:innerWidth+"×"+innerHeight, theme, rows:rows.length
+      };
+      window.__benchResult=r;
+      el.textContent=`scroll ${r.rows} rows · ${theme}\nmean ${r.meanFps}fps · median ${r.medianFps}fps\n1% low ${r.p1LowFps}fps · worst ${r.worstMs}ms\ndropped>20ms ${r.droppedOver20ms}/${r.frames} · ${r.viewport}`;
+      scrollTo(0,0); res(r);
+    }
+    requestAnimationFrame(frame);
+  });
+};
+if(q.get("bench")==="1") addEventListener("load",()=>setTimeout(()=>runScrollBench(),400));
+</script>
+</body>
+</html>

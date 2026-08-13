@@ -1,0 +1,124 @@
+<!doctype html>
+<!-- T3 prototype: monochrome paired-bar cash-flow chart (porcelain register, surface 02 role home)
+     States: ?state=normal|dense|sparse|empty|accessible-gray  Themes: ?theme=light|dark
+     Chart is DOM/CSS only (tier 1). The 3-line script below is prototype harness
+     (query-string → data attributes), not chart cost. Chart is static: no animation,
+     therefore no reduced-motion delta exists. -->
+<html lang="en" data-theme="light" data-state="normal">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>T3 — cash-flow paired bars (porcelain)</title>
+<style>
+@font-face{
+  font-family:'Inter Variable';
+  src:url('file:///Users/taha/Documents/atlas-erp/frontend/dist/assets/inter-latin-wght-normal-Dx4kXJAl.woff2') format('woff2');
+  font-weight:100 900; font-style:normal; font-display:swap;
+}
+/*CHART-CSS-START*/
+:root{
+  --bg:#f7f7f8; --card:#ffffff; --ink:#17181c; --ink2:#6b6d76; --line:#e9e9ee;
+  --btn-ink:#17181c;
+  --bar-lo:#939599; /* proposed ≥3:1 gray — oklch(66.9% 0.007 275), 3.00:1 vs card */
+  --shadow:0 1px 2px rgba(23,24,28,.04), 0 10px 28px -8px rgba(23,24,28,.09);
+}
+[data-theme="dark"]{
+  --bg:#131418; --card:#1b1c22; --ink:#eeeef2; --ink2:#9a9ca8; --line:#2a2c35;
+  --btn-ink:#eeeef2;
+  --bar-lo:#66676b; /* oklch(51.3% 0.007 275), 3.01:1 vs card */
+  --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 28px -8px rgba(0,0,0,.4);
+}
+.panel{ width:602px; background:var(--card); border:1px solid var(--line);
+  border-radius:14px; box-shadow:var(--shadow); padding:18px; box-sizing:border-box; }
+.phead{ display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+/* line-height pinned to 16px so the bars baseline lands on a whole pixel
+   (approved file leaves lh 'normal' → fractional phead height; measured in verdict) */
+.phead .caps{ font-size:10.5px; font-weight:600; letter-spacing:.07em; text-transform:uppercase;
+  font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace; color:var(--ink2); line-height:16px; }
+.phead .meta{ font-size:12px; color:var(--ink2); line-height:16px; }
+.phead .meta b{ color:var(--ink); font-weight:600; }
+.bars{ display:flex; align-items:flex-end; gap:14px; height:180px; padding:0 6px; --max:250000; }
+.bargrp{ flex:1; display:flex; align-items:flex-end; gap:4px; height:100%; }
+.bar{ flex:1; border-radius:5px 5px 2px 2px; background:var(--line);
+  height:calc(var(--v) / var(--max) * 180px);
+  height:round(nearest, calc(var(--v) / var(--max) * 180px), 1px); }
+.bar.b2{ background:var(--btn-ink); }
+.axis{ display:flex; gap:14px; padding:8px 6px 0; }
+.axis span{ flex:1; text-align:center; font-size:10.5px; color:var(--ink2); line-height:13px; }
+.empty{ height:201px; display:flex; flex-direction:column; align-items:center;
+  justify-content:center; text-align:center; }
+.empty p{ margin:0; font-size:15px; font-weight:500; color:var(--ink); }
+.empty span{ margin-top:4px; font-size:12px; color:var(--ink2); }
+[data-state="accessible-gray"] .bar:not(.b2){ background:var(--bar-lo); }
+/*CHART-CSS-END*/
+html,body{ margin:0; }
+body{ background:var(--bg); font-family:'Inter Variable',Inter,system-ui,sans-serif;
+  padding:40px; -webkit-font-smoothing:antialiased; }
+.st{ display:none; }
+[data-state="normal"] .st-normal, [data-state="accessible-gray"] .st-normal,
+[data-state="dense"] .st-dense, [data-state="sparse"] .st-sparse,
+[data-state="empty"] .st-empty{ display:block; }
+</style>
+</head>
+<body>
+<!--CHART-DOM-START-->
+<div class="panel">
+  <div class="phead"><span class="caps">Cash flow</span><span class="meta">Weekly · Monthly · <b>Yearly</b></span></div>
+
+  <!-- values in whole dollars; --max:250000 on .bars; height = round(v/max × 180px, 1px).
+       bar 1 (gray) = cash out · bar 2 (ink) = cash in -->
+  <div class="st st-normal" role="img" aria-label="Cash flow by month, March through August 2026. Gray bars cash out, dark bars cash in.">
+    <div class="bars">
+      <div class="bargrp"><div class="bar" style="--v:104600"></div><div class="bar b2" style="--v:150200"></div></div>
+      <div class="bargrp"><div class="bar" style="--v:87900"></div><div class="bar b2" style="--v:119400"></div></div>
+      <div class="bargrp"><div class="bar" style="--v:137200"></div><div class="bar b2" style="--v:183100"></div></div>
+      <div class="bargrp"><div class="bar" style="--v:120300"></div><div class="bar b2" style="--v:129800"></div></div>
+      <div class="bargrp"><div class="bar" style="--v:154900"></div><div class="bar b2" style="--v:219600"></div></div>
+      <div class="bargrp"><div class="bar" style="--v:124700"></div><div class="bar b2" style="--v:175300"></div></div>
+    </div>
+    <div class="axis"><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span></div>
+  </div>
+<!--CHART-DOM-END-->
+
+  <div class="st st-dense" role="img" aria-label="Cash flow by month, last 12 months. Gray bars cash out, dark bars cash in.">
+    <div class="bars">
+      <div class="bargrp"><div class="bar" style="--v:98400"></div><div class="bar b2" style="--v:121700"></div></div>
+      <div class="bargrp"><div class="bar" style="--v:112800"></div><div class="bar b2" style="--v:143500"></div></div>
+      <div class="bargrp"><div class="bar" style="--v:131600"></div><div class="bar b2" style="--v:138900"></div></div>
+      <div class="bargrp"><div class="bar" style="--v:149200"></div><div class="bar b2" style="--v:197400"></div></div>
+      <div class="bargrp"><div class="bar" style="--v:92300"></div><div class="bar b2" style="--v:110600"></div></div>
+      <div class="bargrp"><div class="bar" style="--v:101900"></div><div class="bar b2" style="--v:134200"></div></div>
+      <div class="bargrp"><div class="bar" style="--v:104600"></div><div class="bar b2" style="--v:150200"></div></div>
+      <div class="bargrp"><div class="bar" style="--v:87900"></div><div class="bar b2" style="--v:119400"></div></div>
+      <div class="bargrp"><div class="bar" style="--v:137200"></div><div class="bar b2" style="--v:183100"></div></div>
+      <div class="bargrp"><div class="bar" style="--v:120300"></div><div class="bar b2" style="--v:129800"></div></div>
+      <div class="bargrp"><div class="bar" style="--v:154900"></div><div class="bar b2" style="--v:219600"></div></div>
+      <div class="bargrp"><div class="bar" style="--v:124700"></div><div class="bar b2" style="--v:175300"></div></div>
+    </div>
+    <div class="axis"><span>Sep</span><span>Oct</span><span>Nov</span><span>Dec</span><span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span></div>
+  </div>
+
+  <div class="st st-sparse" role="img" aria-label="Cash flow by month, July through August 2026. Gray bars cash out, dark bars cash in.">
+    <div class="bars">
+      <div class="bargrp"><div class="bar" style="--v:154900"></div><div class="bar b2" style="--v:219600"></div></div>
+      <div class="bargrp"><div class="bar" style="--v:124700"></div><div class="bar b2" style="--v:175300"></div></div>
+    </div>
+    <div class="axis"><span>Jul</span><span>Aug</span></div>
+  </div>
+
+  <div class="st st-empty">
+    <div class="empty">
+      <p>No cash-flow data yet.</p>
+      <span>Cash in and out will appear here once transactions are posted.</span>
+    </div>
+  </div>
+</div>
+
+<script>
+/* harness only — not chart cost */
+const q=new URLSearchParams(location.search);
+document.documentElement.dataset.theme=q.get('theme')||'light';
+document.documentElement.dataset.state=q.get('state')||'normal';
+</script>
+</body>
+</html>

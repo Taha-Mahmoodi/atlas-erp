@@ -1,0 +1,846 @@
+<title>Atlas Console Gate A v3</title>
+<style>
+  :root{
+    --bg:#f5f5f3; --bg-raised:#ffffff; --ink:#1a1a18; --ink-2:#5c5b56; --ink-3:#8a8983;
+    --line:#dedcd5; --accent:#4d6af2; --accent-tint:#eceffe;
+    --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#111213; --bg-raised:#191a1c; --ink:#eeeeec; --ink-2:#a6a49c; --ink-3:#726f66;
+      --line:#2c2d2c; --accent:#9daffb; --accent-tint:#1b2033;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#111213; --bg-raised:#191a1c; --ink:#eeeeec; --ink-2:#a6a49c; --ink-3:#726f66;
+    --line:#2c2d2c; --accent:#9daffb; --accent-tint:#1b2033;
+  }
+  *{ box-sizing:border-box; }
+  html{ scroll-behavior:smooth; }
+  body{ margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); line-height:1.5; padding-bottom:120px; }
+  a{ color:var(--accent); }
+  .wrap{ max-width:1560px; margin-inline:auto; padding:0 32px; }
+  header.top{ padding:56px 0 32px; border-bottom:1px solid var(--line); }
+  .eyebrow{ font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); margin:0 0 10px; }
+  h1{ font-size:clamp(28px,4vw,40px); font-weight:650; letter-spacing:-.01em; margin:0 0 14px; text-wrap:balance; }
+  .lede{ max-width:76ch; color:var(--ink-2); font-size:15.5px; margin:0 0 6px; }
+  .lede + .lede{ margin-top:10px; }
+  nav.jump{ position:sticky; top:0; z-index:40; background:color-mix(in oklab, var(--bg) 88%, transparent); backdrop-filter:blur(8px); border-bottom:1px solid var(--line); }
+  nav.jump .wrap{ display:flex; gap:4px; flex-wrap:wrap; padding-top:12px; padding-bottom:12px; align-items:center; }
+  nav.jump a{ font-family:var(--mono); font-size:12px; text-decoration:none; color:var(--ink-2); padding:7px 12px; border-radius:20px; border:1px solid transparent; }
+  nav.jump a:hover{ border-color:var(--line); color:var(--ink); }
+  nav.jump .tag{ margin-left:auto; font-family:var(--mono); font-size:11px; color:var(--ink-3); }
+  section.concept{ padding:64px 0 24px; border-bottom:1px solid var(--line); }
+  section.concept:last-of-type{ border-bottom:none; }
+  .concept-head{ display:flex; flex-wrap:wrap; gap:28px 48px; align-items:flex-start; margin-bottom:36px; }
+  .concept-head h2{ font-size:26px; margin:0 0 6px; letter-spacing:-.01em; }
+  .concept-head .blurb{ max-width:64ch; color:var(--ink-2); font-size:14.5px; }
+  .concept-head .blurb b{ color:var(--ink); font-weight:600; }
+  .flags{ display:flex; flex-direction:column; gap:8px; min-width:260px; flex:1 1 260px; }
+  .flag{ font-size:12.5px; font-family:var(--mono); padding:8px 11px; border-radius:4px; border:1px solid var(--line); background:var(--bg-raised); color:var(--ink-2); }
+  .flag b{ color:var(--ink); font-family:var(--sans); font-weight:600; }
+  .theme-row{ display:grid; grid-template-columns:1fr 1fr; gap:28px; }
+  @media (max-width:920px){ .theme-row{ grid-template-columns:1fr; } }
+  .frames{ display:flex; flex-direction:column; gap:36px; margin-bottom:36px; }
+  .frames h3{ font-size:13px; font-family:var(--mono); color:var(--ink-3); margin:0 0 14px; text-transform:uppercase; letter-spacing:.04em; }
+  .frame-block figcaption{ font-family:var(--mono); font-size:11.5px; color:var(--ink-3); margin:0 0 8px; display:flex; justify-content:space-between; gap:12px; }
+  .frame-viewport{ position:relative; width:100%; aspect-ratio:1440/900; overflow:hidden; border:1px solid var(--line); border-radius:8px; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.04), 0 12px 32px -16px rgba(0,0,0,.28); }
+  .frame{ position:absolute; top:0; left:0; width:1440px; height:900px; transform-origin:top left; }
+  footer.notes{ padding-top:56px; color:var(--ink-3); font-size:12.5px; max-width:76ch; }
+  footer.notes p{ margin:0 0 10px; }
+
+  /* ============ shared mockup internals ============ */
+  .frame, .frame input, .frame button{ font-family:'Inter','Inter var',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; font-size:14px; }
+  .frame *{ box-sizing:border-box; }
+  .frame button{ cursor:default; }
+  .frame .ic{ width:18px; height:18px; stroke:currentColor; stroke-width:1.7; fill:none; stroke-linecap:round; stroke-linejoin:round; flex-shrink:0; }
+  .frame .ic.sm{ width:15px; height:15px; }
+  .caps{ font-size:11px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; font-family:ui-monospace,'SF Mono',Menlo,monospace; }
+  .tnum{ font-variant-numeric:tabular-nums; }
+
+  /* ============ PORCELAIN ============ */
+  .po{
+    --bg:#f7f7f8; --card:#ffffff; --ink:#17181c; --ink2:#6b6d76; --ink3:#9becb0;
+    --line:#e9e9ee; --acc:#3f5bf6; --acc-t:#edf0fe;
+    --ok-bg:#e7f6ed; --ok-tx:#177a48; --warn-bg:#fbf1de; --warn-tx:#96660f;
+    --bad-bg:#fbe9e7; --bad-tx:#b23425; --shadow:0 1px 2px rgba(23,24,28,.04), 0 10px 28px -8px rgba(23,24,28,.09);
+    --btn-ink:#17181c; --btn-ink-tx:#ffffff;
+    background:var(--bg); color:var(--ink);
+  }
+  .po.dark{
+    --bg:#131418; --card:#1b1c22; --ink:#eeeef2; --ink2:#9a9ca8;
+    --line:#2a2c35; --acc:#93a5ff; --acc-t:#232637;
+    --ok-bg:#1b2f24; --ok-tx:#7fd6a4; --warn-bg:#332a17; --warn-tx:#e4b566;
+    --bad-bg:#361f1c; --bad-tx:#eb9486; --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 28px -8px rgba(0,0,0,.4);
+    --btn-ink:#eeeef2; --btn-ink-tx:#17181c;
+  }
+  .po .side{ position:absolute; top:0; left:0; width:248px; height:900px; background:var(--card); border-right:1px solid var(--line); display:flex; flex-direction:column; padding:16px 12px; }
+  .po .ws{ display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--line); border-radius:10px; margin-bottom:20px; }
+  .po .ws .mark{ width:26px; height:26px; border-radius:7px; background:var(--btn-ink); color:var(--btn-ink-tx); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; }
+  .po .ws .nm{ font-size:13px; font-weight:600; line-height:1.2; }
+  .po .ws .sub{ font-size:11px; color:var(--ink2); }
+  .po .seclabel{ font-size:10.5px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--ink2); padding:0 10px; margin:14px 0 6px; font-family:ui-monospace,'SF Mono',Menlo,monospace; }
+  .po .nav a{ display:flex; align-items:center; gap:10px; height:38px; padding:0 10px; border-radius:9px; font-size:13.5px; color:var(--ink2); text-decoration:none; }
+  .po .nav a.on{ background:var(--acc-t); color:var(--acc); font-weight:550; }
+  .po .nav a .n{ margin-left:auto; font-size:11px; color:var(--ink2); }
+  .po .usercard{ margin-top:auto; display:flex; align-items:center; gap:10px; padding:10px; border:1px solid var(--line); border-radius:12px; }
+  .po .av{ width:30px; height:30px; border-radius:50%; background:var(--acc-t); color:var(--acc); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:650; }
+  .po .usercard .nm{ font-size:12.5px; font-weight:600; }
+  .po .usercard .sub{ font-size:11px; color:var(--ink2); }
+  .po .main{ position:absolute; left:248px; top:0; width:1192px; height:900px; padding:28px 36px; }
+  .po .crumb{ font-size:12px; color:var(--ink2); margin-bottom:10px; }
+  .po .crumb b{ color:var(--ink); font-weight:500; }
+  .po .pagehead{ display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; }
+  .po .pagehead h2{ margin:0; font-size:22px; font-weight:650; letter-spacing:-.01em; }
+  .po .pagehead .sub{ font-size:13px; color:var(--ink2); margin-top:3px; }
+  .po .hctl{ display:flex; align-items:center; gap:10px; }
+  .po .chipbtn{ height:38px; padding:0 14px; border:1px solid var(--line); border-radius:10px; background:var(--card); font-size:13px; color:var(--ink); display:flex; align-items:center; gap:8px; }
+  .po .inkbtn{ height:38px; padding:0 16px; background:var(--btn-ink); color:var(--btn-ink-tx); border:none; border-radius:10px; font-size:13px; font-weight:550; display:flex; align-items:center; gap:8px; }
+  .po .stats{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:20px; }
+  .po .stat{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px 18px; box-shadow:var(--shadow); }
+  .po .stat .lbl{ font-size:10.5px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--ink2); font-family:ui-monospace,'SF Mono',Menlo,monospace; display:flex; justify-content:space-between; align-items:center; }
+  .po .stat .val{ font-size:26px; font-weight:650; letter-spacing:-.01em; margin-top:8px; font-variant-numeric:tabular-nums; display:flex; align-items:baseline; gap:8px; }
+  .po .stat .val small{ font-size:12px; font-weight:450; color:var(--ink2); }
+  .po .stat .delta{ font-size:11.5px; margin-top:6px; color:var(--ink2); display:flex; align-items:center; gap:4px; }
+  .po .delta .up{ color:var(--ok-tx); }
+  .po .delta .down{ color:var(--bad-tx); }
+  .po .spark{ width:76px; height:22px; }
+  .po .spark polyline{ fill:none; stroke:var(--acc); stroke-width:1.8; }
+  .po .cols{ display:grid; grid-template-columns:1.2fr 1fr; gap:16px; }
+  .po .panel{ background:var(--card); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow); padding:18px; }
+  .po .panel .phead{ display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+  .po .bars{ display:flex; align-items:flex-end; gap:14px; height:180px; padding:0 6px; }
+  .po .bargrp{ flex:1; display:flex; align-items:flex-end; gap:4px; height:100%; }
+  .po .bar{ flex:1; border-radius:5px 5px 2px 2px; background:var(--line); }
+  .po .bar.b2{ background:var(--btn-ink); }
+  .po .axis{ display:flex; gap:14px; padding:8px 6px 0; }
+  .po .axis span{ flex:1; text-align:center; font-size:10.5px; color:var(--ink2); }
+  .po table{ width:100%; border-collapse:collapse; }
+  .po th{ text-align:left; font-size:10.5px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--ink2); padding:8px 10px; border-bottom:1px solid var(--line); font-family:ui-monospace,'SF Mono',Menlo,monospace; }
+  .po td{ padding:11px 10px; font-size:13px; border-bottom:1px solid var(--line); }
+  .po tr:last-child td{ border-bottom:none; }
+  .po td.num{ text-align:right; font-variant-numeric:tabular-nums; }
+  .po .pill{ display:inline-flex; align-items:center; gap:5px; height:24px; padding:0 10px; border-radius:999px; font-size:12px; font-weight:500; }
+  .po .pill.ok{ background:var(--ok-bg); color:var(--ok-tx); }
+  .po .pill.warn{ background:var(--warn-bg); color:var(--warn-tx); }
+  .po .pill.bad{ background:var(--bad-bg); color:var(--bad-tx); }
+  .po .pill.mute{ background:transparent; border:1px dashed var(--line); color:var(--ink2); }
+  .po .dot8{ width:7px; height:7px; border-radius:50%; background:currentColor; }
+  /* glass palette — ref 6 */
+  .po .palette{ position:absolute; right:72px; top:250px; width:330px; border-radius:16px; padding:10px;
+    background:color-mix(in srgb, var(--card) 62%, transparent); backdrop-filter:blur(18px) saturate(150%); -webkit-backdrop-filter:blur(18px) saturate(150%);
+    border:1px solid color-mix(in srgb, var(--card) 40%, #ffffff88); box-shadow:0 24px 60px -12px rgba(23,24,28,.28); }
+  .po.dark .palette{ border-color:color-mix(in srgb, #ffffff 14%, transparent); }
+  .po .palette .row{ display:flex; align-items:center; gap:12px; height:44px; padding:0 12px; border-radius:10px; font-size:13.5px; color:var(--ink); }
+  .po .palette .row.hi{ background:color-mix(in srgb, var(--card) 85%, transparent); box-shadow:0 2px 8px rgba(23,24,28,.08); }
+  .po .palette .kbds{ margin-left:auto; display:flex; gap:4px; }
+  .po .kbd{ min-width:22px; height:22px; padding:0 5px; border-radius:6px; border:1px solid var(--line); background:var(--card); font-size:11px; display:flex; align-items:center; justify-content:center; color:var(--ink2); box-shadow:0 1px 0 var(--line); }
+  .po .searchfield{ height:38px; flex:0 0 260px; border:1px solid var(--line); border-radius:10px; background:var(--card); display:flex; align-items:center; gap:8px; padding:0 12px; font-size:13px; color:var(--ink2); }
+  .po .fchip{ height:30px; padding:0 12px; border-radius:999px; background:var(--acc-t); color:var(--acc); font-size:12.5px; display:flex; align-items:center; gap:6px; }
+
+  /* ============ NIGHT SHIFT ============ */
+  .ns{
+    --bg:#0f1014; --card:#17181d; --card2:#1d1e25; --ink:#f2f2f5; --ink2:#9598a6;
+    --line:#26272e; --peri:#8aa4ff; --peri-t:#232842;
+    --cblue:#9db4ff; --corange:#ffb37c; --cyellow:#ffd66b; --cgreen:#8fe3b0; --cdark:#14151a;
+    --grad:linear-gradient(135deg,#8a63ff,#4d7dff);
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 14px 36px -10px rgba(0,0,0,.5);
+    background:var(--bg); color:var(--ink);
+  }
+  .ns.light{
+    --bg:#f3f4f8; --card:#ffffff; --card2:#f8f8fb; --ink:#16171c; --ink2:#6d7080;
+    --line:#e7e8ee; --peri:#4d6af2; --peri-t:#e9edfe;
+    --shadow:0 1px 2px rgba(22,23,28,.04), 0 10px 28px -8px rgba(22,23,28,.09);
+  }
+  .ns .rail{ position:absolute; top:0; left:0; width:76px; height:900px; background:var(--card); border-right:1px solid var(--line); display:flex; flex-direction:column; align-items:center; padding:18px 0; gap:8px; }
+  .ns .rail .logo{ width:38px; height:38px; border-radius:12px; background:var(--grad); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:15px; margin-bottom:18px; }
+  .ns .rail .rbtn{ width:42px; height:42px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--ink2); }
+  .ns .rail .rbtn.on{ background:var(--peri-t); color:var(--peri); }
+  .ns .rail .flex{ flex:1; }
+  .ns .main{ position:absolute; left:76px; top:0; width:1364px; height:900px; padding:24px 36px; }
+  .ns .topbar{ display:flex; align-items:center; gap:16px; margin-bottom:22px; }
+  .ns .search{ height:42px; flex:0 0 300px; border-radius:12px; background:var(--card); border:1px solid var(--line); display:flex; align-items:center; gap:9px; padding:0 14px; font-size:13px; color:var(--ink2); }
+  .ns .today{ font-size:13px; color:var(--ink2); }
+  .ns .tspacer{ flex:1; }
+  .ns .cbtn{ width:42px; height:42px; border-radius:50%; background:var(--card); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; color:var(--ink2); position:relative; }
+  .ns .cbtn .dot{ position:absolute; top:9px; right:10px; width:7px; height:7px; border-radius:50%; background:var(--corange); }
+  .ns .av{ width:42px; height:42px; border-radius:50%; background:var(--grad); color:#fff; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:650; }
+  .ns .hello{ display:flex; align-items:flex-end; justify-content:space-between; margin-bottom:22px; }
+  .ns .hello h2{ margin:0; font-size:26px; font-weight:650; letter-spacing:-.01em; }
+  .ns .hello .sub{ font-size:13.5px; color:var(--ink2); margin-top:4px; }
+  .ns .selbtn{ height:38px; padding:0 14px; border-radius:10px; background:var(--card); border:1px solid var(--line); color:var(--ink); font-size:13px; display:flex; align-items:center; gap:8px; }
+  .ns .statrow{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:18px; }
+  .ns .scard{ border-radius:16px; padding:18px; min-height:118px; display:flex; flex-direction:column; box-shadow:var(--shadow); }
+  .ns .scard .t{ font-size:13px; font-weight:550; display:flex; justify-content:space-between; align-items:center; }
+  .ns .scard .v{ font-size:30px; font-weight:680; letter-spacing:-.01em; margin-top:auto; font-variant-numeric:tabular-nums; display:flex; align-items:baseline; gap:10px; }
+  .ns .scard .d{ font-size:11px; padding:2px 8px; border-radius:999px; font-weight:600; }
+  .ns .scard.white{ background:#ffffff; color:#14151a; }
+  .ns .scard.white .d{ background:#e7f6ed; color:#177a48; }
+  .ns .scard.cb{ background:var(--cblue); color:var(--cdark); }
+  .ns .scard.co{ background:var(--corange); color:var(--cdark); }
+  .ns .scard.cy{ background:var(--cyellow); color:var(--cdark); }
+  .ns .scard.cg{ background:var(--cgreen); color:var(--cdark); }
+  .ns .scard.cb .d, .ns .scard.co .d, .ns .scard.cy .d, .ns .scard.cg .d{ background:rgba(20,21,26,.14); color:var(--cdark); }
+  .ns .scard.plain{ background:var(--card); color:var(--ink); border:1px solid var(--line); }
+  .ns .scard.plain .d.up{ background:#1b2f24; color:#7fd6a4; }
+  .ns .scard.plain .d.down{ background:#361f1c; color:#eb9486; }
+  .ns.light .scard.plain .d.up{ background:#e7f6ed; color:#177a48; }
+  .ns.light .scard.plain .d.down{ background:#fbe9e7; color:#b23425; }
+  .ns .cols{ display:grid; grid-template-columns:1.5fr 1fr; gap:16px; }
+  .ns .panel{ background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px; box-shadow:var(--shadow); }
+  .ns .phead{ display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+  .ns .phead .t{ font-size:15px; font-weight:600; }
+  .ns .phead .m{ font-size:12px; color:var(--ink2); }
+  .ns .bars{ display:flex; align-items:flex-end; gap:18px; height:190px; padding:0 8px; }
+  .ns .bwrap{ flex:1; display:flex; flex-direction:column; align-items:center; height:100%; justify-content:flex-end; gap:6px; }
+  .ns .bar{ width:100%; max-width:34px; border-radius:8px; background:var(--peri); opacity:.85; }
+  .ns .bar.hi{ opacity:1; box-shadow:0 6px 18px -4px rgba(138,164,255,.5); }
+  .ns .blab{ font-size:10.5px; color:var(--ink2); }
+  .ns .tip{ align-self:center; background:var(--ink); color:var(--bg); font-size:11px; font-weight:600; padding:3px 9px; border-radius:7px; margin-bottom:6px; font-variant-numeric:tabular-nums; }
+  .ns.light .tip{ background:#16171c; color:#fff; }
+  .ns .donutwrap{ display:flex; align-items:center; gap:20px; }
+  .ns .legend{ font-size:12.5px; display:flex; flex-direction:column; gap:9px; }
+  .ns .legend .li{ display:flex; align-items:center; gap:8px; color:var(--ink2); }
+  .ns .legend .sw{ width:9px; height:9px; border-radius:3px; }
+  .ns .sidecard{ margin-top:14px; background:var(--card2); border:1px solid var(--line); border-radius:14px; padding:14px; }
+  .ns .sidecard .t{ font-size:13px; font-weight:600; display:flex; gap:7px; align-items:center; }
+  .ns .sidecard .s{ font-size:11.5px; color:var(--ink2); margin:6px 0 10px; }
+  .ns .gradbtn{ width:100%; height:38px; border:none; border-radius:10px; background:var(--grad); color:#fff; font-size:13px; font-weight:600; }
+  /* night items list */
+  .ns .lhead{ display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
+  .ns .lhead h2{ margin:0; font-size:24px; font-weight:650; }
+  .ns .minicards{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:18px; }
+  .ns .mini{ border-radius:14px; padding:14px 16px; min-height:92px; display:flex; flex-direction:column; box-shadow:var(--shadow); }
+  .ns .mini .t{ font-size:12.5px; font-weight:600; }
+  .ns .mini .v{ font-size:24px; font-weight:680; margin-top:auto; font-variant-numeric:tabular-nums; display:flex; align-items:baseline; gap:8px; }
+  .ns .mini .d{ font-size:10.5px; padding:1px 7px; border-radius:999px; font-weight:600; background:rgba(20,21,26,.14); color:var(--cdark); }
+  .ns .toolrow{ display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+  .ns .toolrow .cnt{ font-size:12.5px; color:var(--ink2); }
+  .ns .ghost{ height:38px; padding:0 14px; border-radius:10px; background:var(--card); border:1px solid var(--line); color:var(--ink); font-size:13px; display:flex; align-items:center; gap:8px; }
+  .ns .addbtn{ height:38px; padding:0 16px; border:none; border-radius:10px; background:var(--grad); color:#fff; font-size:13px; font-weight:600; display:flex; align-items:center; gap:8px; margin-left:auto; }
+  .ns table{ width:100%; border-collapse:collapse; }
+  .ns th{ text-align:left; font-size:11px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; color:var(--ink2); padding:10px; border-bottom:1px solid var(--line); }
+  .ns td{ padding:12px 10px; font-size:13px; border-bottom:1px solid var(--line); }
+  .ns td.num{ text-align:right; font-variant-numeric:tabular-nums; }
+  .ns .spill{ display:inline-flex; align-items:center; gap:6px; height:26px; padding:0 11px; border-radius:999px; font-size:12px; font-weight:550; }
+  .ns .spill .ch{ width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-top:5px solid currentColor; opacity:.7; }
+  .ns .spill.ok{ background:rgba(143,227,176,.16); color:#8fe3b0; }
+  .ns .spill.warn{ background:rgba(255,214,107,.15); color:#ffd66b; }
+  .ns .spill.bad{ background:rgba(255,138,110,.15); color:#ff9c82; }
+  .ns .spill.info{ background:rgba(157,180,255,.15); color:#9db4ff; }
+  .ns .spill.mute{ background:transparent; border:1px dashed var(--line); color:var(--ink2); }
+  .ns.light .spill.ok{ background:#e2f6ea; color:#177a48; }
+  .ns.light .spill.warn{ background:#fdf2d7; color:#8f6408; }
+  .ns.light .spill.bad{ background:#fde7e0; color:#b23e25; }
+  .ns.light .spill.info{ background:#e9edfe; color:#3d55d8; }
+</style>
+
+<svg style="display:none" aria-hidden="true">
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></symbol>
+  <symbol id="i-cart" viewBox="0 0 24 24"><circle cx="9" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/><path d="M3 4h2.5l2.2 11h10.6l2-8H6.1"/></symbol>
+  <symbol id="i-dollar" viewBox="0 0 24 24"><path d="M12 2.5v19M16.5 6.5c0-1.7-2-3-4.5-3s-4.5 1.3-4.5 3 1.6 2.6 4.5 3.2c3.1.6 4.8 1.7 4.8 3.6 0 1.9-2.1 3.2-4.8 3.2s-4.7-1.3-4.7-3"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.4"/><path d="M2.8 20c.6-3.4 3.1-5.4 6.2-5.4s5.6 2 6.2 5.4"/><path d="M16 5.2a3.4 3.4 0 010 5.9M18.5 14.9c1.7.8 2.8 2.4 3.2 4.6"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M21 20H3"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 9.5c0-3.3-2.7-6-6-6s-6 2.7-6 6c0 6-2.5 6.7-2.5 6.7h17S18 15.5 18 9.5z"/><path d="M10 19.5a2.2 2.2 0 004 0"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20.5 20.5l-4.8-4.8"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8l1.2 2.6 2.8-.6 1 2.7 2.8.7-.6 2.8 2 2-2 2 .6 2.8-2.8.7-1 2.7-2.8-.6-1.2 2.6-1.2-2.6-2.8.6-1-2.7-2.8-.7.6-2.8-2-2 2-2-.6-2.8 2.8-.7 1-2.7 2.8.6L12 2.8z"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 2.8h8L20 8.8v12.4H6V2.8z"/><path d="M14 3v6h6"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path d="M9 21H4V3h5M15 16l5-4-5-4M20 12H9"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M3 11V3h8l10 10-8 8L3 11z"/><circle cx="8" cy="8" r="1.5"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="wrap">
+    <p class="eyebrow">inter.face · atlas-console · Gate A · round 3</p>
+    <h1>Built from your pictures this time</h1>
+    <p class="lede">Rounds 1 and 2 both failed the same way — they invented a concept metaphor when your references were already the answer. This round designs in the references' own registers, split the way your nine images themselves split: a light-led, near-monochrome refined direction (the Salung dashboard, the Untitled UI sidebar, the glass ⌘K menu) and a dark-led, color-confident direction (the Barbara dashboard's colorful cards, the CRM pills, the Workly gradient).</p>
+    <p class="lede">Both directions carry both themes. The accent is now sampled from the references themselves — the periwinkle-blue family your images actually use — not invented.</p>
+  </div>
+</header>
+
+<nav class="jump">
+  <div class="wrap">
+    <a href="#porcelain">porcelain</a>
+    <a href="#night-shift">night shift</a>
+    <span class="tag">role home + items list · light &amp; dark each</span>
+  </div>
+</nav>
+
+<main class="wrap">
+
+  <!-- ============================= PORCELAIN ============================= -->
+  <section class="concept" id="porcelain">
+    <div class="concept-head">
+      <div>
+        <h2>A · porcelain</h2>
+        <p class="blurb"><b>Light-led, near-monochrome, quietly expensive.</b> From your refs: Salung's mono-caps section labels and black CTA, Untitled UI's clean sidebar with pill active states, TrustToken's calm restraint, and the glass ⌘K palette floating as a small layer — glass as a moment, not a structure. Color appears only where it means something: status pills, sparklines, one blue accent.</p>
+      </div>
+      <div class="flags">
+        <div class="flag"><b>From your refs —</b> mono-caps labels + ink-black button (Salung) · sidebar + user card (Untitled UI) · keycap shortcut chips + tasteful glass popover (refs 6/2).</div>
+        <div class="flag"><b>Glass, gated —</b> appears only as the floating command palette and popovers. Nothing structural ever blurs.</div>
+      </div>
+    </div>
+
+    <div class="frames">
+      <h3>02 · Role home — with the ⌘K palette open</h3>
+      <div class="theme-row">
+        <figure class="frame-block">
+          <figcaption><span>light</span></figcaption>
+          <div class="frame-viewport"><div class="frame po">
+            <div class="side">
+              <div class="ws"><div class="mark">A</div><div><div class="nm">Atlas</div><div class="sub">Acme Co.</div></div><svg class="ic sm" style="margin-left:auto;color:var(--ink2)"><use href="#i-chev"/></svg></div>
+              <div class="seclabel">Main menu</div>
+              <div class="nav">
+                <a class="on"><svg class="ic sm"><use href="#i-grid"/></svg>Dashboard</a>
+                <a><svg class="ic sm"><use href="#i-box"/></svg>Items<span class="n">214</span></a>
+                <a><svg class="ic sm"><use href="#i-cart"/></svg>Purchase orders<span class="n">18</span></a>
+                <a><svg class="ic sm"><use href="#i-tag"/></svg>Sales orders<span class="n">27</span></a>
+                <a><svg class="ic sm"><use href="#i-dollar"/></svg>Finance</a>
+                <a><svg class="ic sm"><use href="#i-users"/></svg>HR</a>
+              </div>
+              <div class="seclabel">Insights</div>
+              <div class="nav">
+                <a><svg class="ic sm"><use href="#i-chart"/></svg>Reports</a>
+                <a><svg class="ic sm"><use href="#i-gear"/></svg>Settings</a>
+              </div>
+              <div class="usercard"><div class="av">AK</div><div><div class="nm">Amira K.</div><div class="sub">Buyer · Procurement</div></div></div>
+            </div>
+            <div class="main">
+              <div class="crumb">Dashboard / <b>Overview</b></div>
+              <div class="pagehead">
+                <div><h2>Welcome back, Amira</h2><div class="sub">Thursday 14 August · Acme Co.</div></div>
+                <div class="hctl">
+                  <div class="chipbtn">This month<svg class="ic sm"><use href="#i-chev"/></svg></div>
+                  <button class="inkbtn"><svg class="ic sm"><use href="#i-file"/></svg>Export CSV</button>
+                </div>
+              </div>
+              <div class="stats">
+                <div class="stat"><div class="lbl">Total revenue<svg class="spark" viewBox="0 0 80 24"><polyline points="0,18 12,15 24,17 36,10 48,12 60,6 72,9 80,4"/></svg></div><div class="val">$128,400</div><div class="delta"><span class="up">↑ 2.6%</span> vs last month</div></div>
+                <div class="stat"><div class="lbl">Open orders<svg class="spark" viewBox="0 0 80 24"><polyline points="0,12 12,14 24,9 36,13 48,8 60,11 72,7 80,10"/></svg></div><div class="val">132</div><div class="delta"><span class="up">↑ 8</span> vs last week</div></div>
+                <div class="stat"><div class="lbl">Low-stock items</div><div class="val">6 <small>of 214</small></div><div class="delta"><span class="down">↑ 2</span> need reorder</div></div>
+                <div class="stat"><div class="lbl">AP due this week</div><div class="val">$23,900</div><div class="delta">4 vendor bills</div></div>
+              </div>
+              <div class="cols">
+                <div class="panel">
+                  <div class="phead"><span class="caps" style="color:var(--ink2)">Cash flow</span><span style="font-size:12px;color:var(--ink2)">Weekly · Monthly · <b style="color:var(--ink)">Yearly</b></span></div>
+                  <div class="bars">
+                    <div class="bargrp"><div class="bar" style="height:42%"></div><div class="bar b2" style="height:60%"></div></div>
+                    <div class="bargrp"><div class="bar" style="height:35%"></div><div class="bar b2" style="height:48%"></div></div>
+                    <div class="bargrp"><div class="bar" style="height:55%"></div><div class="bar b2" style="height:73%"></div></div>
+                    <div class="bargrp"><div class="bar" style="height:48%"></div><div class="bar b2" style="height:52%"></div></div>
+                    <div class="bargrp"><div class="bar" style="height:62%"></div><div class="bar b2" style="height:88%"></div></div>
+                    <div class="bargrp"><div class="bar" style="height:50%"></div><div class="bar b2" style="height:70%"></div></div>
+                  </div>
+                  <div class="axis"><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span></div>
+                </div>
+                <div class="panel">
+                  <div class="phead"><span class="caps" style="color:var(--ink2)">Needs your action</span><span style="font-size:12px;color:var(--acc)">View all</span></div>
+                  <table>
+                    <tbody>
+                      <tr><td><b>PO-2026-00842</b><br><span style="font-size:11.5px;color:var(--ink2)">Meridian Supply Co.</span></td><td class="num tnum">$4,280</td><td style="width:96px"><span class="pill warn"><span class="dot8"></span>Pending</span></td></tr>
+                      <tr><td><b>BILL-2026-01187</b><br><span style="font-size:11.5px;color:var(--ink2)">Cascade Fasteners</span></td><td class="num tnum">$1,096</td><td><span class="pill bad"><span class="dot8"></span>Mismatch</span></td></tr>
+                      <tr><td><b>PO-2026-00845</b><br><span style="font-size:11.5px;color:var(--ink2)">Norbright Industrial</span></td><td class="num tnum">$780</td><td><span class="pill mute">Draft</span></td></tr>
+                      <tr><td><b>BILL-2026-01190</b><br><span style="font-size:11.5px;color:var(--ink2)">Solara Components</span></td><td class="num tnum">$12,450</td><td><span class="pill ok"><span class="dot8"></span>Posted</span></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="palette">
+                <div class="row"><svg class="ic sm"><use href="#i-plus"/></svg>New item<span class="kbds"><span class="kbd">⌘</span><span class="kbd">N</span></span></div>
+                <div class="row hi"><svg class="ic sm"><use href="#i-box"/></svg>Receive stock<span class="kbds"><span class="kbd">⌘</span><span class="kbd">R</span></span></div>
+                <div class="row"><svg class="ic sm"><use href="#i-dollar"/></svg>Pay vendor bill<span class="kbds"><span class="kbd">⌘</span><span class="kbd">B</span></span></div>
+                <div class="row"><svg class="ic sm"><use href="#i-search"/></svg>Jump to record…<span class="kbds"><span class="kbd">⌘</span><span class="kbd">K</span></span></div>
+              </div>
+            </div>
+          </div></div>
+        </figure>
+        <figure class="frame-block">
+          <figcaption><span>dark</span></figcaption>
+          <div class="frame-viewport"><div class="frame po dark">
+            <div class="side">
+              <div class="ws"><div class="mark">A</div><div><div class="nm">Atlas</div><div class="sub">Acme Co.</div></div><svg class="ic sm" style="margin-left:auto;color:var(--ink2)"><use href="#i-chev"/></svg></div>
+              <div class="seclabel">Main menu</div>
+              <div class="nav">
+                <a class="on"><svg class="ic sm"><use href="#i-grid"/></svg>Dashboard</a>
+                <a><svg class="ic sm"><use href="#i-box"/></svg>Items<span class="n">214</span></a>
+                <a><svg class="ic sm"><use href="#i-cart"/></svg>Purchase orders<span class="n">18</span></a>
+                <a><svg class="ic sm"><use href="#i-tag"/></svg>Sales orders<span class="n">27</span></a>
+                <a><svg class="ic sm"><use href="#i-dollar"/></svg>Finance</a>
+                <a><svg class="ic sm"><use href="#i-users"/></svg>HR</a>
+              </div>
+              <div class="seclabel">Insights</div>
+              <div class="nav">
+                <a><svg class="ic sm"><use href="#i-chart"/></svg>Reports</a>
+                <a><svg class="ic sm"><use href="#i-gear"/></svg>Settings</a>
+              </div>
+              <div class="usercard"><div class="av">AK</div><div><div class="nm">Amira K.</div><div class="sub">Buyer · Procurement</div></div></div>
+            </div>
+            <div class="main">
+              <div class="crumb">Dashboard / <b>Overview</b></div>
+              <div class="pagehead">
+                <div><h2>Welcome back, Amira</h2><div class="sub">Thursday 14 August · Acme Co.</div></div>
+                <div class="hctl">
+                  <div class="chipbtn">This month<svg class="ic sm"><use href="#i-chev"/></svg></div>
+                  <button class="inkbtn"><svg class="ic sm"><use href="#i-file"/></svg>Export CSV</button>
+                </div>
+              </div>
+              <div class="stats">
+                <div class="stat"><div class="lbl">Total revenue<svg class="spark" viewBox="0 0 80 24"><polyline points="0,18 12,15 24,17 36,10 48,12 60,6 72,9 80,4"/></svg></div><div class="val">$128,400</div><div class="delta"><span class="up">↑ 2.6%</span> vs last month</div></div>
+                <div class="stat"><div class="lbl">Open orders<svg class="spark" viewBox="0 0 80 24"><polyline points="0,12 12,14 24,9 36,13 48,8 60,11 72,7 80,10"/></svg></div><div class="val">132</div><div class="delta"><span class="up">↑ 8</span> vs last week</div></div>
+                <div class="stat"><div class="lbl">Low-stock items</div><div class="val">6 <small>of 214</small></div><div class="delta"><span class="down">↑ 2</span> need reorder</div></div>
+                <div class="stat"><div class="lbl">AP due this week</div><div class="val">$23,900</div><div class="delta">4 vendor bills</div></div>
+              </div>
+              <div class="cols">
+                <div class="panel">
+                  <div class="phead"><span class="caps" style="color:var(--ink2)">Cash flow</span><span style="font-size:12px;color:var(--ink2)">Weekly · Monthly · <b style="color:var(--ink)">Yearly</b></span></div>
+                  <div class="bars">
+                    <div class="bargrp"><div class="bar" style="height:42%"></div><div class="bar b2" style="height:60%"></div></div>
+                    <div class="bargrp"><div class="bar" style="height:35%"></div><div class="bar b2" style="height:48%"></div></div>
+                    <div class="bargrp"><div class="bar" style="height:55%"></div><div class="bar b2" style="height:73%"></div></div>
+                    <div class="bargrp"><div class="bar" style="height:48%"></div><div class="bar b2" style="height:52%"></div></div>
+                    <div class="bargrp"><div class="bar" style="height:62%"></div><div class="bar b2" style="height:88%"></div></div>
+                    <div class="bargrp"><div class="bar" style="height:50%"></div><div class="bar b2" style="height:70%"></div></div>
+                  </div>
+                  <div class="axis"><span>Mar</span><span>Apr</span><span>May</span><span>Jun</span><span>Jul</span><span>Aug</span></div>
+                </div>
+                <div class="panel">
+                  <div class="phead"><span class="caps" style="color:var(--ink2)">Needs your action</span><span style="font-size:12px;color:var(--acc)">View all</span></div>
+                  <table>
+                    <tbody>
+                      <tr><td><b>PO-2026-00842</b><br><span style="font-size:11.5px;color:var(--ink2)">Meridian Supply Co.</span></td><td class="num tnum">$4,280</td><td style="width:96px"><span class="pill warn"><span class="dot8"></span>Pending</span></td></tr>
+                      <tr><td><b>BILL-2026-01187</b><br><span style="font-size:11.5px;color:var(--ink2)">Cascade Fasteners</span></td><td class="num tnum">$1,096</td><td><span class="pill bad"><span class="dot8"></span>Mismatch</span></td></tr>
+                      <tr><td><b>PO-2026-00845</b><br><span style="font-size:11.5px;color:var(--ink2)">Norbright Industrial</span></td><td class="num tnum">$780</td><td><span class="pill mute">Draft</span></td></tr>
+                      <tr><td><b>BILL-2026-01190</b><br><span style="font-size:11.5px;color:var(--ink2)">Solara Components</span></td><td class="num tnum">$12,450</td><td><span class="pill ok"><span class="dot8"></span>Posted</span></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="palette">
+                <div class="row"><svg class="ic sm"><use href="#i-plus"/></svg>New item<span class="kbds"><span class="kbd">⌘</span><span class="kbd">N</span></span></div>
+                <div class="row hi"><svg class="ic sm"><use href="#i-box"/></svg>Receive stock<span class="kbds"><span class="kbd">⌘</span><span class="kbd">R</span></span></div>
+                <div class="row"><svg class="ic sm"><use href="#i-dollar"/></svg>Pay vendor bill<span class="kbds"><span class="kbd">⌘</span><span class="kbd">B</span></span></div>
+                <div class="row"><svg class="ic sm"><use href="#i-search"/></svg>Jump to record…<span class="kbds"><span class="kbd">⌘</span><span class="kbd">K</span></span></div>
+              </div>
+            </div>
+          </div></div>
+        </figure>
+      </div>
+
+      <h3>03 · Items list</h3>
+      <div class="theme-row">
+        <figure class="frame-block">
+          <figcaption><span>light</span></figcaption>
+          <div class="frame-viewport"><div class="frame po">
+            <div class="side">
+              <div class="ws"><div class="mark">A</div><div><div class="nm">Atlas</div><div class="sub">Acme Co.</div></div><svg class="ic sm" style="margin-left:auto;color:var(--ink2)"><use href="#i-chev"/></svg></div>
+              <div class="seclabel">Main menu</div>
+              <div class="nav">
+                <a><svg class="ic sm"><use href="#i-grid"/></svg>Dashboard</a>
+                <a class="on"><svg class="ic sm"><use href="#i-box"/></svg>Items<span class="n">214</span></a>
+                <a><svg class="ic sm"><use href="#i-cart"/></svg>Purchase orders<span class="n">18</span></a>
+                <a><svg class="ic sm"><use href="#i-tag"/></svg>Sales orders<span class="n">27</span></a>
+                <a><svg class="ic sm"><use href="#i-dollar"/></svg>Finance</a>
+                <a><svg class="ic sm"><use href="#i-users"/></svg>HR</a>
+              </div>
+              <div class="usercard"><div class="av">AK</div><div><div class="nm">Amira K.</div><div class="sub">Buyer · Procurement</div></div></div>
+            </div>
+            <div class="main">
+              <div class="crumb">Inventory / <b>Items</b></div>
+              <div class="pagehead">
+                <div><h2>Items</h2><div class="sub">214 items across 4 warehouses</div></div>
+                <div class="hctl">
+                  <div class="searchfield"><svg class="ic sm"><use href="#i-search"/></svg>Search items… <span class="kbd" style="margin-left:auto">⌘K</span></div>
+                  <button class="inkbtn"><svg class="ic sm"><use href="#i-plus"/></svg>New item</button>
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;margin-bottom:14px">
+                <div class="fchip">Category: Fasteners ✕</div>
+                <div class="fchip">Status: Low stock ✕</div>
+                <span style="font-size:13px;color:var(--acc);align-self:center">+ Add filter</span>
+              </div>
+              <div class="panel" style="padding:4px 14px">
+                <table>
+                  <thead><tr><th style="width:30px"></th><th>Item</th><th>Category</th><th style="text-align:right">Qty on hand</th><th style="text-align:right">Reorder pt</th><th>Vendor</th><th>Status</th><th style="width:40px"></th></tr></thead>
+                  <tbody>
+                    <tr><td>☐</td><td><b>Hex Bolt M6×20</b><br><span style="font-size:11px;color:var(--ink2);font-family:var(--mono)">ITM-BOLT-M6X20</span></td><td>Fasteners</td><td class="num">1,240</td><td class="num" style="color:var(--ink2)">300</td><td>Acme Fastening</td><td><span class="pill ok"><span class="dot8"></span>In stock</span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Hex Bolt M8×25</b><br><span style="font-size:11px;color:var(--ink2);font-family:var(--mono)">ITM-BOLT-M8X25</span></td><td>Fasteners</td><td class="num">86</td><td class="num" style="color:var(--ink2)">150</td><td>Acme Fastening</td><td><span class="pill warn"><span class="dot8"></span>Low stock</span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Terminal Block 6-Pos</b><br><span style="font-size:11px;color:var(--ink2);font-family:var(--mono)">ITM-TERM-6POS</span></td><td>Electrical</td><td class="num">0</td><td class="num" style="color:var(--ink2)">60</td><td>Voltix</td><td><span class="pill mute">Draft</span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Copper Bar 2in</b><br><span style="font-size:11px;color:var(--ink2);font-family:var(--mono)">ITM-CUBAR-2IN</span></td><td>Raw material</td><td class="num">0</td><td class="num" style="color:var(--ink2)">20</td><td>Meridian Metals</td><td><span class="pill bad"><span class="dot8"></span>Out of stock</span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Safety Glasses, Clear</b><br><span style="font-size:11px;color:var(--ink2);font-family:var(--mono)">ITM-SAFE-GLASS</span></td><td>Safety</td><td class="num">480</td><td class="num" style="color:var(--ink2)">100</td><td>Guardian Safety</td><td><span class="pill ok"><span class="dot8"></span>In stock</span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Digital Caliper 6in</b><br><span style="font-size:11px;color:var(--ink2);font-family:var(--mono)">ITM-CAL-6IN</span></td><td>Tooling</td><td class="num">4</td><td class="num" style="color:var(--ink2)">8</td><td>Precision Tool</td><td><span class="pill warn"><span class="dot8"></span>Low stock</span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Epoxy Resin, 1L</b><br><span style="font-size:11px;color:var(--ink2);font-family:var(--mono)">ITM-EPOX-1L</span></td><td>Adhesives</td><td class="num">90</td><td class="num" style="color:var(--ink2)">40</td><td>BondTech</td><td><span class="pill ok"><span class="dot8"></span>In stock</span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Ball Valve 1/2in</b><br><span style="font-size:11px;color:var(--ink2);font-family:var(--mono)">ITM-VALV-BALL</span></td><td>Plumbing</td><td class="num">38</td><td class="num" style="color:var(--ink2)">40</td><td>FlowLine</td><td><span class="pill warn"><span class="dot8"></span>Low stock</span></td><td>⋯</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div style="display:flex;justify-content:space-between;margin-top:12px;font-size:12.5px;color:var(--ink2)">
+                <span>Showing 1–8 of 214</span><span>Prev · <b style="color:var(--ink)">1</b> 2 3 … 27 · Next</span>
+              </div>
+            </div>
+          </div></div>
+        </figure>
+        <figure class="frame-block">
+          <figcaption><span>dark</span></figcaption>
+          <div class="frame-viewport"><div class="frame po dark">
+            <div class="side">
+              <div class="ws"><div class="mark">A</div><div><div class="nm">Atlas</div><div class="sub">Acme Co.</div></div><svg class="ic sm" style="margin-left:auto;color:var(--ink2)"><use href="#i-chev"/></svg></div>
+              <div class="seclabel">Main menu</div>
+              <div class="nav">
+                <a><svg class="ic sm"><use href="#i-grid"/></svg>Dashboard</a>
+                <a class="on"><svg class="ic sm"><use href="#i-box"/></svg>Items<span class="n">214</span></a>
+                <a><svg class="ic sm"><use href="#i-cart"/></svg>Purchase orders<span class="n">18</span></a>
+                <a><svg class="ic sm"><use href="#i-tag"/></svg>Sales orders<span class="n">27</span></a>
+                <a><svg class="ic sm"><use href="#i-dollar"/></svg>Finance</a>
+                <a><svg class="ic sm"><use href="#i-users"/></svg>HR</a>
+              </div>
+              <div class="usercard"><div class="av">AK</div><div><div class="nm">Amira K.</div><div class="sub">Buyer · Procurement</div></div></div>
+            </div>
+            <div class="main">
+              <div class="crumb">Inventory / <b>Items</b></div>
+              <div class="pagehead">
+                <div><h2>Items</h2><div class="sub">214 items across 4 warehouses</div></div>
+                <div class="hctl">
+                  <div class="searchfield"><svg class="ic sm"><use href="#i-search"/></svg>Search items… <span class="kbd" style="margin-left:auto">⌘K</span></div>
+                  <button class="inkbtn"><svg class="ic sm"><use href="#i-plus"/></svg>New item</button>
+                </div>
+              </div>
+              <div style="display:flex;gap:8px;margin-bottom:14px">
+                <div class="fchip">Category: Fasteners ✕</div>
+                <div class="fchip">Status: Low stock ✕</div>
+                <span style="font-size:13px;color:var(--acc);align-self:center">+ Add filter</span>
+              </div>
+              <div class="panel" style="padding:4px 14px">
+                <table>
+                  <thead><tr><th style="width:30px"></th><th>Item</th><th>Category</th><th style="text-align:right">Qty on hand</th><th style="text-align:right">Reorder pt</th><th>Vendor</th><th>Status</th><th style="width:40px"></th></tr></thead>
+                  <tbody>
+                    <tr><td>☐</td><td><b>Hex Bolt M6×20</b><br><span style="font-size:11px;color:var(--ink2);font-family:var(--mono)">ITM-BOLT-M6X20</span></td><td>Fasteners</td><td class="num">1,240</td><td class="num" style="color:var(--ink2)">300</td><td>Acme Fastening</td><td><span class="pill ok"><span class="dot8"></span>In stock</span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Hex Bolt M8×25</b><br><span style="font-size:11px;color:var(--ink2);font-family:var(--mono)">ITM-BOLT-M8X25</span></td><td>Fasteners</td><td class="num">86</td><td class="num" style="color:var(--ink2)">150</td><td>Acme Fastening</td><td><span class="pill warn"><span class="dot8"></span>Low stock</span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Terminal Block 6-Pos</b><br><span style="font-size:11px;color:var(--ink2);font-family:var(--mono)">ITM-TERM-6POS</span></td><td>Electrical</td><td class="num">0</td><td class="num" style="color:var(--ink2)">60</td><td>Voltix</td><td><span class="pill mute">Draft</span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Copper Bar 2in</b><br><span style="font-size:11px;color:var(--ink2);font-family:var(--mono)">ITM-CUBAR-2IN</span></td><td>Raw material</td><td class="num">0</td><td class="num" style="color:var(--ink2)">20</td><td>Meridian Metals</td><td><span class="pill bad"><span class="dot8"></span>Out of stock</span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Safety Glasses, Clear</b><br><span style="font-size:11px;color:var(--ink2);font-family:var(--mono)">ITM-SAFE-GLASS</span></td><td>Safety</td><td class="num">480</td><td class="num" style="color:var(--ink2)">100</td><td>Guardian Safety</td><td><span class="pill ok"><span class="dot8"></span>In stock</span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Digital Caliper 6in</b><br><span style="font-size:11px;color:var(--ink2);font-family:var(--mono)">ITM-CAL-6IN</span></td><td>Tooling</td><td class="num">4</td><td class="num" style="color:var(--ink2)">8</td><td>Precision Tool</td><td><span class="pill warn"><span class="dot8"></span>Low stock</span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Epoxy Resin, 1L</b><br><span style="font-size:11px;color:var(--ink2);font-family:var(--mono)">ITM-EPOX-1L</span></td><td>Adhesives</td><td class="num">90</td><td class="num" style="color:var(--ink2)">40</td><td>BondTech</td><td><span class="pill ok"><span class="dot8"></span>In stock</span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Ball Valve 1/2in</b><br><span style="font-size:11px;color:var(--ink2);font-family:var(--mono)">ITM-VALV-BALL</span></td><td>Plumbing</td><td class="num">38</td><td class="num" style="color:var(--ink2)">40</td><td>FlowLine</td><td><span class="pill warn"><span class="dot8"></span>Low stock</span></td><td>⋯</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div style="display:flex;justify-content:space-between;margin-top:12px;font-size:12.5px;color:var(--ink2)">
+                <span>Showing 1–8 of 214</span><span>Prev · <b style="color:var(--ink)">1</b> 2 3 … 27 · Next</span>
+              </div>
+            </div>
+          </div></div>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================= NIGHT SHIFT ============================= -->
+  <section class="concept" id="night-shift">
+    <div class="concept-head">
+      <div>
+        <h2>B · night shift</h2>
+        <p class="blurb"><b>Dark-led, color-confident.</b> From your refs: the Barbara dashboard's colorful solid stat cards and periwinkle bar chart, the CRM's colored status pills, Workly's gradient CTA, Endel's dark calm. Color does real work — each card's hue *is* its meaning, the one white card is the hero metric, and the gradient appears exactly once per screen.</p>
+      </div>
+      <div class="flags">
+        <div class="flag"><b>From your refs —</b> colorful stat cards + periwinkle chart + donut (Barbara) · colored dropdown status pills (Barbara/CRM) · gradient CTA (Workly) · circular icon rail (Barbara).</div>
+        <div class="flag"><b>Both themes real —</b> the colorful card system holds on light ground too; shown both ways below.</div>
+      </div>
+    </div>
+
+    <div class="frames">
+      <h3>02 · Role home</h3>
+      <div class="theme-row">
+        <figure class="frame-block">
+          <figcaption><span>dark (lead)</span></figcaption>
+          <div class="frame-viewport"><div class="frame ns">
+            <div class="rail">
+              <div class="logo">A</div>
+              <div class="rbtn on"><svg class="ic"><use href="#i-grid"/></svg></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-box"/></svg></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-cart"/></svg></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-dollar"/></svg></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-users"/></svg></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-chart"/></svg></div>
+              <div class="flex"></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-gear"/></svg></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-out"/></svg></div>
+            </div>
+            <div class="main">
+              <div class="topbar">
+                <div class="search"><svg class="ic sm"><use href="#i-search"/></svg>Search</div>
+                <span class="today">Today, Thu 14 Aug</span>
+                <div class="tspacer"></div>
+                <div class="cbtn"><svg class="ic sm"><use href="#i-bell"/></svg><span class="dot"></span></div>
+                <div class="av">AK</div>
+              </div>
+              <div class="hello">
+                <div><h2>Good evening, Amira</h2><div class="sub">This is what's happening across Acme this month.</div></div>
+                <div class="selbtn">This month<svg class="ic sm"><use href="#i-chev"/></svg></div>
+              </div>
+              <div class="statrow">
+                <div class="scard white"><div class="t">Total revenue<svg class="ic sm"><use href="#i-dollar"/></svg></div><div class="v">$128,400 <span class="d">↑ 2.6%</span></div></div>
+                <div class="scard plain"><div class="t">Open orders</div><div class="v">132 <span class="d up">↑ 8</span></div></div>
+                <div class="scard plain"><div class="t">Net profit</div><div class="v">$60,450 <span class="d up">↑ 5.7%</span></div></div>
+                <div class="scard plain"><div class="t">Low-stock items</div><div class="v">6 <span class="d down">↑ 2</span></div></div>
+              </div>
+              <div class="cols">
+                <div class="panel">
+                  <div class="phead"><span class="t">Revenue</span><span class="m">This month vs last</span></div>
+                  <div class="bars">
+                    <div class="bwrap"><div class="bar" style="height:62%"></div><span class="blab">Mar</span></div>
+                    <div class="bwrap"><div class="bar" style="height:38%"></div><span class="blab">Apr</span></div>
+                    <div class="bwrap"><span class="tip">$14,867</span><div class="bar hi" style="height:52%"></div><span class="blab">May</span></div>
+                    <div class="bwrap"><div class="bar" style="height:46%"></div><span class="blab">Jun</span></div>
+                    <div class="bwrap"><div class="bar" style="height:70%"></div><span class="blab">Jul</span></div>
+                    <div class="bwrap"><div class="bar hi" style="height:88%"></div><span class="blab">Aug</span></div>
+                  </div>
+                </div>
+                <div class="panel">
+                  <div class="phead"><span class="t">Sales by module</span><span class="m">This month</span></div>
+                  <div class="donutwrap">
+                    <svg width="150" height="150" viewBox="0 0 42 42">
+                      <circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--line)" stroke-width="6"/>
+                      <circle cx="21" cy="21" r="15.9" fill="none" stroke="#9db4ff" stroke-width="6" stroke-dasharray="35 65" stroke-dashoffset="25" stroke-linecap="round"/>
+                      <circle cx="21" cy="21" r="15.9" fill="none" stroke="#ffb37c" stroke-width="6" stroke-dasharray="25 75" stroke-dashoffset="90" stroke-linecap="round"/>
+                      <circle cx="21" cy="21" r="15.9" fill="none" stroke="#ffd66b" stroke-width="6" stroke-dasharray="18 82" stroke-dashoffset="65" stroke-linecap="round"/>
+                      <circle cx="21" cy="21" r="15.9" fill="none" stroke="#8fe3b0" stroke-width="6" stroke-dasharray="14 86" stroke-dashoffset="47" stroke-linecap="round"/>
+                      <text x="21" y="20" text-anchor="middle" style="font-size:6px;font-weight:650" fill="var(--ink)">$99.5k</text>
+                      <text x="21" y="26" text-anchor="middle" style="font-size:3px" fill="var(--ink2)">this month</text>
+                    </svg>
+                    <div class="legend">
+                      <div class="li"><span class="sw" style="background:#9db4ff"></span>Sales orders · 35%</div>
+                      <div class="li"><span class="sw" style="background:#ffb37c"></span>Manufacturing · 25%</div>
+                      <div class="li"><span class="sw" style="background:#ffd66b"></span>Services · 18%</div>
+                      <div class="li"><span class="sw" style="background:#8fe3b0"></span>Projects · 14%</div>
+                    </div>
+                  </div>
+                  <div class="sidecard">
+                    <div class="t"><svg class="ic sm"><use href="#i-bolt"/></svg>Month-end close</div>
+                    <div class="s">3 of 7 checklist tasks remaining for August.</div>
+                    <button class="gradbtn">Run close checklist</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div></div>
+        </figure>
+        <figure class="frame-block">
+          <figcaption><span>light</span></figcaption>
+          <div class="frame-viewport"><div class="frame ns light">
+            <div class="rail">
+              <div class="logo">A</div>
+              <div class="rbtn on"><svg class="ic"><use href="#i-grid"/></svg></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-box"/></svg></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-cart"/></svg></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-dollar"/></svg></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-users"/></svg></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-chart"/></svg></div>
+              <div class="flex"></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-gear"/></svg></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-out"/></svg></div>
+            </div>
+            <div class="main">
+              <div class="topbar">
+                <div class="search"><svg class="ic sm"><use href="#i-search"/></svg>Search</div>
+                <span class="today">Today, Thu 14 Aug</span>
+                <div class="tspacer"></div>
+                <div class="cbtn"><svg class="ic sm"><use href="#i-bell"/></svg><span class="dot"></span></div>
+                <div class="av">AK</div>
+              </div>
+              <div class="hello">
+                <div><h2>Good morning, Amira</h2><div class="sub">This is what's happening across Acme this month.</div></div>
+                <div class="selbtn">This month<svg class="ic sm"><use href="#i-chev"/></svg></div>
+              </div>
+              <div class="statrow">
+                <div class="scard cb"><div class="t">New orders</div><div class="v">12 <span class="d">↓ 2.6%</span></div></div>
+                <div class="scard co"><div class="t">Awaiting approval</div><div class="v">20 <span class="d">↑ 2.6%</span></div></div>
+                <div class="scard cy"><div class="t">In production</div><div class="v">57 <span class="d">↓ 0.6%</span></div></div>
+                <div class="scard cg"><div class="t">Delivered</div><div class="v">98 <span class="d">↑ 2.8%</span></div></div>
+              </div>
+              <div class="cols">
+                <div class="panel">
+                  <div class="phead"><span class="t">Revenue</span><span class="m">This month vs last</span></div>
+                  <div class="bars">
+                    <div class="bwrap"><div class="bar" style="height:62%"></div><span class="blab">Mar</span></div>
+                    <div class="bwrap"><div class="bar" style="height:38%"></div><span class="blab">Apr</span></div>
+                    <div class="bwrap"><span class="tip">$14,867</span><div class="bar hi" style="height:52%"></div><span class="blab">May</span></div>
+                    <div class="bwrap"><div class="bar" style="height:46%"></div><span class="blab">Jun</span></div>
+                    <div class="bwrap"><div class="bar" style="height:70%"></div><span class="blab">Jul</span></div>
+                    <div class="bwrap"><div class="bar hi" style="height:88%"></div><span class="blab">Aug</span></div>
+                  </div>
+                </div>
+                <div class="panel">
+                  <div class="phead"><span class="t">Sales by module</span><span class="m">This month</span></div>
+                  <div class="donutwrap">
+                    <svg width="150" height="150" viewBox="0 0 42 42">
+                      <circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--line)" stroke-width="6"/>
+                      <circle cx="21" cy="21" r="15.9" fill="none" stroke="#7794ff" stroke-width="6" stroke-dasharray="35 65" stroke-dashoffset="25" stroke-linecap="round"/>
+                      <circle cx="21" cy="21" r="15.9" fill="none" stroke="#ff9d55" stroke-width="6" stroke-dasharray="25 75" stroke-dashoffset="90" stroke-linecap="round"/>
+                      <circle cx="21" cy="21" r="15.9" fill="none" stroke="#f2bd3c" stroke-width="6" stroke-dasharray="18 82" stroke-dashoffset="65" stroke-linecap="round"/>
+                      <circle cx="21" cy="21" r="15.9" fill="none" stroke="#54c286" stroke-width="6" stroke-dasharray="14 86" stroke-dashoffset="47" stroke-linecap="round"/>
+                      <text x="21" y="20" text-anchor="middle" style="font-size:6px;font-weight:650" fill="var(--ink)">$99.5k</text>
+                      <text x="21" y="26" text-anchor="middle" style="font-size:3px" fill="var(--ink2)">this month</text>
+                    </svg>
+                    <div class="legend">
+                      <div class="li"><span class="sw" style="background:#7794ff"></span>Sales orders · 35%</div>
+                      <div class="li"><span class="sw" style="background:#ff9d55"></span>Manufacturing · 25%</div>
+                      <div class="li"><span class="sw" style="background:#f2bd3c"></span>Services · 18%</div>
+                      <div class="li"><span class="sw" style="background:#54c286"></span>Projects · 14%</div>
+                    </div>
+                  </div>
+                  <div class="sidecard">
+                    <div class="t"><svg class="ic sm"><use href="#i-bolt"/></svg>Month-end close</div>
+                    <div class="s">3 of 7 checklist tasks remaining for August.</div>
+                    <button class="gradbtn">Run close checklist</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div></div>
+        </figure>
+      </div>
+
+      <h3>03 · Items list — Barbara's order-list pattern, applied to stock</h3>
+      <div class="theme-row">
+        <figure class="frame-block">
+          <figcaption><span>dark (lead)</span></figcaption>
+          <div class="frame-viewport"><div class="frame ns">
+            <div class="rail">
+              <div class="logo">A</div>
+              <div class="rbtn"><svg class="ic"><use href="#i-grid"/></svg></div>
+              <div class="rbtn on"><svg class="ic"><use href="#i-box"/></svg></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-cart"/></svg></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-dollar"/></svg></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-users"/></svg></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-chart"/></svg></div>
+              <div class="flex"></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-gear"/></svg></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-out"/></svg></div>
+            </div>
+            <div class="main">
+              <div class="lhead"><h2>Items</h2>
+                <div style="display:flex;gap:12px;align-items:center">
+                  <div class="cbtn"><svg class="ic sm"><use href="#i-bell"/></svg></div>
+                  <div class="av">AK</div>
+                </div>
+              </div>
+              <div class="minicards">
+                <div class="mini" style="background:var(--cblue);color:var(--cdark)"><div class="t">Total items</div><div class="v">214 <span class="d">↑ 6</span></div></div>
+                <div class="mini" style="background:var(--cyellow);color:var(--cdark)"><div class="t">Low stock</div><div class="v">6 <span class="d">↑ 2</span></div></div>
+                <div class="mini" style="background:var(--corange);color:var(--cdark)"><div class="t">Out of stock</div><div class="v">3 <span class="d">↓ 1</span></div></div>
+                <div class="mini" style="background:var(--cgreen);color:var(--cdark)"><div class="t">Healthy</div><div class="v">205 <span class="d">↑ 5</span></div></div>
+              </div>
+              <div class="toolrow">
+                <div class="search" style="flex:0 0 260px"><svg class="ic sm"><use href="#i-search"/></svg>Search items</div>
+                <span class="cnt">214 items</span>
+                <div class="tspacer"></div>
+                <div class="ghost"><svg class="ic sm"><use href="#i-file"/></svg>Export</div>
+                <div class="ghost">Sort: default<svg class="ic sm"><use href="#i-chev"/></svg></div>
+                <button class="addbtn"><svg class="ic sm"><use href="#i-plus"/></svg>Add item</button>
+              </div>
+              <div class="panel" style="padding:4px 14px">
+                <table>
+                  <thead><tr><th style="width:30px"></th><th>Item</th><th>Category</th><th style="text-align:right">Qty</th><th style="text-align:right">Reorder pt</th><th>Vendor</th><th>Status</th><th style="width:40px"></th></tr></thead>
+                  <tbody>
+                    <tr><td>☐</td><td><b>Hex Bolt M6×20</b><br><span style="font-size:11px;color:var(--ink2)">ITM-BOLT-M6X20</span></td><td>Fasteners</td><td class="num">1,240</td><td class="num" style="color:var(--ink2)">300</td><td>Acme Fastening</td><td><span class="spill ok">In stock<span class="ch"></span></span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Hex Bolt M8×25</b><br><span style="font-size:11px;color:var(--ink2)">ITM-BOLT-M8X25</span></td><td>Fasteners</td><td class="num">86</td><td class="num" style="color:var(--ink2)">150</td><td>Acme Fastening</td><td><span class="spill warn">Low stock<span class="ch"></span></span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Terminal Block 6-Pos</b><br><span style="font-size:11px;color:var(--ink2)">ITM-TERM-6POS</span></td><td>Electrical</td><td class="num">0</td><td class="num" style="color:var(--ink2)">60</td><td>Voltix</td><td><span class="spill mute">Draft<span class="ch"></span></span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Copper Bar 2in</b><br><span style="font-size:11px;color:var(--ink2)">ITM-CUBAR-2IN</span></td><td>Raw material</td><td class="num">0</td><td class="num" style="color:var(--ink2)">20</td><td>Meridian Metals</td><td><span class="spill bad">Out of stock<span class="ch"></span></span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Safety Glasses, Clear</b><br><span style="font-size:11px;color:var(--ink2)">ITM-SAFE-GLASS</span></td><td>Safety</td><td class="num">480</td><td class="num" style="color:var(--ink2)">100</td><td>Guardian Safety</td><td><span class="spill ok">In stock<span class="ch"></span></span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Digital Caliper 6in</b><br><span style="font-size:11px;color:var(--ink2)">ITM-CAL-6IN</span></td><td>Tooling</td><td class="num">4</td><td class="num" style="color:var(--ink2)">8</td><td>Precision Tool</td><td><span class="spill warn">Low stock<span class="ch"></span></span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Circuit Breaker 20A</b><br><span style="font-size:11px;color:var(--ink2)">ITM-BRKR-20A</span></td><td>Electrical</td><td class="num">55</td><td class="num" style="color:var(--ink2)">60</td><td>Voltix</td><td><span class="spill warn">Low stock<span class="ch"></span></span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Epoxy Resin, 1L</b><br><span style="font-size:11px;color:var(--ink2)">ITM-EPOX-1L</span></td><td>Adhesives</td><td class="num">90</td><td class="num" style="color:var(--ink2)">40</td><td>BondTech</td><td><span class="spill ok">In stock<span class="ch"></span></span></td><td>⋯</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div></div>
+        </figure>
+        <figure class="frame-block">
+          <figcaption><span>light</span></figcaption>
+          <div class="frame-viewport"><div class="frame ns light">
+            <div class="rail">
+              <div class="logo">A</div>
+              <div class="rbtn"><svg class="ic"><use href="#i-grid"/></svg></div>
+              <div class="rbtn on"><svg class="ic"><use href="#i-box"/></svg></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-cart"/></svg></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-dollar"/></svg></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-users"/></svg></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-chart"/></svg></div>
+              <div class="flex"></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-gear"/></svg></div>
+              <div class="rbtn"><svg class="ic"><use href="#i-out"/></svg></div>
+            </div>
+            <div class="main">
+              <div class="lhead"><h2>Items</h2>
+                <div style="display:flex;gap:12px;align-items:center">
+                  <div class="cbtn"><svg class="ic sm"><use href="#i-bell"/></svg></div>
+                  <div class="av">AK</div>
+                </div>
+              </div>
+              <div class="minicards">
+                <div class="mini" style="background:var(--cblue);color:var(--cdark)"><div class="t">Total items</div><div class="v">214 <span class="d">↑ 6</span></div></div>
+                <div class="mini" style="background:var(--cyellow);color:var(--cdark)"><div class="t">Low stock</div><div class="v">6 <span class="d">↑ 2</span></div></div>
+                <div class="mini" style="background:var(--corange);color:var(--cdark)"><div class="t">Out of stock</div><div class="v">3 <span class="d">↓ 1</span></div></div>
+                <div class="mini" style="background:var(--cgreen);color:var(--cdark)"><div class="t">Healthy</div><div class="v">205 <span class="d">↑ 5</span></div></div>
+              </div>
+              <div class="toolrow">
+                <div class="search" style="flex:0 0 260px"><svg class="ic sm"><use href="#i-search"/></svg>Search items</div>
+                <span class="cnt">214 items</span>
+                <div class="tspacer"></div>
+                <div class="ghost"><svg class="ic sm"><use href="#i-file"/></svg>Export</div>
+                <div class="ghost">Sort: default<svg class="ic sm"><use href="#i-chev"/></svg></div>
+                <button class="addbtn"><svg class="ic sm"><use href="#i-plus"/></svg>Add item</button>
+              </div>
+              <div class="panel" style="padding:4px 14px">
+                <table>
+                  <thead><tr><th style="width:30px"></th><th>Item</th><th>Category</th><th style="text-align:right">Qty</th><th style="text-align:right">Reorder pt</th><th>Vendor</th><th>Status</th><th style="width:40px"></th></tr></thead>
+                  <tbody>
+                    <tr><td>☐</td><td><b>Hex Bolt M6×20</b><br><span style="font-size:11px;color:var(--ink2)">ITM-BOLT-M6X20</span></td><td>Fasteners</td><td class="num">1,240</td><td class="num" style="color:var(--ink2)">300</td><td>Acme Fastening</td><td><span class="spill ok">In stock<span class="ch"></span></span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Hex Bolt M8×25</b><br><span style="font-size:11px;color:var(--ink2)">ITM-BOLT-M8X25</span></td><td>Fasteners</td><td class="num">86</td><td class="num" style="color:var(--ink2)">150</td><td>Acme Fastening</td><td><span class="spill warn">Low stock<span class="ch"></span></span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Terminal Block 6-Pos</b><br><span style="font-size:11px;color:var(--ink2)">ITM-TERM-6POS</span></td><td>Electrical</td><td class="num">0</td><td class="num" style="color:var(--ink2)">60</td><td>Voltix</td><td><span class="spill mute">Draft<span class="ch"></span></span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Copper Bar 2in</b><br><span style="font-size:11px;color:var(--ink2)">ITM-CUBAR-2IN</span></td><td>Raw material</td><td class="num">0</td><td class="num" style="color:var(--ink2)">20</td><td>Meridian Metals</td><td><span class="spill bad">Out of stock<span class="ch"></span></span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Safety Glasses, Clear</b><br><span style="font-size:11px;color:var(--ink2)">ITM-SAFE-GLASS</span></td><td>Safety</td><td class="num">480</td><td class="num" style="color:var(--ink2)">100</td><td>Guardian Safety</td><td><span class="spill ok">In stock<span class="ch"></span></span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Digital Caliper 6in</b><br><span style="font-size:11px;color:var(--ink2)">ITM-CAL-6IN</span></td><td>Tooling</td><td class="num">4</td><td class="num" style="color:var(--ink2)">8</td><td>Precision Tool</td><td><span class="spill warn">Low stock<span class="ch"></span></span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Circuit Breaker 20A</b><br><span style="font-size:11px;color:var(--ink2)">ITM-BRKR-20A</span></td><td>Electrical</td><td class="num">55</td><td class="num" style="color:var(--ink2)">60</td><td>Voltix</td><td><span class="spill warn">Low stock<span class="ch"></span></span></td><td>⋯</td></tr>
+                    <tr><td>☐</td><td><b>Epoxy Resin, 1L</b><br><span style="font-size:11px;color:var(--ink2)">ITM-EPOX-1L</span></td><td>Adhesives</td><td class="num">90</td><td class="num" style="color:var(--ink2)">40</td><td>BondTech</td><td><span class="spill ok">In stock<span class="ch"></span></span></td><td>⋯</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div></div>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="notes">
+  <div class="wrap">
+    <p><b style="color:var(--ink)">What changed this round:</b> no invented metaphor. Both directions are built from the patterns in your nine images, applied to Atlas's real screens and real data. Rounds 1 and 2 are archived at <code>rejected-v1/</code> and <code>rejected-v2/</code>; the reasoning correction is recorded in <code>runs/atlas-console/TRANSLATE.md</code>.</p>
+    <p>Whichever direction you pick (or a mix — e.g. porcelain's structure with night shift's colorful stat cards), the full 7-surface spec set in both themes gets built in that register next, then Loop 2 proves the techniques (the glass palette blur, the chart rendering) with real measured prototypes.</p>
+  </div>
+</footer>
+
+<script>
+(function(){
+  function rescale(){
+    document.querySelectorAll('.frame-viewport').forEach(function(vp){
+      var frame = vp.querySelector('.frame');
+      if(!frame) return;
+      frame.style.transform = 'scale(' + (vp.clientWidth / 1440) + ')';
+    });
+  }
+  window.addEventListener('resize', rescale);
+  window.addEventListener('load', rescale);
+  if(window.ResizeObserver){ new ResizeObserver(rescale).observe(document.body); }
+  rescale();
+  setTimeout(rescale, 50);
+})();
+</script>
