@@ -75,9 +75,15 @@ function SchedulePanel({ order }: { order: MaintenanceOrder }) {
   );
 }
 
+/** MoneyType decimal strings arrive as "150.000000" — trim trailing zeros for the
+ * number-input prefill (string ops only, no float math on money). */
+function trimCostInput(cost: string | null): string {
+  return (cost ?? "").replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+}
+
 function CompletePanel({ order }: { order: MaintenanceOrder }) {
   const completeOrder = useCompleteMaintenanceOrder(order.id);
-  const [actualCost, setActualCost] = useState(order.estimated_cost ?? "");
+  const [actualCost, setActualCost] = useState(trimCostInput(order.estimated_cost));
   const [completedDate, setCompletedDate] = useState("");
   const [error, setError] = useState<string | null>(null);
 
