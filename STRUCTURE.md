@@ -7,23 +7,25 @@ Place this file at the repo root alongside CLAUDE.md and GITHUB-WORKFLOW.md, and
 ```
 atlas-erp/
 ├── CLAUDE.md  PLAN.md  PROGRESS.md  DECISIONS.md
-├── GITHUB-WORKFLOW.md  STRUCTURE.md
+├── GITHUB-WORKFLOW.md  STRUCTURE.md  PERFORMANCE.md
 ├── README.md  LICENSE  NOTICE  CONTRIBUTING.md  SECURITY.md
-├── .gitignore  .env.example  docker-compose.yml  Makefile
+├── .gitignore  .dockerignore  .env.example  Makefile
+├── docker-compose.yml  docker-compose.prod.yml
 ├── .github/
 │   ├── workflows/ci.yml
 │   ├── PULL_REQUEST_TEMPLATE.md
 │   └── ISSUE_TEMPLATE/{bug.yaml,feature.yaml}
 ├── docs/
-│   ├── architecture.md  api.md  industry-templates.md
-│   ├── research/s4hana-parity.md
+│   ├── architecture.md  api.md  industry-templates.md  deployment.md
+│   ├── DESIGN.md  PRODUCT.md    # frontend visual system + product register (PLAN 15.1)
+│   ├── research/               # s4hana-parity.md + later market scans
 │   ├── modules/            # one guide per module: finance.md, inventory.md, ...
 │   └── assets/             # diagrams/screenshots referenced by docs ONLY
 ├── industry-templates/
 │   ├── _schema.yaml        # the template JSON-Schema, single source of truth
 │   └── {manufacturing,retail,professional-services,healthcare,construction}.yaml
 ├── backend/
-│   ├── pyproject.toml  alembic.ini
+│   ├── pyproject.toml  alembic.ini  Dockerfile  .dockerignore
 │   ├── alembic/versions/
 │   ├── app/
 │   │   ├── main.py         # app factory + router mounting, nothing else
@@ -33,6 +35,7 @@ atlas-erp/
 │   └── seed.py
 └── frontend/
     ├── package.json  vite.config.ts  tsconfig.json  index.html
+    ├── Dockerfile  nginx.conf  .dockerignore
     └── src/
         ├── main.tsx  App.tsx  router.tsx
         ├── lib/            # api client, auth, query hooks, formatters
