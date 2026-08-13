@@ -70,6 +70,29 @@ async def test_decide_accept_over_the_wire(quality_api: QualityApi) -> None:
     assert response.json()["status"] == "ACCEPTED"
 
 
+async def test_decide_persists_notes(quality_api: QualityApi) -> None:
+    """Regression (#161): the optional decision ``notes`` round-trips through decide — persisted
+    on the lot, not silently dropped."""
+    setup = quality_api.setup
+    response = await quality_api.client.post(
+        f"/api/v1/quality/inspection-lots/{setup.lot_id}/decide",
+        json={
+            "accepted_quantity": str(setup.lot_quantity),
+            "rejected_quantity": "0",
+            "notes": "visual check passed",
+        },
+        headers={"Idempotency-Key": uuid.uuid4().hex},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["notes"] == "visual check passed"
+    # A fresh read proves the notes landed in the database, not just the response object.
+    read = await quality_api.client.get(
+        f"/api/v1/quality/inspection-lots/{setup.lot_id}"
+    )
+    assert read.status_code == 200
+    assert read.json()["notes"] == "visual check passed"
+
+
 async def test_decide_reject_scrap_over_the_wire(quality_api: QualityApi) -> None:
     """POST /decide with a SCRAP rejection marks the lot REJECTED with the disposition recorded."""
     setup = quality_api.setup

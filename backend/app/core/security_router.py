@@ -71,6 +71,12 @@ def _issue_tokens(
     return TokenResponse(access_token=access_token), new_jti
 
 
+# #80: a real hash of a fixed throwaway password, hashed once at import with the SAME argon2
+# parameters as user hashes — verifying against it costs what a real verify costs, equalizing
+# the no-tenant / no-user login paths with the wrong-password path.
+_DUMMY_PASSWORD_HASH = auth.hash_password("atlas-timing-equalizer")
+
+
 @router.post("/login", response_model=TokenResponse)
 async def login(
     payload: LoginRequest,
@@ -80,12 +86,16 @@ async def login(
 ) -> TokenResponse:
     # Tenant + user resolution runs under system_context (D-007 site 1) — no trusted
     # tenant context exists yet. Generic 401 for every failure so we never reveal
-    # whether the tenant, the email, or the password was wrong.
+    # whether the tenant, the email, or the password was wrong — and the no-tenant/no-user
+    # paths burn the SAME argon2 verify against a dummy hash so response latency doesn't
+    # become an enumeration oracle either (#80).
     tenant = await find_tenant_by_slug(session, payload.tenant_slug)
     if tenant is None or not tenant.is_active:
+        await auth.verify_password_async(_DUMMY_PASSWORD_HASH, payload.password)
         raise AuthError()
     user = await find_user_by_email(session, tenant.id, payload.email)
     if user is None or not user.is_active:
+        await auth.verify_password_async(_DUMMY_PASSWORD_HASH, payload.password)
         raise AuthError()
     if not await auth.verify_password_async(user.password_hash, payload.password):
         raise AuthError()

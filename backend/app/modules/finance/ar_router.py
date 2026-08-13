@@ -43,6 +43,7 @@ from app.modules.finance.receivables_schemas import (
 ar_router = APIRouter(tags=["finance-ar"])
 
 CursorParamsDep = Depends(cursor_params)
+_CreateInvoiceIdempotentDep = Depends(Idempotent("finance.ar.invoice.create"))
 _PostInvoiceIdempotentDep = Depends(Idempotent("finance.ar.invoice.post"))
 _ReceiptIdempotentDep = Depends(Idempotent("finance.ar.receipt"))
 _DunningIdempotentDep = Depends(Idempotent("finance.ar.dunning_run"))
@@ -87,15 +88,22 @@ async def _receipt_detail(
     dependencies=[Depends(require_permission(FINANCE_AR_MANAGE))],
 )
 async def create_customer_invoice(
-    payload: CustomerInvoiceCreate, current: CurrentUserDep, session: SessionDep
+    payload: CustomerInvoiceCreate,
+    current: CurrentUserDep,
+    session: SessionDep,
+    idem: IdempotentDep = _CreateInvoiceIdempotentDep,
 ) -> CustomerInvoiceRead:
-    """Create a DRAFT customer invoice (no number/journal). Use the /post action to post it."""
+    """Create a DRAFT customer invoice (no number/journal). Use the /post action to post it.
+    IDEMPOTENT (D-013, #88): the draft registers a core_documents row, so a double-submit must
+    not create two documents."""
     holder: dict[str, CustomerInvoiceRead] = {}
 
     async def work() -> None:
         invoice = await service.create_customer_invoice(session, current.tenant_id, payload)
         await session.refresh(invoice)
-        holder["read"] = CustomerInvoiceRead.model_validate(invoice)
+        holder["read"] = await idem.capture(
+            CustomerInvoiceRead.model_validate(invoice), status_code=201
+        )
 
     await run_in_uow(session, work)
     return holder["read"]

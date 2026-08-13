@@ -33,8 +33,8 @@ from app.modules.finance.service.statements.grouping import (
 )
 from app.modules.finance.service.statements.margin import (
     ItemMargin,
-    MarginByProduct,
-    margin_by_product,
+    MarginByItem,
+    margin_by_item,
 )
 from app.modules.finance.service.statements.profit_loss import (
     ProfitAndLoss,
@@ -55,7 +55,7 @@ __all__ = [
     "CostCenterReport",
     "CostCenterSection",
     "ItemMargin",
-    "MarginByProduct",
+    "MarginByItem",
     "ProfitAndLoss",
     "StatementGroup",
     "StatementLine",
@@ -65,7 +65,7 @@ __all__ = [
     "balance_sheet",
     "cash_flow_indirect",
     "cost_center_report",
-    "margin_by_product",
+    "margin_by_item",
     "net_income_signed",
     "profit_and_loss",
     "trial_balance",

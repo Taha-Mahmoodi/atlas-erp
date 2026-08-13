@@ -195,6 +195,20 @@ class SalesOrderLine(UuidPKMixin, TenantMixin, TimestampMixin, Base):
         sa.UniqueConstraint(
             "tenant_id", "order_id", "line_number", name="uq_sales_order_lines_order_line"
         ),
+        # #75 DB backstop for the fulfillment caps (financial/stock invariants live in code
+        # AND DB constraints): delivered <= ordered, invoiced <= delivered, returned <= invoiced.
+        sa.CheckConstraint(
+            "delivered_quantity <= ordered_quantity",
+            name="ck_sales_order_lines_delivered_le_ordered",
+        ),
+        sa.CheckConstraint(
+            "invoiced_quantity <= delivered_quantity",
+            name="ck_sales_order_lines_invoiced_le_delivered",
+        ),
+        sa.CheckConstraint(
+            "returned_quantity <= invoiced_quantity",
+            name="ck_sales_order_lines_returned_le_invoiced",
+        ),
         tenant_unique(),
         tenant_fk("adm_tenants"),
         tenant_fk("sales_orders", "order_id"),

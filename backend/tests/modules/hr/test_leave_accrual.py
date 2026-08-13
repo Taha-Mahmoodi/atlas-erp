@@ -102,6 +102,33 @@ async def test_accrual_idempotent_same_period(
     assert bal == Decimal("2")
 
 
+async def test_accrual_rerun_of_older_period_grants_nothing(
+    db_session: AsyncSession, hr_setup: HrSetup
+) -> None:
+    """#160 regression: run period N, then N+1, then N again. The single last_accrual_period
+    guard only remembered N+1, so the N re-run double-granted (QA repro: 5.25 -> 10.5). Every
+    applied period must stay guarded — the N re-run AND a follow-up N+1 re-run both grant 0."""
+    employee = await build_employee(db_session, hr_setup.tenant_id, employee_code="EMP-ACC4")
+    leave_type = await build_leave_type(
+        db_session, hr_setup.tenant_id, code="LT-OLD", accrual_amount=Decimal("1.75")
+    )
+    steps = [
+        (date(2026, 6, 15), 1, Decimal("1.75")),  # N: first grant
+        (date(2026, 7, 15), 1, Decimal("3.5")),  # N+1: second grant
+        (date(2026, 6, 30), 0, Decimal("3.5")),  # N re-run: must NOT re-grant (#160)
+        (date(2026, 7, 31), 0, Decimal("3.5")),  # N+1 re-run: must stay guarded too
+    ]
+    for as_of, expected_accrued, expected_balance in steps:
+        with tenant_context(hr_setup.tenant_id):
+            _, accrued = await service.accrue_leave(
+                db_session, hr_setup.tenant_id, as_of=as_of, frequency=AccrualFrequency.MONTHLY
+            )
+            await db_session.commit()
+        assert accrued == expected_accrued, f"as_of={as_of}"
+        bal = await _balance(db_session, hr_setup.tenant_id, employee.id, leave_type.id)
+        assert bal == expected_balance, f"as_of={as_of}"
+
+
 async def test_accrual_skips_inactive_employees_and_types(
     db_session: AsyncSession, hr_setup: HrSetup
 ) -> None:

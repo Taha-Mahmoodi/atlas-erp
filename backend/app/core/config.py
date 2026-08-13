@@ -3,8 +3,10 @@
 from functools import lru_cache
 from typing import Annotated
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+_MIN_JWT_SECRET_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -31,6 +33,21 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
+
+    @model_validator(mode="after")
+    def _require_real_jwt_secret_in_prod(self) -> "Settings":
+        # Auth invariant: the repo is public, so the default secret means anyone
+        # can forge a token for any user/tenant. Refuse to boot in prod with it.
+        if self.env in {"prod", "production"} and (
+            self.jwt_secret == "change-me" or len(self.jwt_secret) < _MIN_JWT_SECRET_LENGTH
+        ):
+            raise ValueError(
+                "ATLAS_JWT_SECRET must be set to a random value of at least "
+                f"{_MIN_JWT_SECRET_LENGTH} characters when ATLAS_ENV is "
+                f"{self.env!r} — generate one: "
+                'python -c "import secrets; print(secrets.token_urlsafe(64))"'
+            )
+        return self
 
 
 @lru_cache

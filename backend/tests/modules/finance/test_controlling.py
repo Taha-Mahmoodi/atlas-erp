@@ -284,6 +284,54 @@ async def test_journal_unknown_cost_center_rejected(
     assert exc.value.code == "finance.journal_cost_center_not_found"
 
 
+async def test_require_dimensions_is_two_queries_regardless_of_dimension_count(
+    db_session: AsyncSession, journal_setup: JournalSetup, query_counter
+) -> None:
+    """Regression for #81: dimension validation used to issue one SELECT per distinct cost/profit
+    centre on the posting hot path; it must be ONE bulk query per dimension TYPE."""
+    from app.modules.finance.controlling_schemas import CostCenterCreate, ProfitCenterCreate
+    from app.modules.finance.service.journal_validate import require_dimensions
+
+    setup = journal_setup
+    with tenant_context(setup.tenant_id):
+        cost_center_ids = [
+            (
+                await service.create_cost_center(
+                    db_session, setup.tenant_id, CostCenterCreate(code=f"CC{i}", name=f"CC {i}")
+                )
+            ).id
+            for i in range(3)
+        ]
+        profit_center = await service.create_profit_center(
+            db_session, setup.tenant_id, ProfitCenterCreate(code="PC1", name="PC 1")
+        )
+        await db_session.commit()
+        amount = Decimal("30.00")
+        payload = JournalEntryCreate(
+            posting_date=_PD,
+            currency_code="USD",
+            description="bulk dims",
+            lines=[
+                *(
+                    JournalLineCreate(
+                        account_id=setup.accounts["5000"],
+                        transaction_debit_amount=amount,
+                        cost_center_id=cc_id,
+                        profit_center_id=profit_center.id,
+                    )
+                    for cc_id in cost_center_ids
+                ),
+                JournalLineCreate(
+                    account_id=setup.accounts["1000"],
+                    transaction_credit_amount=amount * 3,
+                ),
+            ],
+        )
+        with query_counter() as qc:
+            await require_dimensions(db_session, setup.tenant_id, payload)
+    assert qc.count == 2, f"expected 2 bulk dimension queries, got {qc.count}"
+
+
 async def test_journal_valid_cost_center_posts_and_line_carries_it(
     db_session: AsyncSession, journal_setup: JournalSetup
 ) -> None:

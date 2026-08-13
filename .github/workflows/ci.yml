@@ -92,6 +92,11 @@ jobs:
           cd frontend
           npm ci
           npm run typecheck
+      - name: Tests (vitest)
+        run: |
+          if [ ! -f frontend/package.json ]; then echo "frontend not present yet — skipping"; exit 0; fi
+          cd frontend
+          npm run test
       - name: Build
         run: |
           if [ ! -f frontend/package.json ]; then echo "frontend not present yet — skipping"; exit 0; fi

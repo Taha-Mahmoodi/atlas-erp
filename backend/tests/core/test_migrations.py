@@ -2,6 +2,7 @@
 connections enforce foreign keys via the PRAGMA listener (D-007)."""
 
 import sqlite3
+import uuid
 from collections.abc import Callable
 from contextlib import closing
 from pathlib import Path
@@ -44,6 +45,48 @@ def test_0002_creates_tenant_tables_and_downgrade_removes_them(
 
     command.downgrade(config, "0001")
     assert not ({"adm_tenants", "adm_tenant_settings"} & table_names())
+
+
+def test_0045_backfills_applied_periods_from_last_accrual_period(
+    tmp_path: Path, make_alembic_config: Callable[[str], Config]
+) -> None:
+    """#160: 0045 promotes each pre-existing balance's single last_accrual_period into an
+    hr_leave_accruals guard row, so a post-upgrade re-run of that period stays idempotent."""
+    db_path = tmp_path / "backfill.sqlite"
+    config = make_alembic_config(f"sqlite+aiosqlite:///{db_path}")
+    command.upgrade(config, "0044")
+
+    tenant_id = uuid.uuid4().hex
+    stamped_id, unstamped_id = uuid.uuid4().hex, uuid.uuid4().hex
+    with closing(sqlite3.connect(db_path)) as connection:
+        # FK enforcement is off on this raw connection, so the minimal parent set suffices:
+        # the migration connection enforces FKs and the backfill row references adm_tenants.
+        connection.execute(
+            "INSERT INTO adm_tenants (id, slug, name) VALUES (?, 'bf', 'Backfill')",
+            (tenant_id,),
+        )
+        connection.execute(
+            "INSERT INTO hr_leave_balances "
+            "(id, tenant_id, employee_id, leave_type_id, last_accrual_period) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (stamped_id, tenant_id, uuid.uuid4().hex, uuid.uuid4().hex, "2026-06"),
+        )
+        connection.execute(
+            "INSERT INTO hr_leave_balances "
+            "(id, tenant_id, employee_id, leave_type_id, last_accrual_period) "
+            "VALUES (?, ?, ?, ?, NULL)",
+            (unstamped_id, tenant_id, uuid.uuid4().hex, uuid.uuid4().hex),
+        )
+        connection.commit()
+
+    command.upgrade(config, "head")
+
+    with closing(sqlite3.connect(db_path)) as connection:
+        rows = connection.execute(
+            "SELECT tenant_id, balance_id, period FROM hr_leave_accruals"
+        ).fetchall()
+    # Exactly the stamped balance was backfilled; the never-accrued one produced no guard row.
+    assert rows == [(tenant_id, stamped_id, "2026-06")]
 
 
 async def test_build_engine_connections_enforce_foreign_keys(tmp_path: Path) -> None:

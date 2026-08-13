@@ -323,6 +323,31 @@ async def test_cannot_overreceive_an_invoice(
     assert exc.value.code == "finance.receipt_overallocated"
 
 
+async def test_receipt_amount_must_equal_allocation_sum(
+    db_session: AsyncSession, ar_setup: ArSetup
+) -> None:
+    """Regression for #73: a same-currency overpayment (amount > sum of allocations) used to
+    post the difference as a phantom realized-FX gain instead of being rejected."""
+    invoice = await _create_and_post_invoice(db_session, ar_setup, _invoice_payload(ar_setup))
+    with tenant_context(ar_setup.tenant_id), pytest.raises(ValidationFailedError) as exc:
+        await service.create_and_post_receipt(
+            db_session,
+            ar_setup.tenant_id,
+            CustomerReceiptCreate(
+                partner_id=invoice.partner_id,
+                partner_name=invoice.partner_name,
+                receipt_date=_RECEIPT_DATE,
+                currency_code="USD",
+                bank_account_id=ar_setup.accounts["1000"],
+                amount=Decimal("110.00"),
+                allocations=[
+                    ReceiptAllocationCreate(invoice_id=invoice.id, amount=Decimal("100.00"))
+                ],
+            ),
+        )
+    assert exc.value.code == "finance.receipt_allocation_sum_mismatch"
+
+
 # --- dunning ------------------------------------------------------------------
 
 

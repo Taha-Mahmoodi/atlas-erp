@@ -1,0 +1,73 @@
+@import "@fontsource-variable/inter";
+@import "tailwindcss";
+
+/* Atlas design tokens (docs/DESIGN.md) — components use ONLY these, never raw palette
+   classes, so a future dark theme is a token swap. OKLCH throughout. */
+@theme {
+  --font-sans: "Inter Variable", Inter, system-ui, sans-serif;
+
+  --color-canvas: oklch(0.98 0.003 260);
+  --color-surface: oklch(1 0 0);
+  --color-panel: oklch(0.955 0.005 260);
+  --color-ink: oklch(0.22 0.02 260);
+  --color-ink-muted: oklch(0.45 0.015 260);
+  --color-ink-faint: oklch(0.6 0.01 260);
+  --color-line: oklch(0.9 0.006 260);
+
+  --color-primary: oklch(0.45 0.15 260);
+  --color-primary-strong: oklch(0.38 0.15 260);
+  --color-primary-tint: oklch(0.94 0.03 260);
+
+  --color-success: oklch(0.5 0.12 150);
+  --color-success-tint: oklch(0.95 0.03 150);
+  --color-warn: oklch(0.55 0.12 75);
+  --color-warn-tint: oklch(0.96 0.04 85);
+  --color-danger: oklch(0.5 0.18 25);
+  --color-danger-tint: oklch(0.95 0.03 25);
+
+  --shadow-card: 0 1px 2px oklch(0 0 0 / 0.05);
+  --radius-control: 6px;
+  --radius-card: 8px;
+}
+
+body {
+  @apply bg-canvas text-ink font-sans antialiased;
+}
+
+/* Uniform focus affordance (DESIGN.md): 2px primary ring, offset 2px. */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Skeleton shimmer for loading states; collapses to a static tint under reduced motion. */
+@keyframes atlas-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+.atlas-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-panel) 25%,
+    var(--color-line) 50%,
+    var(--color-panel) 75%
+  );
+  background-size: 200% 100%;
+  animation: atlas-shimmer 1.4s linear infinite;
+  border-radius: 4px;
+  color: transparent;
+  user-select: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .atlas-skeleton {
+    animation: none;
+    background: var(--color-panel);
+  }
+  * {
+    transition-duration: 0.01ms !important;
+  }
+}

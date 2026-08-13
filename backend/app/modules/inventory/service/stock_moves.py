@@ -139,14 +139,15 @@ def _is_inbound(move_type: MoveType, to_bin_id: uuid.UUID | None) -> bool:
 
 def _validate_unit_cost(payload: StockMoveCreate, move_type: MoveType) -> Decimal | None:
     """Costing input rule (D-020): a RECEIPT / positive ADJUSTMENT REQUIRES ``unit_cost`` (the value
-    stock enters at, > 0). An ISSUE / negative ADJUSTMENT / TRANSFER IGNORE any passed cost — the
-    engine computes the outbound cost / carries the current valuation — so the move stores it as
-    None
-    and the engine fills it. Returns the validated entry cost (None for the computed sides)."""
+    stock enters at, >= 0 — an explicit ZERO is the documented quantity-only correction: a count-up
+    of stock with no book cost enters at 0 value and posts no journal, #87). An ISSUE / negative
+    ADJUSTMENT / TRANSFER IGNORE any passed cost — the engine computes the outbound cost / carries
+    the current valuation — so the move stores it as None and the engine fills it. Returns the
+    validated entry cost (None for the computed sides)."""
     if _is_inbound(move_type, payload.to_bin_id):
-        if payload.unit_cost is None or Decimal(payload.unit_cost) <= 0:
+        if payload.unit_cost is None or Decimal(payload.unit_cost) < 0:
             raise ValidationFailedError(
-                message="A receipt or stock-increase requires a positive unit cost",
+                message="A receipt or stock-increase requires a non-negative unit cost",
                 code="inventory.receipt_unit_cost_required",
             )
         return Decimal(payload.unit_cost)

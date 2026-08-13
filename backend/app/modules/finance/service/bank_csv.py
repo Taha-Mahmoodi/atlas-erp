@@ -43,6 +43,11 @@ def count_csv_data_rows(csv_text: str) -> int:
     return sum(1 for raw in csv_text.splitlines()[1:] if raw.strip())
 
 
+# Far below the 28-digit Decimal context ceiling quantize_money needs, far above any real
+# bank-statement amount (#79).
+_MAX_AMOUNT = Decimal(10) ** 15
+
+
 def _row_problem(row: list[str]) -> str | None:
     """The first validation problem of a 4-column row, or None if it is clean."""
     if len(row) != 4:
@@ -56,6 +61,13 @@ def _row_problem(row: list[str]) -> str | None:
         amount = Decimal(raw_amount)
     except InvalidOperation:
         return f"amount {raw_amount!r} is not a decimal number"
+    # #79: Decimal() accepts "Infinity"/"NaN"/"1e10000" without raising — Infinity then blows up
+    # quantize_money (HTTP 500) and NaN survives to a misleading statement_unbalanced 422. A huge
+    # finite exponent like 1e10000 also overflows quantize's 28-digit context, so bound magnitude.
+    if not amount.is_finite():
+        return f"amount {raw_amount!r} is not a finite number"
+    if abs(amount) > _MAX_AMOUNT:
+        return f"amount {raw_amount!r} exceeds the supported magnitude"
     if amount == 0:
         return "amount must be non-zero"
     if not description:

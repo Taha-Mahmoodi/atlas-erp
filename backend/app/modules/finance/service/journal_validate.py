@@ -72,25 +72,30 @@ async def require_dimensions(
 
     The journal-lines table is trigger-bearing and carries these dimensions as OPAQUE ``sa.Uuid``
     with NO FK (D-022), so this service-level check IS the dimension integrity backstop the absent
-    FK would otherwise give. One query per dimension over the distinct referenced ids; a missing id
-    is a 422 before any line is written."""
+    FK would otherwise give. ONE bulk query per dimension TYPE over the distinct referenced ids
+    (#81 — the require_postable_accounts pattern); a missing id is a 422 before any line is
+    written."""
     cost_center_ids = {
         line.cost_center_id for line in payload.lines if line.cost_center_id is not None
     }
-    for cost_center_id in cost_center_ids:
-        if not await queries.cost_center_exists(session, tenant_id, cost_center_id):
-            raise ValidationFailedError(
-                message="A journal line references an unknown cost centre",
-                code="finance.journal_cost_center_not_found",
-                details={"cost_center_id": str(cost_center_id)},
-            )
+    missing_cost_centers = cost_center_ids - await queries.existing_cost_center_ids(
+        session, tenant_id, cost_center_ids
+    )
+    if missing_cost_centers:
+        raise ValidationFailedError(
+            message="A journal line references an unknown cost centre",
+            code="finance.journal_cost_center_not_found",
+            details={"cost_center_ids": sorted(str(c) for c in missing_cost_centers)},
+        )
     profit_center_ids = {
         line.profit_center_id for line in payload.lines if line.profit_center_id is not None
     }
-    for profit_center_id in profit_center_ids:
-        if not await queries.profit_center_exists(session, tenant_id, profit_center_id):
-            raise ValidationFailedError(
-                message="A journal line references an unknown profit centre",
-                code="finance.journal_profit_center_not_found",
-                details={"profit_center_id": str(profit_center_id)},
-            )
+    missing_profit_centers = profit_center_ids - await queries.existing_profit_center_ids(
+        session, tenant_id, profit_center_ids
+    )
+    if missing_profit_centers:
+        raise ValidationFailedError(
+            message="A journal line references an unknown profit centre",
+            code="finance.journal_profit_center_not_found",
+            details={"profit_center_ids": sorted(str(p) for p in missing_profit_centers)},
+        )

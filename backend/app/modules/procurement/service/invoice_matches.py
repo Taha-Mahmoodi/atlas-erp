@@ -105,9 +105,10 @@ async def _validate_gr_line(
     tenant_id: uuid.UUID,
     po_line_id: uuid.UUID,
     gr_line_id: uuid.UUID,
-) -> None:
+) -> GoodsReceiptLine:
     """The referenced GR line must exist and belong to the SAME PO line (the receipt this match
-    line draws from). Guards against pointing a match at an unrelated receipt."""
+    line draws from). Guards against pointing a match at an unrelated receipt. Returns the line
+    so the quantity variance can be computed against ITS received quantity (#74)."""
     gr_line = await session.get(GoodsReceiptLine, gr_line_id)
     if (
         gr_line is None
@@ -119,6 +120,7 @@ async def _validate_gr_line(
             code="procurement.match_gr_line_mismatch",
             details={"goods_receipt_line_id": str(gr_line_id)},
         )
+    return gr_line
 
 
 async def _validate_match_line(
@@ -144,8 +146,9 @@ async def _validate_match_line(
             details={"purchase_order_id": str(po_id), "purchase_order_line_id": str(po_line_id)},
         )
     gr_line_id = payload_line.goods_receipt_line_id  # type: ignore[attr-defined]
+    gr_line = None
     if gr_line_id is not None:
-        await _validate_gr_line(session, tenant_id, po_line_id, gr_line_id)
+        gr_line = await _validate_gr_line(session, tenant_id, po_line_id, gr_line_id)
 
     qty = validate_quantity(payload_line.matched_quantity)  # type: ignore[attr-defined]
     open_to_bill = Decimal(str(po_line.received_quantity)) - Decimal(str(po_line.billed_quantity))
@@ -170,15 +173,22 @@ async def _validate_match_line(
         )
     price_variance = quantize_for_currency((unit_price - po_unit_cost) * qty, currency_code)
     line_amount = quantize_for_currency(unit_price * qty, currency_code)
-    # Quantity variance is matched vs the still-open-to-bill quantity (what we expected to invoice).
-    quantity_variance = qty - open_to_bill
+    # Quantity variance (#74): invoiced-vs-received for THIS match. With a GR line supplied the
+    # expected quantity is that receipt's quantity; otherwise it is the still-open-to-bill
+    # quantity. Billing LESS than expected is a normal partial invoice, not a variance — only an
+    # invoiced quantity EXCEEDING the expected one counts against the tolerance band (billing
+    # beyond received-not-billed is already a hard 422 above).
+    expected_qty = (
+        Decimal(str(gr_line.received_quantity)) if gr_line is not None else open_to_bill
+    )
+    quantity_variance = max(Decimal(0), qty - expected_qty)
     price_pct = (
         (abs(unit_price - po_unit_cost) / po_unit_cost) * _HUNDRED
         if po_unit_cost > 0
         else (Decimal(0) if unit_price == 0 else _HUNDRED)
     )
     qty_pct = (
-        (abs(quantity_variance) / open_to_bill) * _HUNDRED if open_to_bill > 0 else Decimal(0)
+        (quantity_variance / expected_qty) * _HUNDRED if expected_qty > 0 else Decimal(0)
     )
     within_tolerance = _within(price_pct, price_tol) and _within(qty_pct, qty_tol)
     return _MatchLineInput(

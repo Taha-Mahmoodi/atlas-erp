@@ -11,7 +11,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from app.core.schemas import ApiModel
+from app.core.schemas import ApiModel, Page
 from app.modules.inventory.constants import CountStatus, CountType
 
 
@@ -88,12 +88,13 @@ class StockCountVarianceLine(ApiModel):
 
 
 class StockCountVariancePreview(ApiModel):
-    """The variance preview for a whole count: the per-line rows plus the net estimated value
-    impact, shown before posting so the operator sees what the post will do."""
+    """The variance preview for a whole count: a keyset PAGE of per-line rows (#78 — a physical
+    count routinely has thousands of lines) plus the net estimated value impact over the WHOLE
+    count, shown before posting so the operator sees what the post will do."""
 
     count_id: uuid.UUID
     status: CountStatus
-    lines: list[StockCountVarianceLine]
+    lines: Page[StockCountVarianceLine]
     total_value_impact: Decimal
 
 

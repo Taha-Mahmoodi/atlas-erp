@@ -104,9 +104,23 @@ async def _build_moves_and_invoice_lines(
     cogs_account_id: uuid.UUID | None = None
     for line in lines:
         order_line = order_lines[line.sales_order_line_id]
-        order_line.returned_quantity = Decimal(str(order_line.returned_quantity)) + Decimal(
+        new_returned = Decimal(str(order_line.returned_quantity)) + Decimal(
             str(line.quantity)
         )
+        # #75: the create-path check reads the persisted column, which another document may
+        # have raised since this DRAFT was created — re-check the cap at post time.
+        if new_returned > Decimal(str(order_line.invoiced_quantity)):
+            raise ValidationFailedError(
+                message="Posting this return would exceed the order line's invoiced quantity",
+                code="sales.over_return",
+                details={
+                    "sales_order_line_id": str(order_line.id),
+                    "invoiced_quantity": str(order_line.invoiced_quantity),
+                    "returned_quantity": str(order_line.returned_quantity),
+                    "quantity": str(line.quantity),
+                },
+            )
+        order_line.returned_quantity = new_returned
         line_cogs = await _cogs_account_for_item(session, tenant_id, line.item_id)
         if cogs_account_id is None:
             cogs_account_id = line_cogs

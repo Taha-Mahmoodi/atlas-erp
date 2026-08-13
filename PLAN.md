@@ -123,25 +123,25 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 
 ## Phase 15 — Frontend
 
-- [ ] 15.1 Scaffold: Vite + React 18 + TS strict, Tailwind, TanStack Router/Query, `lib/apiClient.ts`, `lib/auth.ts`, `lib/queryClient.ts`, `lib/format.ts`, typecheck/build green in CI
-- [ ] 15.2 Design system: DataGrid, FormBuilder, Kanban, KpiCard, DocFlowViewer (ERP-agnostic, tested)
-- [ ] 15.3 App shell: login, role-based home pages with tiles + KPIs, navigation
-- [ ] 15.4 Finance UIs (COA, journal entries + posting, AP/AR workbenches, statements, bank rec, assets)
-- [ ] 15.5 Inventory UIs (items, stock overview, moves, counts)
-- [ ] 15.6 Procurement UIs (vendors, requisitions, RFQs, POs, receipts, match)
-- [ ] 15.7 Sales UIs (customers, pricing, quotes, orders, deliveries, invoices, returns)
-- [ ] 15.8 Manufacturing UIs (BOMs, work centers, routings, production orders, MRP results)
-- [ ] 15.9 Quality + Maintenance UIs (inspection lots, equipment, maintenance orders)
-- [ ] 15.10 HR UIs (employees, org chart, leave, time, payroll run)
-- [ ] 15.11 Projects + CRM UIs (WBS + cost report; leads/opportunities kanban)
-- [ ] 15.12 Reporting + admin UIs (dashboards, report builder, onboarding wizard, user/role admin, audit viewer)
+- [x] 15.1 Scaffold: Vite + React 18 + TS strict, Tailwind, TanStack Router/Query, `lib/apiClient.ts`, `lib/auth.ts`, `lib/queryClient.ts`, `lib/format.ts`, typecheck/build green in CI
+- [x] 15.2 Design system: DataGrid, FormBuilder, Kanban, KpiCard, DocFlowViewer (ERP-agnostic, tested)
+- [x] 15.3 App shell: login, role-based home pages with tiles + KPIs, navigation
+- [x] 15.4 Finance UIs (COA, journal entries + posting, AP/AR workbenches, statements, bank rec, assets)
+- [x] 15.5 Inventory UIs (items, stock overview, moves, counts)
+- [x] 15.6 Procurement UIs (vendors, requisitions, RFQs, POs, receipts, match)
+- [x] 15.7 Sales UIs (customers, pricing, quotes, orders, deliveries, invoices, returns)
+- [x] 15.8 Manufacturing UIs (BOMs, work centers, routings, production orders, MRP results)
+- [x] 15.9 Quality + Maintenance UIs (inspection lots, equipment, maintenance orders)
+- [x] 15.10 HR UIs (employees, org chart, leave, time, payroll run)
+- [x] 15.11 Projects + CRM UIs (WBS + cost report; leads/opportunities kanban)
+- [x] 15.12 Reporting + admin UIs (dashboards, report builder, onboarding wizard, user/role admin, audit viewer)
 
 **Promotion → `main` as v0.4.0 (frontend complete).**
 
 ## Phase 16 — Seed data
 
-- [ ] 16.1 `backend/seed.py`: one demo tenant per industry template with ~3 months of interlinked transactions (procure-to-pay, order-to-cash, make-to-stock, HR/time/payroll, projects) so every report shows real data
-- [ ] 16.2 `seed.py --volume` high-volume tenant (PERFORMANCE §5): ≥100k journal lines, ≥50k stock moves, ≥10k orders, ≥5k items, 3 fiscal years — bulk inserts, finishes in minutes; drives the tests/perf/ budgets
+- [x] 16.1 `backend/seed.py`: one demo tenant per industry template with ~3 months of interlinked transactions (procure-to-pay, order-to-cash, make-to-stock, HR/time/payroll, projects) so every report shows real data
+- [x] 16.2 `seed.py --volume` high-volume tenant (PERFORMANCE §5): ≥100k journal lines, ≥50k stock moves, ≥10k orders, ≥5k items, 3 fiscal years — bulk inserts, finishes in minutes; drives the tests/perf/ budgets
 
 ## Phase 17 — Final assembly
 

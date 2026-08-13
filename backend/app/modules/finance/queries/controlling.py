@@ -46,6 +46,31 @@ async def profit_center_exists(
     return (await session.execute(stmt)).first() is not None
 
 
+async def existing_cost_center_ids(
+    session: AsyncSession, tenant_id: uuid.UUID, cost_center_ids: set[uuid.UUID]
+) -> set[uuid.UUID]:
+    """The subset of ``cost_center_ids`` that exist in the tenant — ONE query (#81), the bulk
+    companion to :func:`cost_center_exists` for multi-dimension journal validation."""
+    if not cost_center_ids:
+        return set()
+    stmt = select(CostCenter.id).where(
+        CostCenter.tenant_id == tenant_id, CostCenter.id.in_(cost_center_ids)
+    )
+    return set((await session.execute(stmt)).scalars().all())
+
+
+async def existing_profit_center_ids(
+    session: AsyncSession, tenant_id: uuid.UUID, profit_center_ids: set[uuid.UUID]
+) -> set[uuid.UUID]:
+    """The subset of ``profit_center_ids`` that exist in the tenant — ONE query (#81)."""
+    if not profit_center_ids:
+        return set()
+    stmt = select(ProfitCenter.id).where(
+        ProfitCenter.tenant_id == tenant_id, ProfitCenter.id.in_(profit_center_ids)
+    )
+    return set((await session.execute(stmt)).scalars().all())
+
+
 async def cost_center_balance(
     session: AsyncSession,
     tenant_id: uuid.UUID,

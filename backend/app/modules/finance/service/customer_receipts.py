@@ -180,6 +180,15 @@ async def create_and_post_receipt(
         session, tenant_id, payload.partner_id, payload.currency_code, payload.allocations
     )
     receipt_amount = quantize_money(payload.amount, currency_decimals(payload.currency_code))
+    allocated_total = sum((amount for _, amount in pairs), Decimal(0))
+    if receipt_amount != allocated_total:
+        # #73: without this, the difference flows into the realized-FX line and a plain
+        # same-currency over/under-payment is misbooked as a phantom FX gain/loss.
+        raise ValidationFailedError(
+            message="The receipt amount must equal the sum of its allocations",
+            code="finance.receipt_allocation_sum_mismatch",
+            details={"amount": str(receipt_amount), "allocated": str(allocated_total)},
+        )
 
     lines, functional_amounts = await _build_receipt_lines(
         session,
