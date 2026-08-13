@@ -26,6 +26,12 @@ import type {
   MaintenancePlanUpdate,
 } from "@/modules/maintenance/types";
 
+/** MoneyType decimal strings arrive as "45.000000" — trim trailing zeros for the
+ * number-input prefill (string ops only, no float math on money). */
+function trimCostInput(cost: string | null): string {
+  return (cost ?? "").replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+}
+
 export function MaintenancePlanFormPage() {
   const { planId } = useParams({ strict: false });
   const isEdit = planId !== undefined;
@@ -50,7 +56,7 @@ export function MaintenancePlanFormPage() {
         interval_value: String(plan.data.interval_value),
         interval_unit: plan.data.interval_unit,
         task_description: plan.data.task_description,
-        estimated_cost: plan.data.estimated_cost ?? "",
+        estimated_cost: trimCostInput(plan.data.estimated_cost),
       });
     }
   }, [plan.data]);
@@ -75,6 +81,9 @@ export function MaintenancePlanFormPage() {
       name: "interval_unit",
       label: "Interval unit",
       type: "select",
+      // A plan always has an interval unit — required stops the "—" empty option
+      // from reaching the API as "" (422).
+      required: true,
       options: [
         { value: "DAYS", label: "Days" },
         { value: "WEEKS", label: "Weeks" },
@@ -93,7 +102,7 @@ export function MaintenancePlanFormPage() {
             name: "start_date",
             label: "Start date",
             type: "date",
-            help: "Seeds the first due date. Leave blank for one interval from today.",
+            help: "The first due date is one interval after this date. Leave blank to count from today.",
             span: 1,
           } as FieldDef,
         ]),

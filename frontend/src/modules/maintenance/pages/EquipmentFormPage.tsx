@@ -21,6 +21,9 @@ function fieldsFor(isEdit: boolean): FieldDef[] {
       name: "status",
       label: "Status",
       type: "select",
+      // Equipment always has a status — required stops the "—" empty option from
+      // reaching the API as "" (422).
+      required: true,
       options: [
         { value: "ACTIVE", label: "Active" },
         { value: "INACTIVE", label: "Inactive" },
