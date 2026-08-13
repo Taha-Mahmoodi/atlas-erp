@@ -268,6 +268,7 @@ async def decide(
     lot.disposition = disposition.value if disposition is not None else None
     lot.decided_date = move_date
     lot.decision_by = decision_by
+    lot.notes = payload.notes
     new_status = (
         InspectionLotStatus.ACCEPTED if rejected == 0 else InspectionLotStatus.REJECTED
     )
