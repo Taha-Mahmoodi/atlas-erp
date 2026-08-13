@@ -16,13 +16,14 @@ dependencies = [
     "pyjwt>=2.13.0",
     "argon2-cffi>=25.1.0",
     "pyyaml>=6",
+    # seed.py (shipped in the image, run by the compose `seed` service) drives the HTTP API.
+    "httpx",
 ]
 
 [dependency-groups]
 dev = [
     "pytest",
     "pytest-asyncio",
-    "httpx",
     "ruff",
 ]
 

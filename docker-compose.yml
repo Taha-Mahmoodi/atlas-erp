@@ -16,7 +16,10 @@ services:
       - "5432:5432"
 
   backend:
-    build: ./backend
+    # Context is the repo root: the image ships /industry-templates too (see Dockerfile).
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     environment:
       ATLAS_DATABASE_URL: postgresql+asyncpg://atlas:atlas@db:5432/atlas
       # Demo default only — set a real secret in the environment for anything public.
@@ -38,7 +41,9 @@ services:
   # superuser and populates every module. Opt-in via ATLAS_SEED_DEMO (default 1 here);
   # seed.py refuses to run against a prod DB unless ATLAS_SEED_DEMO=force. Runs once and exits.
   seed:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     environment:
       ATLAS_DATABASE_URL: postgresql+asyncpg://atlas:atlas@db:5432/atlas
       ATLAS_JWT_SECRET: ${ATLAS_JWT_SECRET:-insecure-demo-secret-change-me}
@@ -50,7 +55,20 @@ services:
     command: python seed.py
     restart: "no"
 
-  # frontend service arrives in Phase 15 (frontend design system + module UIs).
+  # Built SPA behind nginx, which also proxies /api to the backend so the app and the
+  # API share one origin (see frontend/nginx.conf). Open http://localhost:5173.
+  frontend:
+    build: ./frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "5173:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO/dev/null", "http://localhost/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
   pgdata:
