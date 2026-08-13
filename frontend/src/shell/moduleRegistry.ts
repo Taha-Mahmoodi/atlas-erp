@@ -8,7 +8,16 @@
 /** Module keys with a real static route registered in router.tsx (15.4+). ModuleLink.tsx
  * switches on this literal union so navigation stays type-safe as slices land — extend it
  * (and its switch in ModuleLink) one entry at a time, never widen to a bare `string`. */
-export type StaticModuleRoute = "finance" | "inventory" | "procurement" | "sales" | "reporting" | "admin" | "manufacturing";
+export type StaticModuleRoute =
+  | "finance"
+  | "inventory"
+  | "procurement"
+  | "sales"
+  | "reporting"
+  | "admin"
+  | "manufacturing"
+  | "quality"
+  | "maintenance";
 
 export interface ModuleEntry {
   key: string;
@@ -27,8 +36,8 @@ export const MODULES: ModuleEntry[] = [
   { key: "procurement", label: "Procurement", permissionPrefix: "procurement.", description: "Vendors, requisitions, POs, receipts", route: "procurement" },
   { key: "sales", label: "Sales", permissionPrefix: "sales.", description: "Customers, quotes, orders, deliveries, invoices", route: "sales" },
   { key: "manufacturing", label: "Manufacturing", permissionPrefix: "manufacturing.", description: "BOMs, work centers, production, MRP", route: "manufacturing" },
-  { key: "quality", label: "Quality", permissionPrefix: "quality.", description: "Inspection lots" },
-  { key: "maintenance", label: "Maintenance", permissionPrefix: "maintenance.", description: "Equipment, maintenance orders" },
+  { key: "quality", label: "Quality", permissionPrefix: "quality.", description: "Inspection lots", route: "quality" },
+  { key: "maintenance", label: "Maintenance", permissionPrefix: "maintenance.", description: "Equipment, maintenance orders", route: "maintenance" },
   { key: "hr", label: "HR", permissionPrefix: "hr.", description: "Employees, org chart, leave, time, payroll" },
   { key: "projects", label: "Projects", permissionPrefix: "projects.", description: "WBS, cost reporting" },
   { key: "crm", label: "CRM", permissionPrefix: "crm.", description: "Leads, opportunities, activities" },
