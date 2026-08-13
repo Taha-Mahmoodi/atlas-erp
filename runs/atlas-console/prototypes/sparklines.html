@@ -1,0 +1,201 @@
+<!doctype html>
+<html class="po">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>T2 prototype — inline SVG sparklines (porcelain stat cards)</title>
+<style>
+/* Inter Variable from the repo's built assets, file:// — fallback stack if the font fetch is blocked */
+@font-face{
+  font-family:"Inter Var";
+  src:url("file:///Users/taha/Documents/atlas-erp/frontend/dist/assets/inter-latin-wght-normal-Dx4kXJAl.woff2") format("woff2-variations");
+  font-weight:100 900;font-style:normal;font-display:swap;
+}
+/* §1 tokens — exact values from _register.md, never re-derived */
+.po{
+  --bg:#f7f7f8;--card:#ffffff;--ink:#17181c;--ink2:#6b6d76;--line:#e9e9ee;
+  --acc:#3f5bf6;--acc-t:#edf0fe;--ok-tx:#177a48;--bad-tx:#b23425;
+  --shadow:0 1px 2px rgba(23,24,28,.04),0 10px 28px -8px rgba(23,24,28,.09);
+}
+.po.dark{
+  --bg:#131418;--card:#1b1c22;--ink:#eeeef2;--ink2:#9a9ca8;--line:#2a2c35;
+  --acc:#93a5ff;--acc-t:#232637;--ok-tx:#7fd6a4;--bad-tx:#eb9486;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 28px -8px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg)}
+body{font-family:"Inter Var",Inter,system-ui,sans-serif;color:var(--ink);padding:36px}
+.wrap{width:1120px;margin:0 auto}
+/* §3 stat card + §4: 4-col grid, gap 16 */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+  box-shadow:var(--shadow);padding:16px 18px}
+/* label row: mono-caps left, sparkline right; min-height pins the row so an
+   absent sparkline never reflows the card (measured in this prototype) */
+.labrow{display:flex;align-items:center;justify-content:space-between;
+  min-height:22px;margin-bottom:8px}
+.lab{font-family:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  font-size:10.5px;font-weight:600;letter-spacing:.065em;text-transform:uppercase;
+  color:var(--ink2)}
+.val{font-size:26px;font-weight:650;line-height:32px;font-variant-numeric:tabular-nums}
+.delta{font-size:11.5px;font-weight:450;line-height:16px;color:var(--ink2);margin-top:2px}
+.delta .up{color:var(--ok-tx)}
+.delta .down{color:var(--bad-tx)}
+/* sparkline: 76×22 display, viewBox 80×24; stroke pinned to 1.8 CSS px via
+   vector-effect (display/viewBox scale is non-uniform: 0.95 x / 0.9167 y) */
+.spark{display:block;flex:none}
+.spark polyline{fill:none;stroke:var(--acc);stroke-width:1.8;
+  stroke-linecap:round;stroke-linejoin:round}
+/* skeleton (§3): line-token blocks, r6, matching final geometry; static here */
+.sk{background:var(--line);border-radius:6px}
+.sk-lab{width:92px;height:10px}
+.sk-spark{width:76px;height:22px}
+.sk-val{width:118px;height:26px;margin:3px 0}
+.sk-delta{width:140px;height:12px;margin:4px 0 2px}
+/* skeleton card: flex column so block margins don't collapse — sums to the
+   loaded card's exact 114px height (measured) */
+#loading .card{display:flex;flex-direction:column}
+/* state switching: sections hidden until body[data-state] matches */
+section{display:none}
+body[data-state="normal"]   #normal,
+body[data-state="empty"]    #empty,
+body[data-state="degenerate"] #degenerate,
+body[data-state="loading"]  #loading{display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ============ state=normal : approved data, 2 sparklines ============ -->
+<section id="normal">
+  <div class="stats">
+    <div class="card">
+      <div class="labrow" id="labrow-rev">
+        <span class="lab">Total revenue</span>
+        <svg class="spark" width="76" height="22" viewBox="0 0 80 24" aria-hidden="true"><polyline vector-effect="non-scaling-stroke" points="1,18 8,16 15,17 22,14 29,15 36,12 43,13 50,10 57,11 64,8 72,9 79,5"/></svg>
+      </div>
+      <div class="val">$128,400</div>
+      <div class="delta"><span class="up">&#8593; 2.6%</span> vs last month</div>
+    </div>
+    <div class="card">
+      <div class="labrow">
+        <span class="lab">Open orders</span>
+        <svg class="spark" width="76" height="22" viewBox="0 0 80 24" aria-hidden="true"><polyline vector-effect="non-scaling-stroke" points="1,20 8,18 15,19 22,16 29,17 36,15 43,13 50,14 57,11 64,9 72,10 79,7"/></svg>
+      </div>
+      <div class="val">132</div>
+      <div class="delta"><span class="up">&#8593; 8</span> this week</div>
+    </div>
+    <div class="card">
+      <div class="labrow"><span class="lab">Low-stock items</span></div>
+      <div class="val">6</div>
+      <div class="delta">of 214 items</div>
+    </div>
+    <div class="card">
+      <div class="labrow"><span class="lab">AP due</span></div>
+      <div class="val">$23,900</div>
+      <div class="delta">due within 14 days</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ state=empty : revenue series has no data ============ -->
+<section id="empty">
+  <div class="stats">
+    <div class="card">
+      <div class="labrow" id="labrow-rev-empty">
+        <span class="lab">Total revenue</span>
+        <!-- no series: sparkline absent entirely; min-height keeps row height -->
+      </div>
+      <div class="val">$128,400</div>
+      <div class="delta"><span class="up">&#8593; 2.6%</span> vs last month</div>
+    </div>
+    <div class="card">
+      <div class="labrow">
+        <span class="lab">Open orders</span>
+        <svg class="spark" width="76" height="22" viewBox="0 0 80 24" aria-hidden="true"><polyline vector-effect="non-scaling-stroke" points="1,20 8,18 15,19 22,16 29,17 36,15 43,13 50,14 57,11 64,9 72,10 79,7"/></svg>
+      </div>
+      <div class="val">132</div>
+      <div class="delta"><span class="up">&#8593; 8</span> this week</div>
+    </div>
+    <div class="card">
+      <div class="labrow"><span class="lab">Low-stock items</span></div>
+      <div class="val">6</div>
+      <div class="delta">of 214 items</div>
+    </div>
+    <div class="card">
+      <div class="labrow"><span class="lab">AP due</span></div>
+      <div class="val">$23,900</div>
+      <div class="delta">due within 14 days</div>
+    </div>
+  </div>
+</section>
+
+<!-- ==== state=degenerate : 2-point series + flat series (all same value) ==== -->
+<section id="degenerate">
+  <div class="stats">
+    <div class="card">
+      <div class="labrow">
+        <span class="lab">Total revenue</span>
+        <!-- 2 points only -->
+        <svg class="spark" width="76" height="22" viewBox="0 0 80 24" aria-hidden="true"><polyline vector-effect="non-scaling-stroke" points="1,18 79,6"/></svg>
+      </div>
+      <div class="val">$128,400</div>
+      <div class="delta"><span class="up">&#8593; 2.6%</span> vs last month</div>
+    </div>
+    <div class="card">
+      <div class="labrow">
+        <span class="lab">Open orders</span>
+        <!-- flat series: every value identical → y centered at 12, not on an edge -->
+        <svg class="spark" width="76" height="22" viewBox="0 0 80 24" aria-hidden="true"><polyline vector-effect="non-scaling-stroke" points="1,12 8,12 15,12 22,12 29,12 36,12 43,12 50,12 57,12 64,12 72,12 79,12"/></svg>
+      </div>
+      <div class="val">132</div>
+      <div class="delta">no change this week</div>
+    </div>
+    <div class="card">
+      <div class="labrow"><span class="lab">Low-stock items</span></div>
+      <div class="val">6</div>
+      <div class="delta">of 214 items</div>
+    </div>
+    <div class="card">
+      <div class="labrow"><span class="lab">AP due</span></div>
+      <div class="val">$23,900</div>
+      <div class="delta">due within 14 days</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ state=loading : static skeleton, geometry-matched ============ -->
+<section id="loading">
+  <div class="stats">
+    <div class="card">
+      <div class="labrow"><div class="sk sk-lab"></div><div class="sk sk-spark"></div></div>
+      <div class="sk sk-val"></div>
+      <div class="sk sk-delta"></div>
+    </div>
+    <div class="card">
+      <div class="labrow"><div class="sk sk-lab"></div><div class="sk sk-spark"></div></div>
+      <div class="sk sk-val"></div>
+      <div class="sk sk-delta"></div>
+    </div>
+    <div class="card">
+      <div class="labrow"><div class="sk sk-lab"></div></div>
+      <div class="sk sk-val"></div>
+      <div class="sk sk-delta"></div>
+    </div>
+    <div class="card">
+      <div class="labrow"><div class="sk sk-lab"></div></div>
+      <div class="sk sk-val"></div>
+      <div class="sk sk-delta"></div>
+    </div>
+  </div>
+</section>
+
+</div>
+<script>
+/* prototype harness only — the sparklines themselves are static markup, zero JS */
+var q=new URLSearchParams(location.search);
+if(q.get('theme')==='dark')document.documentElement.classList.add('dark');
+document.body.dataset.state=q.get('state')||'normal';
+</script>
+</body>
+</html>

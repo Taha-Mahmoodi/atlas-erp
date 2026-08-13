@@ -36,3 +36,6 @@ frontend/dist/
 .DS_Store
 *.swp
 .gstack/
+
+# Third-party reference/mood-board images collected during design runs — not ours to publish
+runs/*/references/

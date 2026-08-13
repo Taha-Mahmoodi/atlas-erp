@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>T1 prototype — glass ⌘K palette (porcelain)</title>
+<style>
+/* Inter Variable from repo (works over http://; may fail over file:// due to font CORS — verified at runtime) */
+@font-face {
+  font-family: 'Inter Variable';
+  src: url('../../../frontend/node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2') format('woff2-variations');
+  font-weight: 100 900; font-style: normal; font-display: block;
+}
+/* JetBrains Mono NOT in repo — register fallback stack used; noted in verdict. */
+:root { color-scheme: light; }
+* { margin:0; padding:0; box-sizing:border-box; }
+[hidden] { display:none !important; }
+
+/* ---- tokens (register §1, exact — never re-derived) ---- */
+.po {
+  --bg:#f7f7f8; --card:#ffffff; --ink:#17181c; --ink2:#6b6d76; --line:#e9e9ee;
+  --acc:#3f5bf6; --acc-t:#edf0fe;
+  --ok-bg:#e7f6ed; --ok-tx:#177a48; --warn-bg:#fbf1de; --warn-tx:#94650c;
+  --bad-bg:#fbe9e7; --bad-tx:#b23425;
+  --shadow:0 1px 2px rgba(23,24,28,.04), 0 10px 28px -8px rgba(23,24,28,.09);
+  --pal-border:color-mix(in srgb, var(--card) 40%, #ffffff88);
+}
+.po.dark {
+  --bg:#131418; --card:#1b1c22; --ink:#eeeef2; --ink2:#9a9ca8; --line:#2a2c35;
+  --acc:#93a5ff; --acc-t:#232637;
+  --ok-bg:#1b2f24; --ok-tx:#7fd6a4; --warn-bg:#332a17; --warn-tx:#e4b566;
+  --bad-bg:#361f1c; --bad-tx:#eb9486;
+  --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 28px -8px rgba(0,0,0,.4);
+  --pal-border:rgba(255,255,255,.14);
+  color-scheme: dark;
+}
+body { font-family:'Inter Variable', Inter, system-ui, sans-serif; background:var(--bg); color:var(--ink);
+  -webkit-font-smoothing:antialiased; }
+.mono { font-family:'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+
+/* ---- underlay: worst-case busy frame (synthetic stand-in) ---- */
+.main { height:100vh; overflow-y:auto; padding:28px 36px; }
+.crumb { font-size:12px; color:var(--ink2); margin-bottom:10px; }
+.crumb b { color:var(--ink); font-weight:500; }
+.phead { display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
+h1 { font-size:22px; font-weight:650; letter-spacing:-0.01em; line-height:28px; }
+.psub { font-size:13px; color:var(--ink2); margin-top:2px; }
+.controls { display:flex; gap:10px; align-items:center; }
+.search { height:38px; width:260px; border:1px solid var(--line); border-radius:10px; background:var(--card);
+  display:flex; align-items:center; gap:8px; padding:0 10px; font-size:13px; color:var(--ink2); cursor:text; }
+.search svg { flex:none; }
+.search .kbd { margin-left:auto; }
+.btn-ink { height:38px; padding:0 16px; border:0; border-radius:10px; background:var(--ink);
+  color:var(--card); font-size:13px; font-weight:550; font-family:inherit; }
+.po.dark .btn-ink { background:#eeeef2; color:#17181c; }
+.stats { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:16px; }
+.stat { background:var(--card); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow); padding:16px 18px; }
+.slabel { font-size:10.5px; font-weight:600; letter-spacing:.065em; text-transform:uppercase; color:var(--ink2); }
+.sval { font-size:26px; font-weight:650; line-height:32px; margin-top:6px; font-variant-numeric:tabular-nums; }
+.sdelta { font-size:11.5px; color:var(--ink2); margin-top:2px; }
+.sdelta .up { color:var(--ok-tx); } .sdelta .dn { color:var(--bad-tx); }
+.panel { background:var(--card); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow); padding:18px; }
+table { width:100%; border-collapse:collapse; }
+th { font-family:'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size:10.5px; font-weight:600; letter-spacing:.065em; text-transform:uppercase; color:var(--ink2);
+  text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); }
+td { font-size:13px; padding:11px 10px; border-bottom:1px solid var(--line); }
+tr:last-child td { border-bottom:0; }
+td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+.iid { font-family:'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size:11px; font-weight:500; color:var(--ink2); display:block; margin-top:1px; }
+.pill { display:inline-flex; align-items:center; gap:5px; height:24px; border-radius:999px; padding:0 10px;
+  font-size:12px; font-weight:500; }
+.pill::before { content:''; width:7px; height:7px; border-radius:50%; background:currentColor; }
+.pill.ok { background:var(--ok-bg); color:var(--ok-tx); }
+.pill.warn { background:var(--warn-bg); color:var(--warn-tx); }
+.pill.bad { background:var(--bad-bg); color:var(--bad-tx); }
+.pill.mute { background:transparent; border:1px dashed var(--line); color:var(--ink2); }
+.pill.mute::before { display:none; }
+.worstblock { position:absolute; left:505px; top:105px; width:430px; z-index:1; }
+.worstblock .wbtn { height:44px; border-radius:10px; background:var(--ink); margin-bottom:4px;
+  display:flex; align-items:center; justify-content:center; color:var(--card); font-size:13px; font-weight:550; }
+.po.dark .worstblock .wbtn { background:#eeeef2; color:#17181c; }
+.worstblock .wval { font-size:26px; font-weight:650; line-height:30px; font-variant-numeric:tabular-nums; color:var(--ink); }
+.worstblock .wtx { font-size:15px; font-weight:650; line-height:19px; color:var(--ink); letter-spacing:0; overflow:hidden; }
+.standin { position:fixed; right:10px; bottom:8px; z-index:5; font-size:11px; color:var(--ink2);
+  font-family:ui-monospace, Menlo, monospace; }
+
+/*PALETTE-CSS-START*/
+/* ---- ⌘K glass palette (register §3, exact) ---- */
+.scrim-none { /* no scrim in the §3 component spec; measured without one — see verdict */ }
+.palette {
+  position:fixed; left:50%; top:120px; transform:translateX(-50%); width:330px;
+  border-radius:16px; padding:10px; z-index:10;
+  background:var(--card); /* author fallback FIRST: opaque card */
+  border:1px solid var(--pal-border);
+  box-shadow:0 24px 60px -12px rgba(23,24,28,.28);
+  transform-origin:top center;
+}
+@supports ((backdrop-filter: blur(18px)) or (-webkit-backdrop-filter: blur(18px))) {
+  .palette:not(.opaque) {
+    background:color-mix(in srgb, var(--card) 62%, transparent);
+    -webkit-backdrop-filter:blur(18px) saturate(150%);
+    backdrop-filter:blur(18px) saturate(150%);
+  }
+}
+.palette .row { height:44px; border-radius:10px; display:flex; align-items:center; gap:10px;
+  padding:0 12px; font-size:13.5px; font-weight:500; color:var(--ink); }
+.palette .row svg { flex:none; color:var(--ink); }
+.palette .row.hi { background:color-mix(in srgb, var(--card) 85%, transparent);
+  box-shadow:0 2px 8px rgba(23,24,28,.08); }
+.palette .row .kbd { margin-left:auto; }
+.kbd { min-width:22px; height:22px; border-radius:6px; border:1px solid var(--line);
+  background:var(--card); box-shadow:0 1px 0 var(--line);
+  font-family:'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size:11px; font-weight:450; color:var(--ink);
+  display:inline-flex; align-items:center; justify-content:center; padding:0 5px; }
+.palette .qrow { height:44px; display:flex; align-items:center; gap:10px; padding:0 12px;
+  border-bottom:1px solid var(--line); margin-bottom:4px; }
+.palette .qrow input { flex:1; border:0; outline:0; background:transparent; font:inherit;
+  font-size:13.5px; color:var(--ink); }
+.palette .qrow input::placeholder { color:var(--ink2); }
+.palette .empty { padding:22px 12px 26px; text-align:center; }
+.palette .empty .st { font-size:15px; font-weight:500; color:var(--ink); }
+.palette .empty .hint { font-size:12px; color:var(--ink2); margin-top:6px; }
+/* motion: enter 160ms, opacity+scale only — backdrop-filter constant from first frame */
+.palette.open { animation:po-enter 160ms cubic-bezier(0.2,0,0,1); }
+@keyframes po-enter {
+  from { opacity:0; transform:translateX(-50%) scale(0.98); }
+  to   { opacity:1; transform:translateX(-50%) scale(1); }
+}
+.palette.closing { animation:po-exit 110ms cubic-bezier(0.3,0,1,1) forwards; }
+@keyframes po-exit { to { opacity:0; } }
+/* (b) for-the-record variant: animated blur — measured, expected worse, never shipped */
+.palette.open.anim-blur { animation:po-enter-blur 160ms cubic-bezier(0.2,0,0,1); }
+@keyframes po-enter-blur {
+  from { opacity:0; transform:translateX(-50%) scale(0.98);
+         -webkit-backdrop-filter:blur(0) saturate(150%); backdrop-filter:blur(0) saturate(150%); }
+  to   { opacity:1; transform:translateX(-50%) scale(1);
+         -webkit-backdrop-filter:blur(18px) saturate(150%); backdrop-filter:blur(18px) saturate(150%); }
+}
+/* reduced motion: instant, fully opaque card panel — a designed state, not a fallback */
+@media (prefers-reduced-motion: reduce) {
+  .palette { background:var(--card) !important; -webkit-backdrop-filter:none !important;
+    backdrop-filter:none !important; animation:none !important; }
+}
+.po.force-opaque .palette { background:var(--card) !important; -webkit-backdrop-filter:none !important;
+  backdrop-filter:none !important; }
+.po.no-anim .palette { animation:none !important; }
+/*PALETTE-CSS-END*/
+
+.probe .palette .row, .probe .palette .row svg, .probe .palette .kbd,
+.probe .palette .empty .st, .probe .palette .empty .hint, .probe .palette .qrow input { color:transparent !important; }
+.probe .palette .row svg { visibility:hidden; }
+
+#hud { position:fixed; left:10px; bottom:8px; z-index:20; background:var(--card); color:var(--ink);
+  border:1px solid var(--line); border-radius:8px; padding:8px 10px;
+  font-family:ui-monospace, Menlo, monospace; font-size:11px; line-height:1.5; white-space:pre; display:none; }
+</style>
+</head>
+<body class="po">
+
+<main class="main" id="main">
+  <div class="crumb">Acme Industrial / Inventory / <b>Items</b></div>
+  <div class="phead">
+    <div>
+      <h1>Items</h1>
+      <div class="psub">1,284 items across 3 warehouses</div>
+    </div>
+    <div class="controls">
+      <div class="search" id="invoker" tabindex="0" role="button" aria-haspopup="dialog" aria-label="Open command palette">
+        <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l3.5 3.5"/></svg>
+        Search or jump to…
+        <span class="kbd">⌘K</span>
+      </div>
+      <button class="btn-ink" type="button">New item</button>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="slabel">On-hand value</div><div class="sval">$482,913.06</div><div class="sdelta"><span class="up">↑ 2.4%</span> vs last period</div></div>
+    <div class="stat"><div class="slabel">Items below reorder</div><div class="sval">37</div><div class="sdelta"><span class="dn">↓ 5</span> vs last period</div></div>
+    <div class="stat"><div class="slabel">Open receipts</div><div class="sval">12</div><div class="sdelta">4 due this week</div></div>
+    <div class="stat"><div class="slabel">Stock accuracy</div><div class="sval">99.2%</div><div class="sdelta"><span class="up">↑ 0.3 pt</span> cycle count</div></div>
+  </div>
+
+  <div class="panel">
+    <table id="tbl">
+      <thead><tr>
+        <th>Item</th><th>Warehouse</th><th class="num">On hand</th><th>Status</th><th class="num">Unit cost</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="worstblock" id="worstblock" hidden aria-hidden="true">
+    <div class="wbtn">Post journal entry</div>
+    <div class="wbtn">Receive stock</div>
+    <div class="wval">$482,913.06 · 8,863 · 99.2%</div>
+    <div class="wtx" id="wtx"></div>
+  </div>
+</main>
+
+<div class="standin">synthetic underlay — generated stand-in data, not app output</div>
+
+<!--PALETTE-HTML-START-->
+<div class="palette" id="palette" role="dialog" aria-modal="true" aria-label="Command palette">
+  <div class="qrow" id="qrow" hidden>
+    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l3.5 3.5"/></svg>
+    <input id="q" type="text" role="combobox" aria-expanded="true" aria-controls="plist"
+      aria-activedescendant="" aria-label="Search commands and records" autocomplete="off" spellcheck="false">
+  </div>
+  <ul id="plist" role="listbox" aria-label="Commands" tabindex="0" style="list-style:none" aria-activedescendant=""></ul>
+  <div class="empty" id="pempty" hidden>
+    <div class="st">No results for &ldquo;xq-914&rdquo;.</div>
+    <div class="hint">Check the identifier, or press Esc to close.</div>
+  </div>
+</div>
+<!--PALETTE-HTML-END-->
+
+<div id="hud"></div>
+
+<script>
+'use strict';
+const P = new URLSearchParams(location.search);
+const theme = P.get('theme') === 'dark' ? 'dark' : 'light';
+const state = P.get('state') || 'actions';
+const body = document.body;
+if (theme === 'dark') body.classList.add('dark');
+if (P.get('probe') === '1') body.classList.add('probe');
+if (P.get('worst') === '1'){
+  const wb = document.getElementById('worstblock'); wb.hidden = false;
+  document.getElementById('wtx').textContent = 'MMWMHXKB880 '.repeat(220);
+}
+if (P.get('hud') === '1') hudEl().style.display = 'block';
+function hudEl(){ return document.getElementById('hud'); }
+
+/* ---- underlay table: 40 rows, dense, stand-in seed-style data ---- */
+(function fillTable(){
+  const names = ['Hex bolt M6×20','Hex nut M6','Flat washer M6','Hex bolt M8×30','Lock nut M8',
+    'Spring washer M8','Socket screw M5×16','Hex bolt M10×40','Flange nut M10','Rivet 4×10'];
+  const codes = ['ITM-BOLT-M6X20','ITM-NUT-M6','ITM-WSHR-M6','ITM-BOLT-M8X30','ITM-LNUT-M8',
+    'ITM-SWSHR-M8','ITM-SCRW-M5X16','ITM-BOLT-M10X40','ITM-FNUT-M10','ITM-RVT-4X10'];
+  const wh = ['Main DC','North Hub','South Hub'];
+  const pills = ['<span class="pill ok">In stock</span>','<span class="pill warn">Low stock</span>',
+    '<span class="pill bad">Out of stock</span>','<span class="pill mute">Draft</span>'];
+  let html = '';
+  for (let i=0;i<40;i++){
+    const n = i%10;
+    html += `<tr><td>${names[n]}<span class="iid">${codes[n]}</span></td><td>${wh[i%3]}</td>` +
+      `<td class="num">${(9000-i*137).toLocaleString('en-US')}</td><td>${pills[i%4]}</td>` +
+      `<td class="num">$${(0.42+i*0.113).toFixed(2)}</td></tr>`;
+  }
+  document.querySelector('#tbl tbody').innerHTML = html;
+})();
+
+/* ---- palette content per state ---- */
+const ICONS = {
+  plus:'<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M7.5 2.5v10M2.5 7.5h10"/></svg>',
+  inbox:'<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M7.5 2v7M4.5 6.5l3 3 3-3"/><path d="M2 10.5v2h11v-2"/></svg>',
+  bill:'<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2" y="3.5" width="11" height="8" rx="1.5"/><circle cx="7.5" cy="7.5" r="1.8"/></svg>',
+  jump:'<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M2.5 7.5h9M8 4l3.5 3.5L8 11"/></svg>',
+  doc:'<svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="2" width="9" height="11" rx="1.5"/><path d="M5.5 5.5h4M5.5 8h4"/></svg>'
+};
+const ACTIONS = [
+  {icon:'plus', label:'New item', kbd:'⌘N'},
+  {icon:'inbox', label:'Receive stock', kbd:'⌘R', hi:true},
+  {icon:'bill', label:'Pay vendor bill', kbd:'⌘B'},
+  {icon:'jump', label:'Jump to record…', kbd:'⌘K'}
+];
+const QUERY_ROWS = [
+  {icon:'inbox', label:'Receive stock', kbd:'⌘R', hi:true},
+  {icon:'doc', label:'Reconcile bank statement', kbd:''},
+  {icon:'bill', label:'Record payment', kbd:''},
+  {icon:'jump', label:'Jump to record…', kbd:'⌘K'}
+];
+const plist = document.getElementById('plist');
+const qrow = document.getElementById('qrow');
+const qinput = document.getElementById('q');
+const pempty = document.getElementById('pempty');
+const palette = document.getElementById('palette');
+const invoker = document.getElementById('invoker');
+
+function renderRows(rows){
+  plist.innerHTML = rows.map((r,i) =>
+    `<li class="row${r.hi?' hi':''}" role="option" id="opt${i}" aria-selected="${r.hi?'true':'false'}">` +
+    `${ICONS[r.icon]}<span class="lbl">${r.label}</span>${r.kbd?`<span class="kbd">${r.kbd}</span>`:''}</li>`
+  ).join('');
+  const hi = rows.findIndex(r=>r.hi);
+  plist.setAttribute('aria-activedescendant', hi>=0?`opt${hi}`:'');
+  qinput.setAttribute('aria-activedescendant', hi>=0?`opt${hi}`:'');
+}
+function applyState(s){
+  qrow.hidden = true; pempty.hidden = true; plist.hidden = false;
+  if (s === 'query'){ qrow.hidden = false; qinput.value = 'rec'; renderRows(QUERY_ROWS); }
+  else if (s === 'empty'){ qrow.hidden = false; qinput.value = 'xq-914'; plist.hidden = true; pempty.hidden = false; }
+  else { renderRows(ACTIONS); } /* actions | reduced | nofilter share the actions content */
+  if (s === 'reduced'){ body.classList.add('force-opaque','no-anim'); }
+  if (s === 'nofilter'){ palette.classList.add('opaque'); } /* simulates @supports:false via the author fallback */
+}
+applyState(state);
+
+/* reduced-motion: media query (CSS above) AND matchMedia listener */
+const rmq = matchMedia('(prefers-reduced-motion: reduce)');
+function onRM(){ if (rmq.matches){ body.classList.add('force-opaque','no-anim'); }
+  else if (state !== 'reduced'){ body.classList.remove('force-opaque','no-anim'); } }
+rmq.addEventListener('change', onRM); onRM();
+
+/* ---- open/close, focus trap, keyboard ---- */
+let lastFocus = null;
+function openPalette(){
+  palette.style.display = 'block'; palette.classList.remove('closing');
+  palette.classList.add('open');
+  if (P.get('anim') === 'blur') palette.classList.add('anim-blur');
+  lastFocus = document.activeElement;
+  (qrow.hidden ? plist : qinput).focus();
+}
+function closePalette(){
+  palette.classList.remove('open','anim-blur');
+  const done = () => { palette.style.display = 'none'; palette.removeEventListener('animationend', done); };
+  if (body.classList.contains('no-anim') || rmq.matches){ palette.style.display = 'none'; }
+  else { palette.classList.add('closing'); palette.addEventListener('animationend', done); }
+  if (lastFocus) lastFocus.focus();
+}
+palette.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape'){ e.preventDefault(); closePalette(); return; }
+  if (e.key === 'Tab'){ /* trap: input + listbox are the only tab stops */
+    e.preventDefault();
+    const stops = [qinput, plist].filter(el => !el.hidden && el.offsetParent !== null && !(el===qinput && qrow.hidden));
+    if (stops.length < 2) { stops[0] && stops[0].focus(); return; }
+    const i = stops.indexOf(document.activeElement);
+    stops[(i + (e.shiftKey ? -1 : 1) + stops.length) % stops.length].focus();
+    return;
+  }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+    e.preventDefault();
+    const opts = [...plist.querySelectorAll('[role="option"]')];
+    if (!opts.length) return;
+    let i = opts.findIndex(o => o.classList.contains('hi'));
+    i = (i + (e.key === 'ArrowDown' ? 1 : -1) + opts.length) % opts.length;
+    opts.forEach((o,j) => { o.classList.toggle('hi', j===i); o.setAttribute('aria-selected', j===i?'true':'false'); });
+    plist.setAttribute('aria-activedescendant', opts[i].id);
+    qinput.setAttribute('aria-activedescendant', opts[i].id);
+  }
+});
+window.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k'){
+    e.preventDefault();
+    palette.style.display === 'none' ? openPalette() : closePalette();
+  }
+});
+invoker.addEventListener('click', openPalette);
+invoker.addEventListener('keydown', e => { if (e.key==='Enter'||e.key===' '){ e.preventDefault(); openPalette(); } });
+/* palette starts open (that is the state under test) */
+lastFocus = invoker;
+
+/* ---- measurement API ---- */
+const mainEl = document.getElementById('main');
+function stats(deltas){
+  const fps = deltas.map(d => 1000/d).sort((a,b)=>a-b);
+  const ms = [...deltas].sort((a,b)=>a-b);
+  const mean = fps.reduce((a,b)=>a+b,0)/fps.length;
+  const median = fps[Math.floor(fps.length/2)];
+  const low1 = fps[Math.max(0, Math.floor(fps.length*0.01))];
+  const dropped = deltas.filter(d => d > 25).length; /* missed ≥1 vsync @60Hz */
+  return { frames: deltas.length, meanFps:+mean.toFixed(1), medianFps:+median.toFixed(1),
+    low1Fps:+low1.toFixed(1), worstMs:+ms[ms.length-1].toFixed(1), droppedFrames:dropped };
+}
+function paintHud(r, label){
+  const h = hudEl(); h.style.display = 'block';
+  h.textContent = `${label}\nmedian ${r.medianFps} fps · mean ${r.meanFps} fps\n1% low ${r.low1Fps} fps · worst ${r.worstMs} ms\ndropped ${r.droppedFrames}/${r.frames} frames\n1440×900 · ${theme} · ${state}`;
+}
+/* (1) palette open, blur active, underlay scrolling for `ms` */
+window.__measureScroll = function(ms=10000, label='scroll'){
+  return new Promise(res => {
+    const deltas = []; let last = performance.now(); const t0 = last; let dir = 1;
+    function tick(t){
+      deltas.push(t - last); last = t;
+      const max = mainEl.scrollHeight - mainEl.clientHeight;
+      mainEl.scrollTop += 6 * dir;
+      if (mainEl.scrollTop >= max || mainEl.scrollTop <= 0) dir = -dir;
+      if (t - t0 < ms) requestAnimationFrame(tick);
+      else { deltas.shift(); const r = stats(deltas); r.label = label; paintHud(r, label); window.__last = r; res(r); }
+    }
+    requestAnimationFrame(tick);
+  });
+};
+/* (2) repeated enter/exit cycles, mode 'spec' (opacity+scale, constant blur) or 'blur' (animated blur) */
+window.__measureEnter = function(mode='spec', ms=10000, label){
+  label = label || `enter-${mode}`;
+  return new Promise(res => {
+    palette.classList.remove('open','closing','anim-blur');
+    const deltas = []; let last = performance.now(); const t0 = last; let dir = 1; let phase = 0; let phaseT = last;
+    function cycle(t){
+      if (t - phaseT > (phase===0?200:150)){ /* 160ms enter / 110ms exit + margin */
+        phaseT = t; phase = 1 - phase;
+        palette.classList.remove('open','closing','anim-blur'); void palette.offsetWidth;
+        if (phase === 0){ palette.classList.add('open'); if (mode==='blur') palette.classList.add('anim-blur'); }
+        else { palette.classList.add('closing'); }
+      }
+    }
+    palette.classList.add('open'); if (mode==='blur') palette.classList.add('anim-blur');
+    function tick(t){
+      deltas.push(t - last); last = t;
+      const max = mainEl.scrollHeight - mainEl.clientHeight;
+      mainEl.scrollTop += 6 * dir;
+      if (mainEl.scrollTop >= max || mainEl.scrollTop <= 0) dir = -dir;
+      cycle(t);
+      if (t - t0 < ms) requestAnimationFrame(tick);
+      else { deltas.shift(); palette.classList.remove('closing','anim-blur'); palette.classList.add('open');
+        const r = stats(deltas); r.label = label; paintHud(r, label); window.__last = r; res(r); }
+    }
+    requestAnimationFrame(tick);
+  });
+};
+/* sample-region reporter for the contrast probe */
+window.__rects = function(){
+  const out = { dpr: devicePixelRatio, theme, state, rects: [] };
+  document.querySelectorAll('.palette .row .lbl').forEach((el,i) => {
+    const r = el.getBoundingClientRect();
+    out.rects.push({ name:`row${i}-text`, x:r.x, y:r.y, w:r.width, h:r.height,
+      hi: el.closest('.row').classList.contains('hi') });
+  });
+  document.querySelectorAll('.palette .kbd').forEach((el,i) => {
+    const r = el.getBoundingClientRect();
+    out.rects.push({ name:`kbd${i}`, x:r.x+3, y:r.y+3, w:r.width-6, h:r.height-6 });
+  });
+  const st = document.querySelector('.palette .empty .st');
+  if (st && !pempty.hidden){
+    const r = st.getBoundingClientRect();
+    out.rects.push({ name:'empty-statement', x:r.x, y:r.y, w:r.width, h:r.height });
+    const hn = document.querySelector('.palette .empty .hint').getBoundingClientRect();
+    out.rects.push({ name:'empty-hint', x:hn.x, y:hn.y, w:hn.width, h:hn.height });
+  }
+  return JSON.stringify(out);
+};
+window.__fontCheck = function(){
+  return JSON.stringify({
+    inter: document.fonts.check("13px 'Inter Variable'"),
+    jbMono: document.fonts.check("11px 'JetBrains Mono Variable'")
+  });
+};
+</script>
+</body>
+</html>
