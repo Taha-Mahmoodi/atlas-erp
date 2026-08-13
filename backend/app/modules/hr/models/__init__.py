@@ -14,7 +14,7 @@ The package split (10.1 shipped a single ``models.py``) keeps each concern under
 leave lands — a behaviour-preserving move, the manufacturing/inventory models/ precedent.
 """
 
-from app.modules.hr.models.leave import LeaveBalance, LeaveRequest, LeaveType
+from app.modules.hr.models.leave import LeaveAccrual, LeaveBalance, LeaveRequest, LeaveType
 from app.modules.hr.models.org import Department, Employee, Position
 from app.modules.hr.models.payroll import PayrollRun, PayrollRunLine
 from app.modules.hr.models.time import TimeEntry, Timesheet
@@ -22,6 +22,7 @@ from app.modules.hr.models.time import TimeEntry, Timesheet
 __all__ = [
     "Department",
     "Employee",
+    "LeaveAccrual",
     "LeaveBalance",
     "LeaveRequest",
     "LeaveType",

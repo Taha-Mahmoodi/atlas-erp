@@ -10,9 +10,11 @@ THREE tables, one concern (leave), the D-053 model:
   and active.
 - ``LeaveBalance`` is the RUNNING balance per (employee, type): ``balance_days`` available now,
   ``accrued_to_date`` and ``taken_to_date`` for traceability, and ``last_accrual_period`` — the
-  idempotency guard the accrual run keys off (a YYYY-MM / YYYY string; the run skips a balance whose
-  ``last_accrual_period`` already equals the run's period, so a re-run grants nothing — the
-  maintenance next-due-date idempotency analogue, set-based, D-053). UNIQUE(tenant, employee, type).
+  most recently granted period (informational; see ``LeaveAccrual``). UNIQUE(tenant, employee,
+  type).
+- ``LeaveAccrual`` is the accrual-run IDEMPOTENCY GUARD (#160): one row per APPLIED
+  (balance, period). The run skips any pair already recorded for its period, so re-running ANY
+  previously applied period — not just the latest — grants nothing.
 - ``LeaveRequest`` is the request DOCUMENT: it claims a gapless ``LV-`` ``request_number`` at
   creation (D-040 claim-at-create precedent) but is NOT a docflow document (no DocumentMixin — a
   leave request has no successor document in v1). ``days`` is caller-supplied (a ``QuantityType``
@@ -101,11 +103,11 @@ class LeaveBalance(UuidPKMixin, TenantMixin, TimestampMixin, Base):
     Composite tenant FKs to ``hr_employees`` and ``hr_leave_types``. UNIQUE(tenant, employee, type)
     — one balance row per pairing. ``balance_days`` (QuantityType) is the currently available amount
     the approve step decrements and a cancel-of-approved restores; ``accrued_to_date`` /
-    ``taken_to_date`` are running totals for traceability. ``last_accrual_period`` is the
-    IDEMPOTENCY GUARD: the accrual run stamps it with the run's period (YYYY-MM for MONTHLY, YYYY
-    for ANNUAL)
-    and skips any balance already stamped with the current period, so a same-period re-run grants
-    nothing (D-053). NOT audited (a high-churn running total, the stock-balance precedent).
+    ``taken_to_date`` are running totals for traceability. ``last_accrual_period`` is the period
+    (YYYY-MM for MONTHLY, YYYY for ANNUAL) of the most recent run that granted this balance —
+    INFORMATIONAL ONLY since #160: the idempotency guard is ``LeaveAccrual``, which remembers EVERY
+    applied period (the single column forgot older periods, so re-running N after N+1 double-granted
+    N, D-063). NOT audited (a high-churn running total, the stock-balance precedent).
     """
 
     __tablename__ = "hr_leave_balances"
@@ -139,9 +141,42 @@ class LeaveBalance(UuidPKMixin, TenantMixin, TimestampMixin, Base):
     taken_to_date: Mapped[Decimal] = mapped_column(
         QuantityType(), nullable=False, default=Decimal(0), server_default="0"
     )
-    # The accrual idempotency guard: the last period this balance was accrued for (YYYY-MM / YYYY),
-    # or None before the first accrual.
+    # The period of the most recent accrual run that granted this balance (YYYY-MM / YYYY), or
+    # None before the first accrual. Informational since #160 — the idempotency guard is the
+    # LeaveAccrual applied-periods table, which remembers every period, not just the last.
     last_accrual_period: Mapped[str | None] = mapped_column(sa.String(7), nullable=True)
+
+
+class LeaveAccrual(UuidPKMixin, TenantMixin, TimestampMixin, Base):
+    """One APPLIED accrual per (balance, period) — the accrual-run idempotency guard (#160,
+    D-063).
+
+    D-053 stamped a single ``last_accrual_period`` on the balance, which forgot older periods:
+    running period N, then N+1, then N again re-granted N (QA reproduced a double-grant). The run
+    now records every granted (balance, period) here and skips any pair already recorded for its
+    period, so re-running ANY previously applied period grants nothing. UNIQUE(tenant, balance,
+    period) is the DB backstop against a concurrent same-period double-grant. NOT audited (a
+    mechanical guard row, the balance precedent).
+    """
+
+    __tablename__ = "hr_leave_accruals"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "tenant_id",
+            "balance_id",
+            "period",
+            name="uq_hr_leave_accruals_tenant_balance_period",
+        ),
+        tenant_unique(),
+        tenant_fk("adm_tenants"),
+        tenant_fk("hr_leave_balances", "balance_id"),
+        # The run reads the applied balance ids for (tenant, period) in one query (PERFORMANCE §1).
+        sa.Index("ix_hr_leave_accruals_tenant_id_period", "tenant_id", "period"),
+    )
+
+    balance_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, nullable=False)
+    # The applied period key (YYYY-MM for MONTHLY, YYYY for ANNUAL).
+    period: Mapped[str] = mapped_column(sa.String(7), nullable=False)
 
 
 class LeaveRequest(UuidPKMixin, TenantMixin, AuditMixin, TimestampMixin, Base):
