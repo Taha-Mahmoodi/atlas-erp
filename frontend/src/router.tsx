@@ -6,7 +6,7 @@
  * covering every module that hasn't shipped yet.
  */
 
-import { createRootRoute, createRoute, createRouter, Outlet } from "@tanstack/react-router";
+import { createRootRoute, createRoute, createRouter, Outlet, redirect } from "@tanstack/react-router";
 
 import { App } from "@/App";
 import { AdminHomePage } from "@/modules/admin/pages/AdminHomePage";
@@ -196,6 +196,17 @@ const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   component: HomePage,
+});
+
+// /login is not a real screen — AuthGate renders LoginPage in place on ANY URL. Without
+// this route the $moduleKey catch-all matched /login and showed "Unknown module." right
+// after signing in (#159); redirecting home fixes the URL whether or not a session exists.
+const loginRedirectRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/login",
+  beforeLoad: () => {
+    throw redirect({ to: "/" });
+  },
 });
 
 // --- Finance (PLAN 15.4) -------------------------------------------------------------------
@@ -1283,6 +1294,7 @@ const moduleRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  loginRedirectRoute,
   financeHomeRoute,
   financeAccountsRoute,
   financeAccountNewRoute,
