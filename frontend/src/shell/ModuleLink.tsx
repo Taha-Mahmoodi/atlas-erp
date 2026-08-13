@@ -57,6 +57,12 @@ export function ModuleLink({
           {children}
         </Link>
       );
+    case "manufacturing":
+      return (
+        <Link to="/manufacturing" {...(className ? { className } : {})}>
+          {children}
+        </Link>
+      );
     default:
       return (
         <Link
