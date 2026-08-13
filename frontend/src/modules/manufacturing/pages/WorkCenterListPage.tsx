@@ -7,6 +7,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
+import { formatPercent, formatQuantity } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
 import { useWorkCenters } from "@/modules/manufacturing/hooks";
@@ -19,14 +20,14 @@ const COLUMNS: DataGridColumn<WorkCenter>[] = [
     key: "capacity_hours_per_day",
     header: "Capacity (hrs/day)",
     align: "right",
-    render: (row) => row.capacity_hours_per_day,
+    render: (row) => formatQuantity(row.capacity_hours_per_day),
     width: "160px",
   },
   {
     key: "efficiency_percent",
     header: "Efficiency",
     align: "right",
-    render: (row) => `${row.efficiency_percent}%`,
+    render: (row) => formatPercent(row.efficiency_percent),
     width: "100px",
   },
   {
