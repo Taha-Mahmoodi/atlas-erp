@@ -131,6 +131,19 @@ import { SalesOrderListPage } from "@/modules/sales/pages/SalesOrderListPage";
 import { ReturnDetailPage } from "@/modules/sales/pages/ReturnDetailPage";
 import { ReturnFormPage } from "@/modules/sales/pages/ReturnFormPage";
 import { ReturnListPage } from "@/modules/sales/pages/ReturnListPage";
+import { ProjectCostReportPage } from "@/modules/projects/pages/ProjectCostReportPage";
+import { ProjectDetailPage } from "@/modules/projects/pages/ProjectDetailPage";
+import { ProjectFormPage } from "@/modules/projects/pages/ProjectFormPage";
+import { ProjectListPage } from "@/modules/projects/pages/ProjectListPage";
+import { ProjectsHomePage } from "@/modules/projects/pages/ProjectsHomePage";
+import { ActivityListPage } from "@/modules/crm/pages/ActivityListPage";
+import { CrmHomePage } from "@/modules/crm/pages/CrmHomePage";
+import { LeadDetailPage } from "@/modules/crm/pages/LeadDetailPage";
+import { LeadFormPage } from "@/modules/crm/pages/LeadFormPage";
+import { LeadListPage } from "@/modules/crm/pages/LeadListPage";
+import { OpportunityBoardPage } from "@/modules/crm/pages/OpportunityBoardPage";
+import { OpportunityDetailPage } from "@/modules/crm/pages/OpportunityDetailPage";
+import { OpportunityFormPage } from "@/modules/crm/pages/OpportunityFormPage";
 import { ProfitAndLossPage } from "@/modules/finance/pages/ProfitAndLossPage";
 import { TrialBalancePage } from "@/modules/finance/pages/TrialBalancePage";
 import { JournalEntryDetailPage } from "@/modules/finance/pages/JournalEntryDetailPage";
@@ -1012,6 +1025,92 @@ const maintenancePlanDetailRoute = createRoute({
   component: MaintenancePlanFormPage,
 });
 
+// --- Projects (PLAN 15.11) -----------------------------------------------------------------
+
+const projectsHomeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects",
+  component: ProjectsHomePage,
+});
+const projectsListRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects/list",
+  component: ProjectListPage,
+});
+const projectNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects/new",
+  component: ProjectFormPage,
+});
+const projectDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects/$projectId",
+  component: ProjectDetailPage,
+});
+const projectEditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects/$projectId/edit",
+  component: ProjectFormPage,
+});
+const projectCostReportRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/projects/$projectId/cost-report",
+  component: ProjectCostReportPage,
+});
+
+// --- CRM (PLAN 15.11) ----------------------------------------------------------------------
+
+const crmHomeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/crm",
+  component: CrmHomePage,
+});
+const crmLeadsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/crm/leads",
+  component: LeadListPage,
+});
+const crmLeadNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/crm/leads/new",
+  component: LeadFormPage,
+});
+const crmLeadDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/crm/leads/$leadId",
+  component: LeadDetailPage,
+});
+const crmLeadEditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/crm/leads/$leadId/edit",
+  component: LeadFormPage,
+});
+const crmOpportunitiesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/crm/opportunities",
+  component: OpportunityBoardPage,
+});
+const crmOpportunityNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/crm/opportunities/new",
+  component: OpportunityFormPage,
+});
+const crmOpportunityDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/crm/opportunities/$opportunityId",
+  component: OpportunityDetailPage,
+});
+const crmOpportunityEditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/crm/opportunities/$opportunityId/edit",
+  component: OpportunityFormPage,
+});
+const crmActivitiesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/crm/activities",
+  component: ActivityListPage,
+});
+
 // --- Every other module: placeholder until its own slice lands ----------------------------
 
 const moduleRoute = createRoute({
@@ -1177,6 +1276,22 @@ const routeTree = rootRoute.addChildren([
   maintenancePlansRoute,
   maintenancePlanNewRoute,
   maintenancePlanDetailRoute,
+  projectsHomeRoute,
+  projectsListRoute,
+  projectNewRoute,
+  projectDetailRoute,
+  projectEditRoute,
+  projectCostReportRoute,
+  crmHomeRoute,
+  crmLeadsRoute,
+  crmLeadNewRoute,
+  crmLeadDetailRoute,
+  crmLeadEditRoute,
+  crmOpportunitiesRoute,
+  crmOpportunityNewRoute,
+  crmOpportunityDetailRoute,
+  crmOpportunityEditRoute,
+  crmActivitiesRoute,
   moduleRoute,
 ]);
 

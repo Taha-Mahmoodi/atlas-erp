@@ -75,6 +75,18 @@ export function ModuleLink({
           {children}
         </Link>
       );
+    case "projects":
+      return (
+        <Link to="/projects" {...(className ? { className } : {})}>
+          {children}
+        </Link>
+      );
+    case "crm":
+      return (
+        <Link to="/crm" {...(className ? { className } : {})}>
+          {children}
+        </Link>
+      );
     default:
       return (
         <Link

@@ -17,7 +17,9 @@ export type StaticModuleRoute =
   | "admin"
   | "manufacturing"
   | "quality"
-  | "maintenance";
+  | "maintenance"
+  | "projects"
+  | "crm";
 
 export interface ModuleEntry {
   key: string;
@@ -39,8 +41,8 @@ export const MODULES: ModuleEntry[] = [
   { key: "quality", label: "Quality", permissionPrefix: "quality.", description: "Inspection lots", route: "quality" },
   { key: "maintenance", label: "Maintenance", permissionPrefix: "maintenance.", description: "Equipment, maintenance orders", route: "maintenance" },
   { key: "hr", label: "HR", permissionPrefix: "hr.", description: "Employees, org chart, leave, time, payroll" },
-  { key: "projects", label: "Projects", permissionPrefix: "projects.", description: "WBS, cost reporting" },
-  { key: "crm", label: "CRM", permissionPrefix: "crm.", description: "Leads, opportunities, activities" },
+  { key: "projects", label: "Projects", permissionPrefix: "projects.", description: "WBS, cost reporting", route: "projects" },
+  { key: "crm", label: "CRM", permissionPrefix: "crm.", description: "Leads, opportunities, activities", route: "crm" },
   { key: "reporting", label: "Reporting", permissionPrefix: "reporting.", description: "Dashboards, ad-hoc reports", route: "reporting" },
   // permissionPrefix was "core." pre-15.12 — a prefix no real permission key ever had (the
   // actual keys are admin.*), so the tile never showed; fixed alongside the route landing.
