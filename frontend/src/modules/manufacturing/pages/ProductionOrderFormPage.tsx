@@ -10,8 +10,7 @@ import { useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
 import { FormBuilder, type FieldDef, type FormValues } from "@/components/FormBuilder";
-import { useItemOptions } from "@/modules/inventory/hooks";
-import { useWarehouseOptions } from "@/modules/inventory/hooks";
+import { useItemOptions, useWarehouseOptions } from "@/modules/inventory/hooks";
 import { useBoms, useCreateProductionOrder, useRoutings } from "@/modules/manufacturing/hooks";
 import type { ProductionOrderCreate } from "@/modules/manufacturing/types";
 
