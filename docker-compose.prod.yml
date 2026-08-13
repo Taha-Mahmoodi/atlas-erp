@@ -1,0 +1,140 @@
+# docker-compose.prod.yml — single-VPS production topology (PERFORMANCE.md §7).
+#
+# Reference box: 4 vCPU / 8 GB (SME, ≤50 concurrent users; sizing table in
+# docs/deployment.md). One box runs all three services: nginx serving the built
+# SPA + reverse-proxying /api to FastAPI (uvicorn, 2x vCPU = 8 workers) + tuned
+# Postgres. The app tier is stateless (JWT) — scale out by adding backend
+# containers behind the proxy.
+#
+# Differences from the dev docker-compose.yml, on purpose:
+#   * no seed service, no demo defaults — ATLAS_JWT_SECRET and ATLAS_DB_PASSWORD
+#     are required (compose refuses to start without them; put them in .env)
+#   * ATLAS_ENV=prod (the app refuses weak JWT secrets in prod)
+#   * Postgres tuned for the 8 GB box and only reachable from localhost
+#   * resource limits + restart policies + log rotation on every service
+#   * no bind mounts of source code anywhere
+#
+# Run:  docker compose -f docker-compose.prod.yml up -d --build
+# TLS terminates in front of the frontend service (VPS-level Caddy/certbot or a
+# cloud LB) — see docs/deployment.md.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: ${ATLAS_DB_PASSWORD:?set ATLAS_DB_PASSWORD in .env (URL-safe, no @/:/ chars)}
+      POSTGRES_DB: atlas
+    # PERFORMANCE §7 tuning for 4 vCPU / 8 GB (see docs/deployment.md for the
+    # rationale and how to rescale): shared_buffers 2 GB, sane work_mem,
+    # autovacuum on (explicit). max_connections covers 8 uvicorn workers x
+    # SQLAlchemy default pool (5 + 10 overflow) = 120, plus operator sessions.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=2GB
+      - -c
+      - effective_cache_size=4GB
+      - -c
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - max_connections=150
+      - -c
+      - autovacuum=on
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+      - -c
+      - wal_buffers=16MB
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - max_wal_size=2GB
+    # Parallel-query shared memory segments live in /dev/shm; the 64 MB container
+    # default starves them on report queries.
+    shm_size: 1gb
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Localhost-only: host-side pg_dump/psql and the pre-promotion perf run need a
+    # TCP port, but the DB must never listen on a public interface. Delete the
+    # ports block entirely to close it and go through `docker compose exec db`.
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas -d atlas"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
+    logging: *logging
+
+  backend:
+    # Context is the repo root: the image ships /industry-templates too (see Dockerfile).
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      ATLAS_ENV: prod
+      ATLAS_DATABASE_URL: postgresql+asyncpg://atlas:${ATLAS_DB_PASSWORD}@db:5432/atlas
+      ATLAS_JWT_SECRET: ${ATLAS_JWT_SECRET:?generate one -- python -c "import secrets; print(secrets.token_urlsafe(64))"}
+      # nginx in front sets X-Forwarded-For; trust it so audit rows record the
+      # real client IP instead of the proxy's.
+      ATLAS_TRUST_PROXY: "1"
+    depends_on:
+      db:
+        condition: service_healthy
+    # Migrations run once at boot; 8 workers = 2x vCPU (PERFORMANCE §7). No
+    # published port — only nginx reaches it, over the compose network.
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 8"
+    healthcheck:
+      # slim image has no curl — probe the health endpoint with stdlib urllib.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/v1/health').status==200 else 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          cpus: "3.0"
+          memory: 3G
+    logging: *logging
+
+  # Built SPA behind nginx, which also proxies /api to the backend so the app and
+  # the API share one origin (frontend/nginx.conf). Terminate TLS in front of :80.
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO/dev/null", "http://localhost/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    logging: *logging
+
+volumes:
+  pgdata:

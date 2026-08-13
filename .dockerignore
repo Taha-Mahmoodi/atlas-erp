@@ -1,0 +1,8 @@
+# Backend image build context is the repo root (docker-compose.yml); keep it lean.
+.git
+docs
+frontend
+backend/.venv
+backend/tests
+**/__pycache__
+**/node_modules
