@@ -7,19 +7,23 @@ frequency (MONTHLY|ANNUAL) and an ``as_of`` date the run derives the PERIOD KEY 
 MONTHLY, YYYY for ANNUAL), then for every (active employee × active leave type of that frequency) it
 grants ``accrual_amount`` to the pair's balance unless it was already accrued for that period.
 
-THE IDEMPOTENCY GUARD (D-053). Each balance carries ``last_accrual_period``. The run grants a pair
-only when its balance's ``last_accrual_period`` != the run period, then stamps it with the period.
-So a same-period re-run finds every balance already stamped and grants nothing — the
-generate-once-per-period guarantee, the maintenance next-due-date idempotency analogue.
+THE IDEMPOTENCY GUARD (D-063, fixes #160). Every applied (balance, period) is recorded as a
+``LeaveAccrual`` row; the run grants a pair only when no row exists for (its balance, the run
+period), then records one. So re-running ANY previously applied period — the same period
+immediately, or an older period after newer ones ran — finds its rows already present and grants
+nothing. (D-053's single ``last_accrual_period`` column forgot older periods: running N, N+1, then
+N again re-granted N. The column remains, informational only.) UNIQUE(tenant, balance, period)
+backstops a concurrent same-period double-grant at the DB.
 
 THE CAP (D-053). When ``max_balance`` is set, the grant is clamped so ``balance_days`` never exceeds
 the cap: a balance already at/over the cap gains nothing this period (but is still stamped, so it is
 not re-granted later); a partial grant lifts it exactly to the cap. ``accrued_to_date`` records only
 what was actually granted.
 
-SET-BASED reads (two queries: the active employees, the active leave types of the frequency; plus
-the existing balances for the pairs) feed an in-memory cross-product — no per-pair N+1 in the scan
-(PERFORMANCE §2). New balances are inserted; existing ones mutated.
+SET-BASED reads (the active employees, the active leave types of the frequency, the existing
+balances for the pairs, the already-applied balance ids for the run period) feed an in-memory
+cross-product — no per-pair N+1 in the scan (PERFORMANCE §2). New balances are inserted; existing
+ones mutated; one guard row per granted balance.
 
 ``from __future__ import annotations`` keeps the model annotations strings at import.
 """
@@ -34,12 +38,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.hr.constants import AccrualFrequency, EmploymentStatus
-from app.modules.hr.models import Employee, LeaveBalance, LeaveType
+from app.modules.hr.models import Employee, LeaveAccrual, LeaveBalance, LeaveType
 
 
 def accrual_period_key(frequency: AccrualFrequency, as_of: date) -> str:
     """The period key the run keys idempotency off (D-053): ``YYYY-MM`` for MONTHLY, ``YYYY`` for
-    ANNUAL. The ``hr_leave_balances.last_accrual_period`` column stores this string."""
+    ANNUAL. The ``hr_leave_accruals.period`` guard rows (and the informational
+    ``hr_leave_balances.last_accrual_period``) store this string."""
     if AccrualFrequency(frequency) == AccrualFrequency.MONTHLY:
         return f"{as_of.year:04d}-{as_of.month:02d}"
     return f"{as_of.year:04d}"
@@ -66,9 +71,10 @@ async def accrue_leave(
 ) -> tuple[str, int]:
     """Run accrual for ``frequency`` as of ``as_of`` (D-053). Grants ``accrual_amount`` to every
     (ACTIVE employee × ACTIVE leave type of ``frequency``) balance not yet accrued for the run's
-    period, capped at ``max_balance``, then stamps each granted balance with the period. Returns
-    (period_key, balances_accrued). Idempotent: a same-period re-run grants 0. The caller commits
-    via the uow (D-011)."""
+    period, capped at ``max_balance``, then records one ``LeaveAccrual`` guard row per granted
+    balance. Returns (period_key, balances_accrued). Idempotent per period (D-063, #160): a re-run
+    of ANY previously applied period — not just the latest — grants 0. The caller commits via the
+    uow (D-011)."""
     period = accrual_period_key(frequency, as_of)
     freq_value = AccrualFrequency(frequency).value
 
@@ -117,8 +123,22 @@ async def accrue_leave(
     by_pair: dict[tuple[uuid.UUID, uuid.UUID], LeaveBalance] = {
         (b.employee_id, b.leave_type_id): b for b in existing
     }
+    # The idempotency guard (D-063, #160): the balances already accrued for THIS period. One
+    # set-based read; extra ids (balances of other pairs) are harmless — membership is by id.
+    applied: set[uuid.UUID] = set(
+        (
+            await session.execute(
+                select(LeaveAccrual.balance_id).where(
+                    LeaveAccrual.tenant_id == tenant_id,
+                    LeaveAccrual.period == period,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
 
-    accrued = 0
+    granted: list[LeaveBalance] = []
     for employee_id in employees:
         for leave_type in leave_types:
             balance = by_pair.get((employee_id, leave_type.id))
@@ -136,10 +156,10 @@ async def accrue_leave(
                 )
                 session.add(balance)
                 by_pair[(employee_id, leave_type.id)] = balance
-                accrued += 1
+                granted.append(balance)
                 continue
-            if balance.last_accrual_period == period:
-                # Already accrued for this period — the idempotency guard skips it.
+            if balance.id in applied:
+                # Already accrued for this period (even if newer periods ran since) — skip (#160).
                 continue
             grant = _capped_grant(
                 balance.balance_days, leave_type.accrual_amount, leave_type.max_balance
@@ -147,6 +167,12 @@ async def accrue_leave(
             balance.balance_days += grant
             balance.accrued_to_date += grant
             balance.last_accrual_period = period
-            accrued += 1
+            granted.append(balance)
+    # First flush assigns ids to newly created balances; then record the guard row every later
+    # run keys off. UNIQUE(tenant, balance, period) backstops a concurrent same-period race.
     await session.flush()
-    return period, accrued
+    session.add_all(
+        [LeaveAccrual(tenant_id=tenant_id, balance_id=b.id, period=period) for b in granted]
+    )
+    await session.flush()
+    return period, len(granted)
