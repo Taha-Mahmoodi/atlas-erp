@@ -144,6 +144,27 @@ import { LeadListPage } from "@/modules/crm/pages/LeadListPage";
 import { OpportunityBoardPage } from "@/modules/crm/pages/OpportunityBoardPage";
 import { OpportunityDetailPage } from "@/modules/crm/pages/OpportunityDetailPage";
 import { OpportunityFormPage } from "@/modules/crm/pages/OpportunityFormPage";
+import { DepartmentFormPage } from "@/modules/hr/pages/DepartmentFormPage";
+import { DepartmentListPage } from "@/modules/hr/pages/DepartmentListPage";
+import { EmployeeFormPage } from "@/modules/hr/pages/EmployeeFormPage";
+import { EmployeeListPage } from "@/modules/hr/pages/EmployeeListPage";
+import { HrHomePage } from "@/modules/hr/pages/HrHomePage";
+import { LeaveBalancesPage } from "@/modules/hr/pages/LeaveBalancesPage";
+import { LeaveRequestDetailPage } from "@/modules/hr/pages/LeaveRequestDetailPage";
+import { LeaveRequestFormPage } from "@/modules/hr/pages/LeaveRequestFormPage";
+import { LeaveRequestListPage } from "@/modules/hr/pages/LeaveRequestListPage";
+import { LeaveTypeFormPage } from "@/modules/hr/pages/LeaveTypeFormPage";
+import { LeaveTypeListPage } from "@/modules/hr/pages/LeaveTypeListPage";
+import { OrgChartPage } from "@/modules/hr/pages/OrgChartPage";
+import { PayrollRunDetailPage } from "@/modules/hr/pages/PayrollRunDetailPage";
+import { PayrollRunFormPage } from "@/modules/hr/pages/PayrollRunFormPage";
+import { PayrollRunListPage } from "@/modules/hr/pages/PayrollRunListPage";
+import { PositionFormPage } from "@/modules/hr/pages/PositionFormPage";
+import { PositionListPage } from "@/modules/hr/pages/PositionListPage";
+import { TimeAllocationPage } from "@/modules/hr/pages/TimeAllocationPage";
+import { TimesheetDetailPage } from "@/modules/hr/pages/TimesheetDetailPage";
+import { TimesheetFormPage } from "@/modules/hr/pages/TimesheetFormPage";
+import { TimesheetListPage } from "@/modules/hr/pages/TimesheetListPage";
 import { ProfitAndLossPage } from "@/modules/finance/pages/ProfitAndLossPage";
 import { TrialBalancePage } from "@/modules/finance/pages/TrialBalancePage";
 import { JournalEntryDetailPage } from "@/modules/finance/pages/JournalEntryDetailPage";
@@ -1111,6 +1132,147 @@ const crmActivitiesRoute = createRoute({
   component: ActivityListPage,
 });
 
+// --- HR (PLAN 15.10) ------------------------------------------------------------------------
+
+const hrHomeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr",
+  component: HrHomePage,
+});
+
+// Departments + positions + employees + org chart (10.1)
+const hrDepartmentsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/departments",
+  component: DepartmentListPage,
+});
+const hrDepartmentNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/departments/new",
+  component: DepartmentFormPage,
+});
+const hrDepartmentDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/departments/$departmentId",
+  component: DepartmentFormPage,
+});
+const hrPositionsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/positions",
+  component: PositionListPage,
+});
+const hrPositionNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/positions/new",
+  component: PositionFormPage,
+});
+const hrPositionDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/positions/$positionId",
+  component: PositionFormPage,
+});
+const hrEmployeesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/employees",
+  component: EmployeeListPage,
+});
+const hrEmployeeNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/employees/new",
+  component: EmployeeFormPage,
+});
+const hrEmployeeDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/employees/$employeeId",
+  component: EmployeeFormPage,
+});
+const hrOrgChartRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/org-chart",
+  component: OrgChartPage,
+});
+
+// Leave (10.2)
+const hrLeaveTypesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/leave-types",
+  component: LeaveTypeListPage,
+});
+const hrLeaveTypeNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/leave-types/new",
+  component: LeaveTypeFormPage,
+});
+const hrLeaveTypeDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/leave-types/$leaveTypeId",
+  component: LeaveTypeFormPage,
+});
+const hrLeaveBalancesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/leave-balances",
+  component: LeaveBalancesPage,
+});
+const hrLeaveRequestsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/leave-requests",
+  component: LeaveRequestListPage,
+});
+const hrLeaveRequestNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/leave-requests/new",
+  component: LeaveRequestFormPage,
+});
+const hrLeaveRequestDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/leave-requests/$requestId",
+  component: LeaveRequestDetailPage,
+});
+const hrLeaveRequestEditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/leave-requests/$requestId/edit",
+  component: LeaveRequestFormPage,
+});
+
+// Time tracking (10.3)
+const hrTimesheetsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/timesheets",
+  component: TimesheetListPage,
+});
+const hrTimesheetNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/timesheets/new",
+  component: TimesheetFormPage,
+});
+const hrTimesheetDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/timesheets/$timesheetId",
+  component: TimesheetDetailPage,
+});
+const hrTimeAllocationRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/time-allocation",
+  component: TimeAllocationPage,
+});
+
+// Payroll (10.4)
+const hrPayrollRunsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/payroll-runs",
+  component: PayrollRunListPage,
+});
+const hrPayrollRunNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/payroll-runs/new",
+  component: PayrollRunFormPage,
+});
+const hrPayrollRunDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hr/payroll-runs/$runId",
+  component: PayrollRunDetailPage,
+});
+
 // --- Every other module: placeholder until its own slice lands ----------------------------
 
 const moduleRoute = createRoute({
@@ -1292,6 +1454,32 @@ const routeTree = rootRoute.addChildren([
   crmOpportunityDetailRoute,
   crmOpportunityEditRoute,
   crmActivitiesRoute,
+  hrHomeRoute,
+  hrDepartmentsRoute,
+  hrDepartmentNewRoute,
+  hrDepartmentDetailRoute,
+  hrPositionsRoute,
+  hrPositionNewRoute,
+  hrPositionDetailRoute,
+  hrEmployeesRoute,
+  hrEmployeeNewRoute,
+  hrEmployeeDetailRoute,
+  hrOrgChartRoute,
+  hrLeaveTypesRoute,
+  hrLeaveTypeNewRoute,
+  hrLeaveTypeDetailRoute,
+  hrLeaveBalancesRoute,
+  hrLeaveRequestsRoute,
+  hrLeaveRequestNewRoute,
+  hrLeaveRequestDetailRoute,
+  hrLeaveRequestEditRoute,
+  hrTimesheetsRoute,
+  hrTimesheetNewRoute,
+  hrTimesheetDetailRoute,
+  hrTimeAllocationRoute,
+  hrPayrollRunsRoute,
+  hrPayrollRunNewRoute,
+  hrPayrollRunDetailRoute,
   moduleRoute,
 ]);
 

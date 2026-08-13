@@ -19,7 +19,8 @@ export type StaticModuleRoute =
   | "quality"
   | "maintenance"
   | "projects"
-  | "crm";
+  | "crm"
+  | "hr";
 
 export interface ModuleEntry {
   key: string;
@@ -40,7 +41,7 @@ export const MODULES: ModuleEntry[] = [
   { key: "manufacturing", label: "Manufacturing", permissionPrefix: "manufacturing.", description: "BOMs, work centers, production, MRP", route: "manufacturing" },
   { key: "quality", label: "Quality", permissionPrefix: "quality.", description: "Inspection lots", route: "quality" },
   { key: "maintenance", label: "Maintenance", permissionPrefix: "maintenance.", description: "Equipment, maintenance orders", route: "maintenance" },
-  { key: "hr", label: "HR", permissionPrefix: "hr.", description: "Employees, org chart, leave, time, payroll" },
+  { key: "hr", label: "HR", permissionPrefix: "hr.", description: "Employees, org chart, leave, time, payroll", route: "hr" },
   { key: "projects", label: "Projects", permissionPrefix: "projects.", description: "WBS, cost reporting", route: "projects" },
   { key: "crm", label: "CRM", permissionPrefix: "crm.", description: "Leads, opportunities, activities", route: "crm" },
   { key: "reporting", label: "Reporting", permissionPrefix: "reporting.", description: "Dashboards, ad-hoc reports", route: "reporting" },
