@@ -9,7 +9,7 @@ import { useParams } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
-import { formatQuantity } from "@/lib/format";
+import { formatPercent, formatQuantity } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { useItemLookup, useWarehouseOptions } from "@/modules/inventory/hooks";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
@@ -211,7 +211,7 @@ export function MrpRunDetailPage() {
                   <td className="py-1.5 pr-2 text-right tabular-nums">{formatQuantity(load.planned_load_minutes)}</td>
                   <td className="py-1.5 pr-2 text-right tabular-nums">{formatQuantity(load.available_minutes)}</td>
                   <td className={`py-1.5 pr-2 text-right tabular-nums ${load.is_overloaded ? "font-semibold text-danger" : ""}`}>
-                    {load.utilization_percent}%{load.is_overloaded ? " (overloaded)" : ""}
+                    {formatPercent(load.utilization_percent)}{load.is_overloaded ? " (overloaded)" : ""}
                   </td>
                 </tr>
               ))}

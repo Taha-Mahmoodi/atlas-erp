@@ -123,7 +123,7 @@ function BomComponentsSection({ bomId, isDraft }: { bomId: string; isDraft: bool
               <td className="py-1.5 pr-2 text-ink">{itemLabel(component.component_item_id)}</td>
               <td className="py-1.5 pr-2 text-right tabular-nums">{formatQuantity(component.quantity_per)}</td>
               <td className="py-1.5 pr-2 text-ink-muted">{uomLabel(component.uom_id)}</td>
-              <td className="py-1.5 pr-2 text-right tabular-nums">{component.scrap_percent}</td>
+              <td className="py-1.5 pr-2 text-right tabular-nums">{formatQuantity(component.scrap_percent)}</td>
               {isDraft && (
                 <td className="py-1.5 pr-2">
                   <button
