@@ -145,10 +145,10 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 
 ## Phase 17 — Final assembly
 
-- [ ] 17.1 `docker-compose up` verified end-to-end (db + backend + frontend); README: <10-step quickstart, Mermaid architecture diagram, Mermaid ERD, "What v1 deliberately excludes and how to add it"
-- [ ] 17.1b `docs/deployment.md` (PERFORMANCE §7): single-VPS topology + docker-compose.prod.yml with resource limits/tuned Postgres, sizing table, backup/restore drill, "why it stays fast"; full perf suite green on Postgres volume tenant before v1
-- [ ] 17.2 Reconcile `docs/research/s4hana-parity.md` against what was actually built; update any capability whose status changed
-- [ ] 17.3 Final self-check loops (STRUCTURE.md §9 + GITHUB-WORKFLOW.md §9), close or document every open issue
+- [x] 17.1 `docker-compose up` verified end-to-end (db + backend + frontend); README: <10-step quickstart, Mermaid architecture diagram, Mermaid ERD, "What v1 deliberately excludes and how to add it"
+- [x] 17.1b `docs/deployment.md` (PERFORMANCE §7): single-VPS topology + docker-compose.prod.yml with resource limits/tuned Postgres, sizing table, backup/restore drill, "why it stays fast"; full perf suite green on Postgres volume tenant before v1
+- [x] 17.2 Reconcile `docs/research/s4hana-parity.md` against what was actually built; update any capability whose status changed
+- [x] 17.3 Final self-check loops (STRUCTURE.md §9 + GITHUB-WORKFLOW.md §9), close or document every open issue
 
 **Promotion → `main` as v1.0.0.**
 
