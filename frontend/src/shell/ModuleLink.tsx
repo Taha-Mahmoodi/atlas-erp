@@ -51,6 +51,12 @@ export function ModuleLink({
           {children}
         </Link>
       );
+    case "admin":
+      return (
+        <Link to="/admin" {...(className ? { className } : {})}>
+          {children}
+        </Link>
+      );
     default:
       return (
         <Link

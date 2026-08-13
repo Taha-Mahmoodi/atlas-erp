@@ -11,4 +11,5 @@ export * from "@/modules/finance/hooks/journal-entries";
 export * from "@/modules/finance/hooks/payables";
 export * from "@/modules/finance/hooks/receivables";
 export * from "@/modules/finance/hooks/reference";
+export * from "@/modules/finance/hooks/settings";
 export * from "@/modules/finance/hooks/statements";

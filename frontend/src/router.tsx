@@ -9,6 +9,20 @@
 import { createRootRoute, createRoute, createRouter, Outlet } from "@tanstack/react-router";
 
 import { App } from "@/App";
+import { AdminHomePage } from "@/modules/admin/pages/AdminHomePage";
+import { AuditLogListPage } from "@/modules/admin/pages/AuditLogListPage";
+import { NumberSequenceListPage } from "@/modules/admin/pages/NumberSequenceListPage";
+import { OnboardingWizardPage } from "@/modules/admin/pages/OnboardingWizardPage";
+import { RoleDetailPage } from "@/modules/admin/pages/RoleDetailPage";
+import { RoleFormPage } from "@/modules/admin/pages/RoleFormPage";
+import { RoleListPage } from "@/modules/admin/pages/RoleListPage";
+import { UserDetailPage } from "@/modules/admin/pages/UserDetailPage";
+import { UserFormPage } from "@/modules/admin/pages/UserFormPage";
+import { UserListPage } from "@/modules/admin/pages/UserListPage";
+import { ExchangeRateFormPage } from "@/modules/finance/pages/ExchangeRateFormPage";
+import { ExchangeRateListPage } from "@/modules/finance/pages/ExchangeRateListPage";
+import { TaxCodeFormPage } from "@/modules/finance/pages/TaxCodeFormPage";
+import { TaxCodeListPage } from "@/modules/finance/pages/TaxCodeListPage";
 import { AccountFormPage } from "@/modules/finance/pages/AccountFormPage";
 import { AccountListPage } from "@/modules/finance/pages/AccountListPage";
 import { ApAgingPage } from "@/modules/finance/pages/ApAgingPage";
@@ -316,6 +330,33 @@ const financeAssetRegisterRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/finance/asset-register",
   component: AssetRegisterPage,
+});
+
+// Settings: tax codes + exchange rates (PLAN 15.12)
+const financeTaxCodesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/tax-codes",
+  component: TaxCodeListPage,
+});
+const financeTaxCodeNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/tax-codes/new",
+  component: TaxCodeFormPage,
+});
+const financeTaxCodeDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/tax-codes/$taxCodeId",
+  component: TaxCodeFormPage,
+});
+const financeExchangeRatesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/exchange-rates",
+  component: ExchangeRateListPage,
+});
+const financeExchangeRateNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance/exchange-rates/new",
+  component: ExchangeRateFormPage,
 });
 
 // --- Inventory (PLAN 15.5) -----------------------------------------------------------------
@@ -734,6 +775,59 @@ const reportingReportBuilderRoute = createRoute({
   component: ReportBuilderPage,
 });
 
+// --- Admin (PLAN 15.12) ---------------------------------------------------------------------
+
+const adminHomeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/admin",
+  component: AdminHomePage,
+});
+const adminOnboardingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/admin/onboarding",
+  component: OnboardingWizardPage,
+});
+const adminUsersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/admin/users",
+  component: UserListPage,
+});
+const adminUserNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/admin/users/new",
+  component: UserFormPage,
+});
+const adminUserDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/admin/users/$userId",
+  component: UserDetailPage,
+});
+const adminRolesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/admin/roles",
+  component: RoleListPage,
+});
+const adminRoleNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/admin/roles/new",
+  component: RoleFormPage,
+});
+const adminRoleDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/admin/roles/$roleId",
+  component: RoleDetailPage,
+});
+const adminAuditLogsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/admin/audit-logs",
+  component: AuditLogListPage,
+});
+const adminNumberSequencesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/admin/number-sequences",
+  component: NumberSequenceListPage,
+});
+
 // --- Every other module: placeholder until its own slice lands ----------------------------
 
 const moduleRoute = createRoute({
@@ -779,6 +873,11 @@ const routeTree = rootRoute.addChildren([
   financeDepreciationRunNewRoute,
   financeDepreciationRunDetailRoute,
   financeAssetRegisterRoute,
+  financeTaxCodesRoute,
+  financeTaxCodeNewRoute,
+  financeTaxCodeDetailRoute,
+  financeExchangeRatesRoute,
+  financeExchangeRateNewRoute,
   inventoryHomeRoute,
   inventoryItemCategoriesRoute,
   inventoryItemCategoryNewRoute,
@@ -855,6 +954,16 @@ const routeTree = rootRoute.addChildren([
   reportingHomeRoute,
   reportingDashboardRoute,
   reportingReportBuilderRoute,
+  adminHomeRoute,
+  adminOnboardingRoute,
+  adminUsersRoute,
+  adminUserNewRoute,
+  adminUserDetailRoute,
+  adminRolesRoute,
+  adminRoleNewRoute,
+  adminRoleDetailRoute,
+  adminAuditLogsRoute,
+  adminNumberSequencesRoute,
   moduleRoute,
 ]);
 
