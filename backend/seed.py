@@ -396,6 +396,11 @@ async def bootstrap(p: dict) -> uuid.UUID:
             await assign_role(db, tenant.id, user.id, role.id, token_version=user.token_version)
         await db.commit()
         tenant_id = tenant.id
+    # Each tenant bootstrap runs in its own asyncio.run() loop, but the engine is a
+    # module-level singleton: asyncpg pools connections bound to the CURRENT loop, so
+    # drop them before this loop dies or the next tenant's loop trips on them
+    # ("got Future attached to a different loop"). Harmless on SQLite.
+    await engine.dispose()
     print(f"seed: bootstrap ok — tenant={slug} user={email} role=Superuser")
     return tenant_id
 
