@@ -180,7 +180,13 @@ ORDER_TICKET_NUMBER_PREFIX = "TKT"
 ORDER_TICKET_NUMBER_PADDING = 6
 
 # D-011 event keys. Declared here rather than inline in events.py so a subscriber in another module
-# (Phase 20.6's folio bridge) and Task 8's documentation name the same constant.
+# (Phase 20.6's folio bridge) and the module documentation name the same constant.
+ORDER_TICKET_FIRED_EVENT_KEY = "hospitality.order_ticket.fired"
+ORDER_TICKET_SETTLED_EVENT_KEY = "hospitality.order_ticket.settled"
+# Published by the DEPLETION JOB, not by the sale — inventory's handler turns it into the ISSUE
+# moves. Named for the fact it reports (the ingredients left the storeroom), not for the job.
+TICKET_INGREDIENTS_CONSUMED_EVENT_KEY = "hospitality.order_ticket.ingredients_consumed"
+
 # --- The at-risk advisory list (Task 6) ---------------------------------------
 # How few portions a dish must be down to before the staff coverage scan reports it. A DEFAULT, not
 # a rule: what counts as "running low" is property-specific (a 200-cover brasserie and a 12-seat
@@ -188,9 +194,3 @@ ORDER_TICKET_NUMBER_PADDING = 6
 # who does not care gets. Five is roughly one table's worth — enough warning to 86 the dish before
 # a server promises it.
 AT_RISK_DEFAULT_THRESHOLD = 5
-
-ORDER_TICKET_FIRED_EVENT_KEY = "hospitality.order_ticket.fired"
-ORDER_TICKET_SETTLED_EVENT_KEY = "hospitality.order_ticket.settled"
-# Published by the DEPLETION JOB, not by the sale — inventory's handler turns it into the ISSUE
-# moves. Named for the fact it reports (the ingredients left the storeroom), not for the job.
-TICKET_INGREDIENTS_CONSUMED_EVENT_KEY = "hospitality.order_ticket.ingredients_consumed"

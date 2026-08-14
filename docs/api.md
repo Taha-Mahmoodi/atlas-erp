@@ -66,3 +66,103 @@ Issuing and revoking a key are themselves audited (`entity_table = core_api_keys
 ### 6. Rate limiting (`429`)
 
 `/api/` is limited to **10 requests/second with a burst of 20**, keyed on the `Authorization` header — so every key has its own budget and one client cannot throttle another. Excess requests are **rejected immediately** with `429`, not queued, so the right client behaviour is retry with backoff rather than waiting on a slow response. In practice a burst of ~22 gets through before the limiter engages, and the allowance refills at 10/s.
+
+## The property website contract
+
+A restaurant's own website is the first client Atlas ships a purpose-built surface for. It holds a
+machine API key (above) scoped to `hospitality.menu.read` and `hospitality.ticket.manage` — nothing
+else — and talks to three endpoints. Module behaviour is in
+[`docs/modules/hospitality.md`](modules/hospitality.md); this is the integration contract.
+
+### `GET /api/v1/hospitality/menu`
+
+The sellable menu: `item_id`, `item_code`, `name`, `description`, `category_id`, `price`,
+`currency_code`. Cursor-paginated. `?category_id=` is how a property scopes it — Atlas ships no
+menu-membership entity, so the site passes the id of the `MENU` item category the hospitality
+industry template seeds. **Unfiltered it returns every active item in the tenant, ingredients
+included.** An item with no applicable price is listed with `price: null` and is **not orderable**;
+that is a misconfiguration surfaced rather than hidden.
+
+```
+Cache-Control: private, max-age=60, stale-while-revalidate=600, stale-if-error=86400
+```
+
+**There is no ETag on this endpoint, on purpose (D-073).** A collection validator over `Item` cannot
+see a reprice — prices live in another table — so it would answer 304 and pin yesterday's price
+forever. Staleness is bounded instead: the menu is fresh for 60 s, usable for 10 more minutes while
+a revalidation runs, and usable for a **day** if Atlas is unreachable, because a restaurant with no
+ERP still has a menu and serving an empty one is lost revenue.
+
+### `GET /api/v1/hospitality/menu/availability`
+
+The 86 board — every item the kitchen has said something about, and **nothing else**. Anything
+absent from it is available. Each row carries `state` (`AVAILABLE` / `LIMITED` / `EIGHTY_SIXED`),
+`remaining_qty`, `available_until`, `reason` and `source`; the page carries `as_of`, the single
+instant every row was resolved against.
+
+```
+Cache-Control: no-cache, must-revalidate, stale-if-error=300
+ETag: W/"…"          # send it back as If-None-Match; a 304 costs Atlas one query
+```
+
+Revalidate on **every** request — a stale "available" sells a dish that is gone. The validator moves
+when a dish is 86'd, un-86'd, a countdown ticks, a countdown hits zero, **and when a time-boxed 86
+lapses** (lapsing changes the answer without changing a row, so the tag carries a lapsed-count
+component). It deliberately does **not** move when a new dish is created or a price changes —
+neither changes this board.
+
+`stale-if-error` is short and fails **open**: showing an unavailable dish is a normal restaurant
+apology; showing nothing is not.
+
+**The board fits one page by contract** — Atlas serves up to `MAX_LIMIT` (200) overrides and the
+endpoint takes no `limit`. Past 200 simultaneous overrides `next_cursor` is non-null and the client
+**must** follow it; a client that ignores it reads a truncated board as "everything else is
+available". Two pages are also two snapshots, which is what `as_of` makes visible.
+
+### `POST /api/v1/hospitality/orders`
+
+```http
+POST /api/v1/hospitality/orders
+Authorization: Bearer atk_…
+Idempotency-Key: 5f2c9e10-…          # REQUIRED
+Content-Type: application/json
+
+{"table_code": "12", "guest_count": 2, "notes": null,
+ "lines": [{"item_id": "8f4e…", "quantity": "2", "seat_number": 1, "notes": "no basil"}]}
+```
+
+Response `201`:
+
+```json
+{"ticket_id": "…", "ticket_number": "TKT-2026-000001", "status": "SENT_TO_KITCHEN",
+ "opened_date": "2026-08-14", "total_amount": "37.000000", "currency_code": "USD"}
+```
+
+The order is priced server-side, opened as a check and **fired to the kitchen in the same request**,
+so an 86'd dish comes back `422 hospitality.item_unavailable` rather than reaching a kitchen that
+cannot make it.
+
+**Five rules the client must follow.**
+
+1. **`total_amount` is authoritative.** Display it before payment. Never a total the site computed
+   from a cached menu price — the menu may be up to 60 s (plus its stale window) old, and Atlas
+   prices the order at request time. It is a decimal **string** (D-015), like every money field in
+   the API, and it is **pre-tax** (v1 puts no tax on a check).
+2. **The body must carry no price.** `unit_price` is resolved from the price list; unknown fields
+   are rejected (`422`) rather than silently ignored, so a site that thinks it set a price finds out
+   immediately.
+3. **On `409 idempotency.in_progress`, retry later with the SAME key.** Minting a new key on a 409
+   is exactly how the duplicate order the mechanism exists to prevent gets created. A replay must
+   also send the **byte-identical** body — re-serialising with different key order or whitespace is
+   `422 idempotency.key_reuse`.
+4. **Use a fresh key per order.** A key is scoped to its endpoint *and* its request target (D-071);
+   reusing one across two orders is `422 idempotency.key_reuse`, never a silent replay.
+5. **Depletion is not done when the 201 returns.** Ingredients are issued by a background job
+   (D-072). The response means the kitchen has the check, not that stock has moved; a failure shows
+   up at `GET /api/v1/jobs?status=FAILED` naming the ticket, and the ticket document's D-012 chain
+   links to the stock moves once they post.
+
+Refusals are the ordinary error envelope: `422 hospitality.item_not_priced` (no active price list
+prices the item today, or its only price is in a currency that is not the tenant's functional one),
+`422 hospitality.item_unavailable` (86'd, or a countdown with fewer portions left than ordered),
+`401` for a bad key, `403` if the key's scopes do not cover the route, `429` from the edge limiter.
