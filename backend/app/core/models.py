@@ -171,6 +171,44 @@ class RefreshSession(UuidPKMixin, TenantMixin, TimestampMixin, Base):
     user_agent: Mapped[str | None] = mapped_column(sa.String(400), nullable=True)
 
 
+class ApiKey(UuidPKMixin, TenantMixin, TimestampMixin, Base):
+    """Machine credential for a first-party API client (the property's own website).
+
+    Structurally mirrors RefreshSession: a hashed secret with revocation and expiry. Two
+    deliberate differences. The secret is sha256, not argon2 — it is 256 bits of CSPRNG
+    output, not a guessable password, and argon2id at the D-008 parameters costs "tens of
+    ms" (see core/auth.py), which would blow the PERFORMANCE §5 budget on every request.
+    And there is no last_used_at: writing one per request would add a write to every
+    authenticated call for a statistic nobody reads.
+
+    `scopes` is NULL for "inherit the user's permissions unnarrowed"; a non-null list may
+    only ever NARROW them (see core/deps.py). Keys are bound to a real core_users row so
+    the D-010 audit actor resolves — a synthetic principal id would insert cleanly and
+    leave an unresolvable actor across the submitted_by/approver_id sites that deliberately
+    do not FK to core_users."""
+
+    __tablename__ = "core_api_keys"
+    __table_args__ = (
+        tenant_unique(),
+        tenant_fk("adm_tenants"),
+        tenant_fk("core_users", "user_id"),
+        # The auth hot path looks a key up by its hashed secret; uniqueness is also the
+        # collision guard on mint.
+        sa.UniqueConstraint("secret_sha256", name="uq_core_api_keys_secret_sha256"),
+        # "Keys for this user" — the admin list view and revoke-all path.
+        sa.Index("ix_core_api_keys_tenant_id_user_id", "tenant_id", "user_id"),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, nullable=False)
+    name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
+    # The non-secret lookup half of the key string, kept for display ("atk_acme_a1b2…").
+    prefix: Mapped[str] = mapped_column(sa.String(40), nullable=False)
+    secret_sha256: Mapped[str] = mapped_column(sa.String(64), nullable=False)
+    scopes: Mapped[list[str] | None] = mapped_column(JSON_VARIANT, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+
+
 class Permission(UuidPKMixin, Base):
     """Code-defined permission catalog (D-009). Deliberately NOT TenantMixin: a
     permission describes what the code enforces and is identical for every tenant, so
