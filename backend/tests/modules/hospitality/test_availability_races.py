@@ -378,6 +378,7 @@ async def test_two_concurrent_reads_of_a_just_lapsed_86_agree(
     assert after is not None and after.updated_at == stamp
 
 
+@pytest.mark.pg
 async def test_clearing_an_86_while_a_countdown_drains_leaves_a_coherent_answer(
     sessions: Callable[[], AsyncSession],
     db_session: AsyncSession,
@@ -389,6 +390,18 @@ async def test_clearing_an_86_while_a_countdown_drains_leaves_a_coherent_answer(
     Either order is a defensible outcome — the dish is back on, or it sold out — but the two
     writers must not tear the row into a state the menu cannot express: LIMITED with nothing left
     reads to a guest as "orderable" while the counter says there is none.
+
+    MARKED ``pg`` because the coherence asserted here is PROVIDED BY the row lock, and
+    ``with_for_update()`` is a documented no-op on SQLite (``_locked_row``, the ``inv_stock_quants``
+    precedent). On Postgres ``clear_86`` blocks on the burn's lock and the delete lands after it,
+    so the row is never torn. On SQLite the two interleave freely and the burn's UPDATE can find
+    its row already deleted, raising StaleDataError — an engine artefact of the test harness, not a
+    defect in the code under test, and it surfaced as a CI failure that passed locally purely on
+    scheduling luck.
+
+    The sibling concurrent-FIRES test is deliberately NOT marked: two UPDATEs serialize under
+    SQLite's database-level write lock, so its assertion still means something there. Only the
+    delete-versus-update shape needs the real engine.
     """
     await _set(
         db_session,
