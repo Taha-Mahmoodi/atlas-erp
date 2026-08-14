@@ -57,7 +57,15 @@ def _is_expired(row: MenuAvailability, now: datetime) -> bool:
     return row.available_until is not None and as_utc(row.available_until) <= now
 
 
-def _resolve(row: MenuAvailability, now: datetime) -> MenuItemAvailability:
+def resolve(row: MenuAvailability, now: datetime | None = None) -> MenuItemAvailability:
+    """What ONE stored row means right now, expiry applied — a lapsed override reads AVAILABLE.
+
+    Public because the website's availability page reads the stored rows directly (it publishes the
+    override board, not a per-item lookup) and must apply the SAME expiry rule; keeping one resolver
+    is what stops a SQL predicate and a Python predicate drifting apart.
+    """
+    if now is None:
+        now = utcnow()
     if _is_expired(row, now):
         return _AVAILABLE
     return MenuItemAvailability(
@@ -126,7 +134,7 @@ async def set_availability(
     row.available_until = available_until
     row.reason = reason
     row.source = source.value
-    return _resolve(row, utcnow())
+    return resolve(row, utcnow())
 
 
 async def clear_86(session: AsyncSession, tenant_id: uuid.UUID, item_id: uuid.UUID) -> None:
@@ -187,5 +195,5 @@ async def availability_for_items(
     rows = (await session.execute(stmt)).scalars().all()
     now = utcnow()
     resolved: dict[uuid.UUID, MenuItemAvailability] = dict.fromkeys(ids, _AVAILABLE)
-    resolved.update({row.item_id: _resolve(row, now) for row in rows})
+    resolved.update({row.item_id: resolve(row, now) for row in rows})
     return resolved

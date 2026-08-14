@@ -11,6 +11,7 @@ D-007 filter applies on top of the explicit predicate — ordinary tenant-scoped
 """
 
 import uuid
+from collections.abc import Iterable
 from datetime import date
 from decimal import Decimal
 
@@ -20,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.sales.constants import CustomerStatus
 from app.modules.sales.models import Customer
 from app.modules.sales.service.price_resolution import ResolvedPrice
+from app.modules.sales.service.price_resolution import resolve_list_prices as _resolve_list_prices
 from app.modules.sales.service.price_resolution import resolve_price as _resolve_price
 
 
@@ -132,4 +134,29 @@ async def resolve_price(
         on_date=on_date,
         quantity=quantity,
         currency=currency,
+    )
+
+
+async def resolve_list_prices(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    item_ids: Iterable[uuid.UUID],
+    on_date: date,
+    currency: str | None = None,
+    quantity: Decimal = Decimal(1),
+) -> dict[uuid.UUID, ResolvedPrice]:
+    """The GENERAL (customer-less) list price for MANY items in ONE query (PLAN 19, spec Q6).
+
+    The walk-in counterpart to ``resolve_price``: a property's website has no customer record for
+    the guest ordering dinner, so only GENERAL price lists apply. Absent key = no ACTIVE general
+    list prices that item on that date. Delegates to ``service/price_resolution``, which documents
+    the rule and why ``currency`` is optional on a read and mandatory in spirit on a write."""
+    return await _resolve_list_prices(
+        session,
+        tenant_id,
+        item_ids=item_ids,
+        on_date=on_date,
+        currency=currency,
+        quantity=quantity,
     )

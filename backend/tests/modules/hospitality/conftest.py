@@ -21,11 +21,17 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.hospitality.constants import HOSPITALITY_MENU_READ
 from tests.modules.hospitality.factories import (
     HospitalityPrincipal,
     Kitchen,
+    build_dish,
     build_kitchen,
+    build_menu_price,
+    build_menu_price_list,
     create_hospitality_principal,
+    mint_website_key,
+    seed_menu_currency,
 )
 from tests.modules.inventory.factories import (
     InventorySetup,
@@ -33,7 +39,7 @@ from tests.modules.inventory.factories import (
     build_item,
 )
 
-__all__ = ["HospitalityPrincipal", "InventorySetup", "Kitchen"]
+__all__ = ["HospitalityPrincipal", "InventorySetup", "Kitchen", "WebsiteApi"]
 
 
 @pytest.fixture
@@ -131,3 +137,78 @@ async def hospitality_api(
     access_token = await _login(client, principal)
     client.headers["Authorization"] = f"Bearer {access_token}"
     yield HospitalityApi(client=client, tenant_id=principal.tenant_id, kitchen=kitchen)
+
+
+# --- The website principal (Task 7) -------------------------------------------
+# A MACHINE credential (D-069), not a staff JWT: the property's website is the only caller of the
+# website router, and the whole point of Task 7 is that it authenticates as a key whose scopes can
+# be narrowed independently of the user it is bound to.
+
+# STEAK is deliberately left OFF the menu price list (the phantom-stock-out test prices it itself)
+# and the ingredients are unpriced, which is what "an item with no price" means on the read.
+MENU_PRICES: dict[str, Decimal] = {"PASTA": Decimal("18.50"), "BEER": Decimal("6.00")}
+# Priced ONLY in EUR while the tenant's functional currency is USD — the one item the menu read
+# shows and the order write must refuse (D-019: a check has no currency column to qualify).
+EURO_ONLY_DISH_CODE = "IMPORT"
+
+
+@dataclass(frozen=True)
+class WebsiteApi:
+    """An API-key client for the property's website, its tenant's kitchen, and the ids a test needs
+    to widen the menu. ``read_only_key`` is a SECOND credential on the same user, scoped to the menu
+    read alone — swap it onto the client to drive the D-069 intersection."""
+
+    client: AsyncClient
+    tenant_id: uuid.UUID
+    kitchen: Kitchen
+    price_list_id: uuid.UUID
+    euro_only_dish_id: uuid.UUID
+    read_only_key: str
+
+
+@pytest.fixture
+async def website_api(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    hospitality_user_factory: Callable[..., Awaitable[HospitalityPrincipal]],
+) -> AsyncIterator[WebsiteApi]:
+    """A machine-credentialled client over a property with a priced menu and a stocked storeroom."""
+    principal = await hospitality_user_factory(slug="hsp-web", email="web@hsp-web.test")
+    kitchen = await build_kitchen(
+        db_session, principal.tenant_id, API_KITCHEN_RECIPES, stock=API_KITCHEN_STOCK
+    )
+    await seed_menu_currency(db_session, principal.tenant_id)
+    price_list_id = await build_menu_price_list(db_session, principal.tenant_id)
+    for dish_code, price in MENU_PRICES.items():
+        await build_menu_price(
+            db_session, principal.tenant_id, price_list_id, kitchen.dishes[dish_code], str(price)
+        )
+
+    await seed_menu_currency(db_session, principal.tenant_id, code="EUR", is_functional=False)
+    euro_list_id = await build_menu_price_list(
+        db_session, principal.tenant_id, code="IMPORTS", currency_code="EUR"
+    )
+    euro_only_dish_id = await build_dish(
+        db_session,
+        principal.tenant_id,
+        kitchen.setup,
+        item_code=EURO_ONLY_DISH_CODE,
+        recipe={},
+    )
+    await build_menu_price(
+        db_session, principal.tenant_id, euro_list_id, euro_only_dish_id, "40.00"
+    )
+
+    client.headers["Authorization"] = (
+        f"Bearer {await mint_website_key(db_session, principal)}"
+    )
+    yield WebsiteApi(
+        client=client,
+        tenant_id=principal.tenant_id,
+        kitchen=kitchen,
+        price_list_id=price_list_id,
+        euro_only_dish_id=euro_only_dish_id,
+        read_only_key=await mint_website_key(
+            db_session, principal, name="read-only", scopes=[HOSPITALITY_MENU_READ]
+        ),
+    )

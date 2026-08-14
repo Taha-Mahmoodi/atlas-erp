@@ -1,12 +1,12 @@
 """Hospitality's read surface: the staff ticket list and the derived at-risk menu list (PLAN 19
-Task 6).
+Tasks 6 and 7).
 
 STRUCTURE §5 reserves ``queries.py`` for the reads OTHER modules import, and nothing imports
-hospitality — it is the top of the dependency order. Both functions live here anyway, for one
-reason each: ``at_risk_menu_items`` is where the plan's File Structure puts it, and ``list_tickets``
-has nowhere better, because ``service/tickets.py`` is at the §8.4 400-line cap and a paginated read
-with no business rule in it does not justify a fourth service file (the sales ``*_reads.py``
-alternative). Neither writes anything.
+hospitality — it is the top of the dependency order. All three functions live here anyway, for one
+reason each: ``at_risk_menu_items`` is where the plan's File Structure puts it; ``list_tickets`` and
+``list_availability_overrides`` have nowhere better, because ``service/tickets.py`` is at the §8.4
+400-line cap and a paginated read with no business rule in it does not justify a fourth service
+file (the sales ``*_reads.py`` alternative). None of them writes anything.
 
 **The at-risk list is the ONE place derived recipe math is allowed in this phase**, and it earns it
 by being staff-facing and advisory. Q2 rejects derivation for the guest-facing answer on three
@@ -40,7 +40,7 @@ from app.core.pagination import (
 )
 from app.core.schemas import Page
 from app.modules.hospitality.constants import OrderTicketStatus
-from app.modules.hospitality.models import OrderTicket
+from app.modules.hospitality.models import MenuAvailability, OrderTicket
 from app.modules.inventory import queries as inventory_queries
 from app.modules.manufacturing import queries as mfg_queries
 
@@ -105,6 +105,36 @@ async def at_risk_menu_items(
     return at_risk[:limit]
 
 
+async def list_availability_overrides(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    cursor: str | None = None,
+    limit: int = DEFAULT_LIMIT,
+) -> Page[MenuAvailability]:
+    """Every STORED availability override, keyset-paginated by item (D-014) — ONE statement.
+
+    The 86 board as the website reads it, and note what it does NOT do: it does not enumerate the
+    menu. The table only ever holds overrides (``clear_86`` deletes rather than storing an
+    AVAILABLE row), so an item that is simply orderable is ABSENT, and the whole board stays a
+    handful of rows through a service rather than growing with the menu. "Everything not listed is
+    available" is the contract, which is also why the payload fits the one page spec Q6 requires.
+
+    Rows come back RAW — lazy expiry is applied by the caller through ``availability.resolve``,
+    the single place that rule lives. This function must not filter on ``available_until``: a
+    lapsed row still has to appear so the reader is told the dish is back on.
+    """
+    stmt = select(MenuAvailability).where(MenuAvailability.tenant_id == tenant_id)
+    return await paginate(
+        session,
+        stmt,
+        order_by=[OrderKey(MenuAvailability.item_id, SortDirection.ASC)],
+        pk=MenuAvailability.id,
+        cursor=cursor,
+        limit=limit,
+    )
+
+
 async def list_tickets(
     session: AsyncSession,
     tenant_id: uuid.UUID,
@@ -137,4 +167,9 @@ async def list_tickets(
     )
 
 
-__all__ = ["MenuItemAtRisk", "at_risk_menu_items", "list_tickets"]
+__all__ = [
+    "MenuItemAtRisk",
+    "at_risk_menu_items",
+    "list_availability_overrides",
+    "list_tickets",
+]

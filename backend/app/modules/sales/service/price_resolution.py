@@ -40,6 +40,7 @@ small joined set — no per-list round trip.
 """
 
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -148,3 +149,77 @@ async def resolve_price(
         price_list_code=winner_list.code,
         currency_code=winner_list.currency_code,
     )
+
+
+async def resolve_list_prices(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    item_ids: Iterable[uuid.UUID],
+    on_date: date,
+    currency: str | None = None,
+    quantity: Decimal = Decimal(1),
+) -> dict[uuid.UUID, ResolvedPrice]:
+    """The GENERAL (customer-less) list price for MANY items in ONE query (PLAN 19, spec Q6).
+
+    ``resolve_price`` above cannot serve a walk-in: it requires a ``customer_id``, returns
+    ``_NO_MATCH`` for an unknown one, and matches GENERAL lists only from inside that
+    customer-bound path. A property's website has no customer record for the guest ordering
+    dinner, so this is the same D-043 rule with the customer arm removed — which leaves ONLY
+    GENERAL lists applying, and therefore drops the specificity tiebreak (b) with it.
+
+    ONE statement for the whole batch, not two per item: the candidate lists and their price rows
+    are fetched as a single join and the winner is picked per item in Python over that small set.
+    That is what keeps a menu read inside PERFORMANCE §2 — the naive shape is 2 queries per dish.
+    Absent key = no ACTIVE general list prices that item on that date (the ``on_hand_for_items``
+    convention); the caller decides whether that is a blank price or a refusal.
+
+    ``currency`` is OPTIONAL and the asymmetry is deliberate. A menu READ passes None and labels
+    each price with the currency it resolved, so a misconfigured list is visible rather than
+    silently dropped. A WRITE that strikes money onto a document passes the functional currency, so
+    a price in another currency simply does not resolve and the write refuses — a document whose
+    amounts carry no currency of their own must never be struck from a foreign-currency price.
+    """
+    ids = list(dict.fromkeys(item_ids))
+    if not ids:
+        return {}
+
+    stmt = (
+        select(PriceListItem, PriceList)
+        .join(
+            PriceList,
+            (PriceList.tenant_id == PriceListItem.tenant_id)
+            & (PriceList.id == PriceListItem.price_list_id),
+        )
+        .where(
+            PriceListItem.tenant_id == tenant_id,
+            PriceListItem.item_id.in_(ids),
+            PriceListItem.min_quantity <= quantity,
+            PriceList.status == PriceListStatus.ACTIVE.value,
+            PriceList.customer_group_id.is_(None),
+            PriceList.valid_from <= on_date,
+            (PriceList.valid_to.is_(None)) | (PriceList.valid_to >= on_date),
+        )
+    )
+    if currency is not None:
+        stmt = stmt.where(PriceList.currency_code == currency)
+
+    # The D-043 order, minus specificity (every candidate is general): priority desc, then latest
+    # valid_from, then list id as the final stable tiebreaker.
+    best: dict[uuid.UUID, tuple[tuple[int, date, str], ResolvedPrice]] = {}
+    for row, price_list in (await session.execute(stmt)).all():
+        key = (price_list.priority, price_list.valid_from, str(price_list.id))
+        current = best.get(row.item_id)
+        if current is not None and key <= current[0]:
+            continue
+        best[row.item_id] = (
+            key,
+            ResolvedPrice(
+                matched=True,
+                unit_price=Decimal(str(row.unit_price)),
+                price_list_id=price_list.id,
+                price_list_code=price_list.code,
+                currency_code=price_list.currency_code,
+            ),
+        )
+    return {item_id: resolved for item_id, (_key, resolved) in best.items()}

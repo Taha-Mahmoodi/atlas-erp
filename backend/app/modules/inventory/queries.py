@@ -16,6 +16,10 @@ Every function takes an explicit ``tenant_id`` and runs under the caller's tenan
 D-007 filter applies on top of the explicit predicate — ordinary tenant-scoped reads, not a bypass.
 """
 
+# Postponed annotations so ``Page[Item]`` stays a STRING and never asks Pydantic to build a schema
+# for a SQLAlchemy model at import time (the admin/queries.py precedent).
+from __future__ import annotations
+
 import uuid
 from collections.abc import Iterable
 from decimal import Decimal
@@ -23,6 +27,14 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.pagination import (
+    DEFAULT_LIMIT,
+    OrderKey,
+    SortDirection,
+    filter_fingerprint,
+    paginate,
+)
+from app.core.schemas import Page
 from app.modules.inventory.constants import CostingMethod
 from app.modules.inventory.models import (
     Bin,
@@ -44,6 +56,40 @@ async def get_item(
     fields (name, type, base UoM, costing method) without importing inventory models directly."""
     stmt = select(Item).where(Item.tenant_id == tenant_id, Item.id == item_id)
     return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def list_active_items(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    category_id: uuid.UUID | None = None,
+    cursor: str | None = None,
+    limit: int = DEFAULT_LIMIT,
+) -> Page[Item]:
+    """ACTIVE items, keyset-paginated by ``item_code`` (D-014) — ONE statement whatever the size.
+
+    The cross-module read behind a catalogue a caller renders: hospitality's website menu is the
+    first, and it narrows by ``category_id`` because "which items are on the menu" is a per-property
+    choice that Atlas ships no entity for (a MENU item category is template config, not code).
+
+    ``is_active`` is used here as exactly what it is — a MASTER-DATA filter, "does this item still
+    belong in a catalogue". It is emphatically NOT an availability flag: whether tonight's dish can
+    be sold is stored menu availability (the hospitality 86 board), because ``is_active`` is
+    unenforced (``item_exists`` never reads it) and audited on every write, which makes it wrong on
+    both counts for something a kitchen flips dozens of times a night.
+    """
+    stmt = select(Item).where(Item.tenant_id == tenant_id, Item.is_active.is_(True))
+    if category_id is not None:
+        stmt = stmt.where(Item.category_id == category_id)
+    return await paginate(
+        session,
+        stmt,
+        order_by=[OrderKey(Item.item_code, SortDirection.ASC)],
+        pk=Item.id,
+        cursor=cursor,
+        limit=limit,
+        filters=filter_fingerprint(category_id),
+    )
 
 
 async def item_exists(

@@ -16,16 +16,22 @@ conftest.py's ``menu_setup`` fixture in one test: both create EA/BOX with fixed 
 
 import uuid
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import API_KEY_PREFIX, mint_api_key
+from app.core.models import ApiKey
 from app.core.rbac import catalog_keys, sync_permission_catalog
 from app.core.tenancy import system_context, tenant_context
 from app.modules.admin.service import assign_role, create_role, provision_tenant, provision_user
+from app.modules.finance import service as finance_service
 from app.modules.hospitality.schemas import OrderTicketCreate, OrderTicketLineCreate
 from app.modules.hospitality.service import tickets
 from app.modules.manufacturing import service as mfg_service
+from app.modules.sales import service as sales_service
+from app.modules.sales.schemas import PriceListCreate, PriceListItemCreate
 from tests.modules.inventory.factories import (
     StockSetup,
     build_item,
@@ -158,6 +164,74 @@ async def build_open_ticket(
         return ticket.id
 
 
+# --- Menu prices (PLAN 19 Task 7) ---------------------------------------------
+
+# The ONE menu price list a property keeps: GENERAL (no customer group — a walk-in has no customer
+# record), ACTIVE, open-ended from a fixed early date so date-window arithmetic is deterministic.
+MENU_PRICE_LIST_CODE = "MENU"
+MENU_PRICE_LIST_FROM = date(2026, 1, 1)
+
+
+async def seed_menu_currency(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    code: str = "USD",
+    is_functional: bool = True,
+) -> str:
+    """Create a currency in finance through the real service (D-025). FUNCTIONAL by default: it is
+    what the order write narrows price resolution to, so a menu price in another currency can never
+    be struck onto a check the ticket has no currency column to qualify (D-019)."""
+    with tenant_context(tenant_id):
+        await finance_service.create_currency(
+            session, tenant_id, code=code, name=code, is_functional=is_functional
+        )
+        await session.commit()
+    return code
+
+
+async def build_menu_price_list(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    code: str = MENU_PRICE_LIST_CODE,
+    currency_code: str = "USD",
+) -> uuid.UUID:
+    """The property's menu price list, through the real service (D-025). Returns its id. A second
+    call with another ``code``/``currency_code`` seeds the foreign-currency list."""
+    with tenant_context(tenant_id):
+        price_list = await sales_service.create_price_list(
+            session,
+            tenant_id,
+            PriceListCreate(
+                code=code,
+                name=f"{code} prices",
+                currency_code=currency_code,
+                valid_from=MENU_PRICE_LIST_FROM,
+            ),
+        )
+        await session.commit()
+        return price_list.id
+
+
+async def build_menu_price(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    price_list_id: uuid.UUID,
+    item_id: uuid.UUID,
+    unit_price: str,
+) -> None:
+    """Put ``item_id`` on a menu price list at ``unit_price`` (the real service, D-025)."""
+    with tenant_context(tenant_id):
+        await sales_service.add_price_list_item(
+            session,
+            tenant_id,
+            price_list_id,
+            PriceListItemCreate(item_id=item_id, unit_price=Decimal(unit_price)),
+        )
+        await session.commit()
+
+
 # --- Principals ---------------------------------------------------------------
 
 # EVERY registered hospitality.* key (importing the module's constants registers them), so a new
@@ -204,11 +278,48 @@ async def create_hospitality_principal(
     )
 
 
+async def mint_website_key(
+    session: AsyncSession,
+    principal: HospitalityPrincipal,
+    *,
+    name: str = "website",
+    scopes: list[str] | None = None,
+) -> str:
+    """Issue a D-069 machine credential bound to ``principal``'s user and return the key string.
+
+    The ApiKey row is written directly rather than through ``POST /api/v1/admin/api-keys``: minting
+    over the wire needs ``admin.apikey.manage``, which is a core key the hospitality principal
+    deliberately does not hold, and D-070 would then also demand an explicit scope list. The row is
+    the credential — ``core/deps._authenticate_api_key`` reads nothing else.
+
+    ``scopes=None`` inherits the user's permissions unnarrowed; a list NARROWS them (never widens),
+    which is what the 403 test drives.
+    """
+    full, digest = mint_api_key(principal.tenant_id)
+    with tenant_context(principal.tenant_id):
+        session.add(
+            ApiKey(
+                user_id=principal.user_id,
+                name=name,
+                prefix=f"{API_KEY_PREFIX}{principal.tenant_id.hex}",
+                secret_sha256=digest,
+                scopes=scopes,
+            )
+        )
+        await session.commit()
+    return full
+
+
 __all__ = [
+    "MENU_PRICE_LIST_CODE",
     "HospitalityPrincipal",
     "Kitchen",
     "build_dish",
     "build_kitchen",
+    "build_menu_price",
+    "build_menu_price_list",
     "build_open_ticket",
     "create_hospitality_principal",
+    "mint_website_key",
+    "seed_menu_currency",
 ]

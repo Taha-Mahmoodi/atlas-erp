@@ -1,11 +1,11 @@
 """Hospitality wire shapes (Pydantic v2 on the ``ApiModel`` base) for PLAN 19.
 
 A SINGLE file, matching the flat ``models.py`` next to it (STRUCTURE §8.4: split into a package at
-the 400-line cap, not before). Task 7's website shapes land here too.
+the 400-line cap, not before). Two audiences share it, separated by the section rule below: STAFF
+shapes first, then the WEBSITE surface Task 7 exposes to a machine credential.
 
-Only the CREATE payloads exist so far, because only they have a consumer: the ticket service takes
-them. Read schemas arrive with the routes that render them (Tasks 6 and 7) — a response model with
-no endpoint is the dead config STRUCTURE §8.3 forbids.
+Every schema here has an endpoint that renders it — a response model with no route is the dead
+config STRUCTURE §8.3 forbids.
 
 MONEY (D-015): ``Decimal`` in Python, serialized as a JSON string by the column/wire types. Never
 float, anywhere on this path.
@@ -21,9 +21,9 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
-from app.core.schemas import ApiModel
+from app.core.schemas import ApiModel, Page
 from app.modules.hospitality.constants import (
     AvailabilitySource,
     AvailabilityState,
@@ -162,14 +162,114 @@ class OrderTicketRead(ApiModel):
     notes: str | None = None
 
 
+# --- The website surface (Task 7) ---------------------------------------------
+
+
+class MenuItemRead(ApiModel):
+    """One sellable dish as the property's WEBSITE sees it (spec Q6).
+
+    Structure and price only — availability is a SEPARATE resource on a completely different cache
+    policy, because a menu changes when a chef rewrites it and availability changes when a table
+    orders the last portion. Folding them together would force the slow half to the fast half's
+    freshness and pull the whole payload over the wire every ten seconds.
+
+    ``price`` is None when no ACTIVE general price list prices the item today. Such an item is
+    still LISTED rather than hidden: a dish missing from the website with no error anywhere is a
+    misconfiguration nobody finds, and the order endpoint refuses it loudly (422
+    ``hospitality.item_not_priced``) rather than selling it for nothing. ``currency_code`` labels
+    the price with the currency it actually resolved in.
+
+    NO ``prep_station``. Nothing in Phase 19 reads one — KDS hardware is explicitly out of scope —
+    so it would be a column, a template field and a wire field with no consumer (STRUCTURE §8.3).
+    It belongs with the kitchen display that needs it.
+    """
+
+    item_id: uuid.UUID
+    item_code: str
+    name: str
+    description: str | None = None
+    category_id: uuid.UUID
+    price: Decimal | None = None
+    currency_code: str | None = None
+
+
+class MenuAvailabilityPage(Page[MenuAvailabilityRead]):
+    """The 86 board, plus the instant it describes.
+
+    The ``Page`` envelope unchanged (D-014 items/next_cursor/limit) with ONE field added: two pages
+    of availability are two snapshots taken at different instants, so a client that stitched them
+    would render a state the kitchen was never in. ``as_of`` is what makes the incoherence visible
+    instead of silent, and spec Q6's contract is that availability FITS ONE PAGE — a property with
+    more than ``MAX_LIMIT`` (200) simultaneous overrides is outside v1's envelope.
+
+    Only OVERRIDDEN items appear. Everything absent is available; that is the contract, and it is
+    what keeps the payload a handful of rows through a service.
+    """
+
+    as_of: datetime
+
+
+class WebsiteOrderLine(ApiModel):
+    """One dish a guest ordered on the website. **NO ``unit_price``** — the whole reason this shape
+    exists instead of reusing ``OrderTicketLineCreate``, which trusts a caller-supplied price. The
+    server resolves the price from the menu price list; a body carrying one is rejected, not
+    ignored, so a website cannot order a lobster for a penny."""
+
+    # UNKNOWN FIELDS ARE REJECTED, not ignored (the OnboardTenantRequest precedent, and for the same
+    # reason: this is a payload from outside the organization). A website that sends unit_price
+    # believes it set the price; a silent 201 at a different number is the worst of both worlds.
+    model_config = ConfigDict(extra="forbid")
+
+    item_id: uuid.UUID
+    quantity: Decimal = Field(gt=0)
+    seat_number: int | None = Field(default=None, ge=1)
+    notes: str | None = Field(default=None, max_length=500)
+
+
+class WebsiteOrderCreate(ApiModel):
+    """A website order. At least one line, unlike a staff ticket: a server opens an empty check when
+    a table is seated and takes the order later, but a website order IS the order — an empty one is
+    a bug in the caller, and it would fire an empty ticket at the kitchen."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    table_code: str | None = Field(default=None, max_length=20)
+    guest_count: int | None = Field(default=None, ge=1)
+    notes: str | None = Field(default=None, max_length=1000)
+    lines: list[WebsiteOrderLine] = Field(min_length=1)
+
+
+class WebsiteOrderRead(ApiModel):
+    """The accepted order. ``total_amount`` is AUTHORITATIVE (Q6): the menu is cached for 60 s, so
+    the website must show this number before payment and never one it computed from a cached price.
+
+    ``status`` is already SENT_TO_KITCHEN — a website order has no server standing by to fire it —
+    which also means the ingredients have NOT left the storeroom yet: depletion is a background job
+    submitted by the same transaction (Q4). ``/api/v1/jobs`` and the ticket document's D-012 chain
+    are where that is watched; this response deliberately claims nothing about it.
+    """
+
+    ticket_id: uuid.UUID
+    ticket_number: str
+    status: OrderTicketStatus
+    opened_date: date
+    total_amount: Decimal
+    currency_code: str | None = None
+
+
 __all__ = [
+    "MenuAvailabilityPage",
     "MenuAvailabilityRead",
     "MenuAvailabilitySet",
     "MenuItemAtRiskRead",
+    "MenuItemRead",
     "OrderTicketAdvance",
     "OrderTicketCreate",
     "OrderTicketLineCreate",
     "OrderTicketLineRead",
     "OrderTicketLinesAdd",
     "OrderTicketRead",
+    "WebsiteOrderCreate",
+    "WebsiteOrderLine",
+    "WebsiteOrderRead",
 ]
