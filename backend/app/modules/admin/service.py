@@ -233,8 +233,9 @@ async def revoke_api_key(session: AsyncSession, key: ApiKey) -> ApiKey:
     ``revoked_at IS NULL`` and both write, so the later stamp can win and one caller is told a
     time that is not the stored one (tests/core/test_api_key_concurrency.py pins this). Left
     as-is deliberately — closing it needs an atomic ``UPDATE ... WHERE revoked_at IS NULL``,
-    and a Core UPDATE skips the ORM flush events D-010 audit capture hooks. The credential is
-    equally revoked either way."""
+    and ApiKey is AuditMixin, so neither form is available: the ORM one is a hard 409 from
+    core/audit.py's ``_guard_bulk_audited_writes``, and a raw Core one skips the flush events
+    D-010 capture hooks. The credential is equally revoked either way."""
     if key.revoked_at is None:
         key.revoked_at = now_utc()
         await session.flush()
