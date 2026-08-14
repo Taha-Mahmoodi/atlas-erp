@@ -229,6 +229,31 @@ async def serial_id_for_code(
 # both engines (D-015); ``func.coalesce(..., 0)`` makes an item with no stock read 0, not None.
 
 
+async def on_hand_for_items(
+    session: AsyncSession, tenant_id: uuid.UUID, item_ids: Iterable[uuid.UUID]
+) -> dict[uuid.UUID, Decimal]:
+    """Total on-hand for a BATCH of items — ONE query, keyed by item_id (PLAN 19 Task 6).
+
+    The batched twin of :func:`total_on_hand`: any caller needing on-hand for more than one item
+    must use this rather than looping the singular one. An item absent from the result has NO stock
+    anywhere; callers read a miss as zero rather than as "unknown".
+
+    ON-HAND ONLY, deliberately — not ``on_hand - committed + on_order``. The hospitality at-risk
+    scan is its first caller precisely because that ATP formula is wrong for a kitchen: an open PO
+    for tomorrow's tomatoes must not make tonight's dish read producible (spec Q2). Sales ATP keeps
+    composing the three figures itself in ``sales/queries/availability.py``.
+    """
+    ids = list(item_ids)
+    if not ids:
+        return {}
+    stmt = (
+        select(StockQuant.item_id, func.coalesce(func.sum(StockQuant.on_hand_qty), 0))
+        .where(StockQuant.tenant_id == tenant_id, StockQuant.item_id.in_(ids))
+        .group_by(StockQuant.item_id)
+    )
+    return {row[0]: Decimal(row[1]) for row in (await session.execute(stmt)).all()}
+
+
 async def total_on_hand(
     session: AsyncSession, tenant_id: uuid.UUID, item_id: uuid.UUID
 ) -> Decimal:

@@ -20,7 +20,9 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.tenancy import tenant_context
+from app.core.rbac import catalog_keys, sync_permission_catalog
+from app.core.tenancy import system_context, tenant_context
+from app.modules.admin.service import assign_role, create_role, provision_tenant, provision_user
 from app.modules.hospitality.schemas import OrderTicketCreate, OrderTicketLineCreate
 from app.modules.hospitality.service import tickets
 from app.modules.manufacturing import service as mfg_service
@@ -76,33 +78,57 @@ async def build_kitchen(
 
     dishes: dict[str, uuid.UUID] = {}
     for dish_code, recipe in recipes.items():
-        dish = await build_item(
+        dishes[dish_code] = await build_dish(
             session,
             tenant_id,
+            setup,
             item_code=dish_code,
-            category_id=setup.category_id,
-            base_uom_id=setup.base_uom_id,
-            name=f"Dish {dish_code}",
+            recipe={ingredients[code]: quantity for code, quantity in recipe.items()},
         )
-        dishes[dish_code] = dish.id
-        if not recipe:
-            continue
-        bom = await build_bom(
-            session, tenant_id, item_id=dish.id, uom_id=setup.base_uom_id, name=dish_code
-        )
-        for ingredient_code, quantity_per in recipe.items():
-            await build_bom_component(
-                session,
-                tenant_id,
-                bom.id,
-                component_item_id=ingredients[ingredient_code],
-                uom_id=setup.base_uom_id,
-                quantity_per=quantity_per,
-            )
-        with tenant_context(tenant_id):
-            await mfg_service.activate_bom(session, tenant_id, bom.id)
-            await session.commit()
     return Kitchen(setup=setup, dishes=dishes, ingredients=ingredients)
+
+
+async def build_dish(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    setup: StockSetup,
+    *,
+    item_code: str,
+    recipe: dict[uuid.UUID, Decimal],
+) -> uuid.UUID:
+    """One sellable dish + its ACTIVE default BOM, against an ALREADY-BUILT ``StockSetup``.
+
+    Split out of ``build_kitchen`` so a test can widen an existing kitchen's menu without seeding a
+    second stock setup (``build_stock_setup`` creates EA/BOX with fixed codes and can only run once
+    per tenant) — which is what the at-risk query-count test needs. An empty ``recipe`` gets no BOM
+    at all: the bottled-beer case.
+    """
+    dish = await build_item(
+        session,
+        tenant_id,
+        item_code=item_code,
+        category_id=setup.category_id,
+        base_uom_id=setup.base_uom_id,
+        name=f"Dish {item_code}",
+    )
+    if not recipe:
+        return dish.id
+    bom = await build_bom(
+        session, tenant_id, item_id=dish.id, uom_id=setup.base_uom_id, name=item_code
+    )
+    for component_item_id, quantity_per in recipe.items():
+        await build_bom_component(
+            session,
+            tenant_id,
+            bom.id,
+            component_item_id=component_item_id,
+            uom_id=setup.base_uom_id,
+            quantity_per=quantity_per,
+        )
+    with tenant_context(tenant_id):
+        await mfg_service.activate_bom(session, tenant_id, bom.id)
+        await session.commit()
+    return dish.id
 
 
 async def build_open_ticket(
@@ -132,4 +158,57 @@ async def build_open_ticket(
         return ticket.id
 
 
-__all__ = ["Kitchen", "build_kitchen", "build_open_ticket"]
+# --- Principals ---------------------------------------------------------------
+
+# EVERY registered hospitality.* key (importing the module's constants registers them), so a new
+# hospitality permission is auto-granted to the full-rights principal — self-extending, the
+# quality/procurement precedent. The kitchen its tenant needs is seeded through the db_session
+# factories (system context), never over the wire, so a staff principal needs only its own keys.
+_HOSPITALITY_KEYS = tuple(
+    sorted(key for key in catalog_keys() if key.startswith("hospitality."))
+)
+
+
+@dataclass(frozen=True)
+class HospitalityPrincipal:
+    tenant_id: uuid.UUID
+    tenant_slug: str
+    user_id: uuid.UUID
+    email: str
+    password: str
+
+
+async def create_hospitality_principal(
+    session: AsyncSession,
+    slug: str = "hsp-acme",
+    email: str = "chef@hsp-acme.test",
+    password: str = "correct-horse-battery",
+    keys: tuple[str, ...] | None = None,
+) -> HospitalityPrincipal:
+    """Provision a tenant + user and grant a role with the hospitality permission keys through the
+    real services (D-025); ``keys`` narrows the grant for the 403 RBAC tests (None = full)."""
+    grant = keys if keys is not None else _HOSPITALITY_KEYS
+    tenant = await provision_tenant(session, slug=slug, name=slug.title())
+    user = await provision_user(session, tenant.id, email=email, password=password)
+    with system_context():
+        await sync_permission_catalog(session)
+    role = await create_role(session, tenant.id, "Kitchen", grant, is_system=True)
+    await assign_role(session, tenant.id, user.id, role.id, user.token_version)
+    await session.commit()
+    return HospitalityPrincipal(
+        tenant_id=tenant.id,
+        tenant_slug=slug,
+        user_id=user.id,
+        email=email,
+        password=password,
+    )
+
+
+__all__ = [
+    "HospitalityPrincipal",
+    "Kitchen",
+    "build_dish",
+    "build_kitchen",
+    "build_open_ticket",
+    "create_hospitality_principal",
+]

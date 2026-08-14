@@ -111,6 +111,55 @@ async def components_for_boms(
     return grouped
 
 
+async def active_bom_requirements(
+    session: AsyncSession, tenant_id: uuid.UUID
+) -> dict[uuid.UUID, dict[uuid.UUID, Decimal]]:
+    """Every ACTIVE default BOM in the tenant, exploded ONE level to per-unit component demand:
+    ``{parent_item_id: {component_item_id: quantity per ONE unit of the parent}}`` — ONE query.
+
+    The unkeyed, whole-tenant twin of ``active_boms_for_items`` + ``components_for_boms``: those
+    two answer "what do THESE parents need", which needs the parent ids up front. A coverage scan
+    (hospitality's at-risk menu list, PLAN 19 Task 6) has no such list — it asks what every recipe
+    needs — and looping the keyed pair per parent would be the N+1 PERFORMANCE §2 bans.
+
+    Quantities are normalised to ONE parent unit (``quantity_per / base_quantity``) with scrap
+    applied, so a caller divides on-hand straight through without re-deriving BOM semantics.
+    Computed in PYTHON, not SQL: ``QuantityType`` is scaled integers on SQLite and NUMERIC on
+    Postgres, and D-015 keeps decimal arithmetic off the SQL side so both engines agree exactly.
+
+    Single-level, like every other exploder here (a sub-assembly / a prepped sauce is produced by
+    its own order and consumed as the stock item it is). A parent with no components is absent.
+    """
+    stmt = (
+        select(
+            Bom.item_id,
+            Bom.base_quantity,
+            BomComponent.component_item_id,
+            BomComponent.quantity_per,
+            BomComponent.scrap_percent,
+        )
+        .join(
+            BomComponent,
+            (BomComponent.tenant_id == Bom.tenant_id) & (BomComponent.bom_id == Bom.id),
+        )
+        .where(
+            Bom.tenant_id == tenant_id,
+            Bom.status == BomStatus.ACTIVE.value,
+            Bom.is_default.is_(True),
+        )
+    )
+    requirements: dict[uuid.UUID, dict[uuid.UUID, Decimal]] = {}
+    for item_id, base_quantity, component_item_id, quantity_per, scrap_percent in (
+        await session.execute(stmt)
+    ).all():
+        scrap_factor = Decimal(1) + (Decimal(str(scrap_percent)) / Decimal(100))
+        per_unit = (Decimal(str(quantity_per)) / Decimal(str(base_quantity))) * scrap_factor
+        components = requirements.setdefault(item_id, {})
+        # A component listed on two lines of one BOM is consumed on both.
+        components[component_item_id] = components.get(component_item_id, Decimal(0)) + per_unit
+    return requirements
+
+
 async def get_routing(
     session: AsyncSession, tenant_id: uuid.UUID, routing_id: uuid.UUID
 ) -> Routing | None:
