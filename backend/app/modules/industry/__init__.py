@@ -2,7 +2,7 @@
 industry solutions and the product's headline differentiator.
 
 PLAN 14.1 ships the YAML industry-template schema (``industry-templates/_schema.yaml``), a
-validating idempotent loader, and five meaningfully-different shipped templates (manufacturing,
+validating idempotent loader, and six meaningfully-different shipped templates (manufacturing,
 retail, professional-services, healthcare, construction). A tenant picks one at onboarding (14.2)
 and the loader instantiates its whole configuration — COA preset, tax codes, currencies, UoMs,
 item categories, typed custom fields (D-016), approval presets, module toggles, terminology

@@ -1,7 +1,7 @@
 """Industry template loader (PLAN 14.1 / D-060): read + validate + idempotently apply a template.
 
 The headline differentiator (Atlas's answer to SAP industry solutions): a tenant picks one of the
-five shipped templates at onboarding and this loader instantiates its whole configuration —
+shipped templates at onboarding and this loader instantiates its whole configuration —
 COA preset, tax codes, currencies, UoMs, item categories, typed custom fields, approval presets,
 module toggles, terminology overrides and numbering formats — in ONE transaction.
 

@@ -614,7 +614,7 @@ The template-copy pattern is the single decision that makes everything else test
 ## D-026 — Seed-data architecture (deterministic, per-template, three months of linked transactions)
 
 **Decision.**
-`backend/seed.py` is a CLI (argparse: `--templates` defaulting to all five industry templates, `--anchor-date` defaulting to today, `--reset`) that assumes a migrated database (Makefile target chains `alembic upgrade head`).
+`backend/seed.py` is a CLI (argparse: `--templates` defaulting to all five seeded industry profiles, `--anchor-date` defaulting to today, `--reset`) that assumes a migrated database (Makefile target chains `alembic upgrade head`).
 
 **Determinism:** one `random.Random(f'{template}:{anchor_date}')` per tenant — identical output for a given (template, anchor) pair; the anchor is recorded on the tenant so reruns are reproducible for bug reports.
 

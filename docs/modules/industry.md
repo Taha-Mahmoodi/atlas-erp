@@ -2,7 +2,7 @@
 
 The industry module is the **INDUSTRY CONFIGURATION LAYER** (Phase 4 of the product spec / PLAN
 14.1) — Atlas's answer to SAP industry solutions and the product's headline differentiator. A tenant
-picks one of five shipped templates at onboarding and the loader instantiates its whole
+picks one of the shipped templates at onboarding and the loader instantiates its whole
 configuration — COA preset, tax codes, currencies, UoMs, item categories, typed custom fields,
 approval presets, module toggles, terminology overrides and numbering formats — in **one
 transaction**.
@@ -14,7 +14,7 @@ template-authoring reference.
 
 ## Status
 
-**PLAN 14.1 is COMPLETE** — the YAML schema, the validating idempotent loader, the five templates,
+**PLAN 14.1 is COMPLETE** — the YAML schema, the validating idempotent loader, the shipped templates,
 the core custom-field registry (D-016), and the per-module event-bus provisioning.
 
 | File | Concern |
@@ -29,8 +29,9 @@ the core custom-field registry (D-016), and the per-module event-bus provisionin
 | `router.py` | `GET /templates`, `GET /templates/{name}`, `POST /tenants/{tenant_id}/apply?template=` |
 
 The templates themselves are **YAML data**, not code: `industry-templates/_schema.yaml` (the schema,
-single source of truth) + the five `{manufacturing,retail,professional-services,healthcare,
-construction}.yaml` files (STRUCTURE §1, a top-level repo dir).
+single source of truth) + the `{manufacturing,retail,professional-services,healthcare,
+construction,hospitality}.yaml` files (STRUCTURE §1, a top-level repo dir). Hospitality is the
+sixth, added by PLAN 19.1 alongside the hospitality module.
 
 ## The loader + idempotency
 

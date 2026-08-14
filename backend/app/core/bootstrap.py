@@ -18,6 +18,7 @@ from app.core.security_router import router as security_router
 from app.modules.admin.router import router as admin_router
 from app.modules.crm.router import router as crm_router
 from app.modules.finance.router import router as finance_router
+from app.modules.hospitality.router import router as hospitality_router
 from app.modules.hr.router import router as hr_router
 from app.modules.industry.router import onboarding_router
 from app.modules.industry.router import router as industry_router
@@ -110,6 +111,13 @@ def mount_routers(app: FastAPI) -> None:
     # publishes/subscribes to NO cross-module event (D-058 / D-021 / STRUCTURE §5). finance,
     # inventory, sales, procurement are older and import nothing from reporting — one-way, no cycle.
     app.include_router(reporting_router)
+    # Hospitality module (PLAN 19): restaurant menu availability, order tickets and background
+    # ingredient depletion at /api/v1/hospitality. Mounted after reporting, the D-011 module import
+    # order; hospitality reads inventory/queries and the manufacturing BOM engine DOWNWARD (recipes
+    # ARE BOMs — no new item entity) and posts stock through the bus, never their services
+    # (STRUCTURE §5). Task 6 fills the staff routes; the mount is already here because it is what
+    # imports constants.py, and constants.py is where the D-009 permission keys register.
+    app.include_router(hospitality_router)
     # Industry module (PLAN 14.1): the INDUSTRY CONFIGURATION LAYER at /api/v1/industry — the YAML
     # template catalog + the idempotent apply endpoint (D-060). Mounted last; it imports core +
     # admin (it applies to a tenant + writes settings) and PUBLISHES IndustryTemplateApplying for

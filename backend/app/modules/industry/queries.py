@@ -22,7 +22,7 @@ from app.modules.industry.schemas import IndustryTemplate
 
 
 def list_templates() -> list[IndustryTemplate]:
-    """The five shipped templates, parsed (D-060). Pure read off the bundled YAML files — used by
+    """The shipped templates, parsed (D-060). Pure read off the bundled YAML files — used by
     the list endpoint to show each template's display_name/description summary."""
     return [load_template(name) for name in SHIPPED_TEMPLATES]
 
