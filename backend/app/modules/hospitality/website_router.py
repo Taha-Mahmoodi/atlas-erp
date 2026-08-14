@@ -165,7 +165,16 @@ async def list_menu_availability(
     """
     response.headers["Cache-Control"] = AVAILABILITY_CACHE_CONTROL
     fingerprint = request_fingerprint(params.cursor, params.limit)
-    etag = await collection_etag(session, MenuAvailability, request_fingerprint=fingerprint)
+    # The third component is the whole reason this endpoint does not share the plain two-aggregate
+    # validator every other reference list uses: expiry is LAZY, so a snooze lapsing changes the
+    # answer without changing a row, and COUNT/MAX would hold still through it. It rides the same
+    # aggregate select, so the 304 still costs one statement.
+    etag = await collection_etag(
+        session,
+        MenuAvailability,
+        request_fingerprint=fingerprint,
+        extra_components=(availability.lapsed_count_expr(),),
+    )
 
     async def builder() -> MenuAvailabilityPage:
         page = await queries.list_availability_overrides(

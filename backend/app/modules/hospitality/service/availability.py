@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import as_utc
@@ -55,6 +55,28 @@ def _is_expired(row: MenuAvailability, now: datetime) -> bool:
     """Whether a time-boxed override has lapsed. ``as_utc`` normalizes the SQLite naive round-trip
     before comparing (core/auth)."""
     return row.available_until is not None and as_utc(row.available_until) <= now
+
+
+def lapsed_count_expr(now: datetime | None = None) -> ColumnElement[int]:
+    """``_is_expired`` as an AGGREGATE — how many stored overrides have already lapsed at ``now``.
+
+    The ONE place this module speaks about expiry in SQL, and it exists for the conditional GET,
+    not for filtering. ``collection_etag`` is ``COUNT(id), MAX(updated_at)``, and TIME PASSING IS
+    NOT A WRITE: when a snooze lapses at 22:00 the row is untouched, so both aggregates hold still
+    while ``resolve`` starts answering AVAILABLE — and the website revalidating at 22:01 is handed
+    a 304 that keeps the dish sold out for every guest. Folding this count into the validator is
+    what makes the lapse a version change; it is monotone in time (a lapsed row never un-lapses
+    without a write, which moves ``MAX(updated_at)`` anyway), so each staggered boundary moves the
+    tag exactly once. Selected in the same aggregate statement, so the read still costs one query.
+
+    The docstring at the top of this file says the expiry rule is evaluated in PYTHON, and that
+    still holds for every row the reader RESOLVES — this is a COUNT, never a row filter, so a
+    lapsed row is still returned to ``resolve`` and still tells the reader the dish is back on.
+    The comparison is safe in SQL because both sides are UTC: SQLAlchemy's SQLite bind processor
+    formats a bound aware datetime with the same format it stored the column with, and PostgreSQL
+    compares ``timestamptz`` properly. ``test_availability_etag`` pins the two spellings agreeing.
+    """
+    return func.count(case((MenuAvailability.available_until <= (now or utcnow()), 1)))
 
 
 def resolve(row: MenuAvailability, now: datetime | None = None) -> MenuItemAvailability:
