@@ -23,6 +23,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import ColumnElement, case, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import as_utc
@@ -117,6 +118,38 @@ async def _locked_row(
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
+async def _insert_or_reload(
+    session: AsyncSession, tenant_id: uuid.UUID, item_id: uuid.UUID
+) -> MenuAvailability:
+    """Create the item's override row, or take over the one another writer just committed.
+
+    ``_locked_row`` locks NOTHING when the row does not exist — there is no row to lock — so the
+    bar terminal and the pass 86-ing the same dish in the same second both read None and both
+    INSERT, and ``uq_hsp_menu_availability_tenant_id_item_id`` rejects the loser with an
+    IntegrityError the API surfaces as a 500. The SAVEPOINT turns that into the answer both
+    callers actually asked for: roll the failed insert back, re-read the winner's row under the
+    lock, and let ``set_availability`` overwrite it. Last write wins, which is the same contract
+    the PUT already has for an item whose row exists.
+
+    Portable by construction (D-003): a savepoint plus a re-read is the same on SQLite and
+    PostgreSQL, unlike a dialect-specific ``ON CONFLICT`` upsert — and the ORM write is what moves
+    ``updated_at`` for ``collection_etag``, which a bulk upsert statement would bypass.
+    """
+    savepoint = await session.begin_nested()
+    row = MenuAvailability(tenant_id=tenant_id, item_id=item_id)
+    session.add(row)
+    try:
+        await session.flush()
+    except IntegrityError:
+        await savepoint.rollback()
+        winner = await _locked_row(session, tenant_id, item_id)
+        if winner is None:
+            # Not the uniqueness conflict this exists for (a FK or CHECK failure): re-raise it.
+            raise
+        return winner
+    return row
+
+
 async def set_availability(
     session: AsyncSession,
     tenant_id: uuid.UUID,
@@ -147,10 +180,9 @@ async def set_availability(
             details={"item_id": str(item_id)},
         )
 
-    row = await _locked_row(session, tenant_id, item_id)
-    if row is None:
-        row = MenuAvailability(tenant_id=tenant_id, item_id=item_id)
-        session.add(row)
+    row = await _locked_row(session, tenant_id, item_id) or await _insert_or_reload(
+        session, tenant_id, item_id
+    )
     row.state = state.value
     row.remaining_qty = remaining_qty if state == AvailabilityState.LIMITED else None
     row.available_until = available_until
@@ -202,6 +234,14 @@ async def decrement_remaining_many(
     merely by being ordered, and a LAPSED row already reads AVAILABLE, so decrementing it would
     resurrect an override the read path has stopped honouring. An item with no row at all is simply
     absent from the result set.
+
+    REFUSES rather than clamping when a counter cannot cover its burn, and that refusal is what
+    makes the row lock worth taking. Two fires reading LIMITED with one portion left serialize
+    here; the loser re-reads the counter UNDER the lock and finds it at zero, so clamping at zero
+    would let both tickets fire and sell the last portion twice — the lock would have bought
+    nothing. The same guard catches the un-raced spelling: six portions left and an eight-top
+    ordering eight. Raised BEFORE anything is mutated, so ``fire_ticket``'s promise that a refusal
+    leaves the ticket OPEN holds without depending on the transaction rollback.
     """
     if not quantities:
         return
@@ -218,14 +258,32 @@ async def decrement_remaining_many(
         .with_for_update()
     )
     now = utcnow()
+    burns: list[tuple[MenuAvailability, Decimal]] = []
+    exhausted: list[str] = []
     for row in (await session.execute(stmt)).scalars().all():
         if row.remaining_qty is None or _is_expired(row, now):
             continue
         remaining = Decimal(row.remaining_qty) - quantities[row.item_id]
-        row.remaining_qty = max(remaining, Decimal(0))
-        if row.remaining_qty <= 0:
+        if remaining < 0:
+            exhausted.append(str(row.item_id))
+        else:
+            burns.append((row, remaining))
+    if exhausted:
+        raise ValidationFailedError(
+            message="An ordered item has fewer portions left than the order asks for",
+            code="hospitality.item_unavailable",
+            details={"item_ids": sorted(exhausted)},
+        )
+    for row, remaining in burns:
+        row.remaining_qty = remaining
+        if remaining <= 0:
             row.state = AvailabilityState.EIGHTY_SIXED.value
             row.source = AvailabilitySource.AUTO.value
+            # The time box came with the COUNTDOWN ("twenty portions, until 22:00"); it says
+            # nothing about the 86 that replaces it. Left in place it lapses at 22:00 and
+            # ``resolve`` hands the website AVAILABLE for a dish with nothing behind it — and
+            # nothing sweeps expired rows, so it stays wrongly sellable until a human notices.
+            row.available_until = None
 
 
 async def availability_for_items(
