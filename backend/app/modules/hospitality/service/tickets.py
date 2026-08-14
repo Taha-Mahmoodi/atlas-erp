@@ -25,6 +25,7 @@ from app.core import docflow
 from app.core.events import publish
 from app.core.exceptions import ConflictError, NotFoundError, ValidationFailedError
 from app.core.models import utcnow
+from app.core.money import MONEY_SCALE, quantize_money
 from app.core.numbering import claim_number, ensure_sequence
 from app.modules.hospitality.constants import (
     ORDER_TICKET_DOC_TYPE,
@@ -133,13 +134,22 @@ async def _write_lines(
 
     The single line writer both ``create_ticket`` and ``add_lines`` go through, so a ticket opened
     with its order and one built up dish by dish produce identical rows. ``line_amount`` is the
-    exact product — ``MoneyType`` stores six decimals (D-015) and rounding to a currency's own
-    decimals is a posting/wire concern, not stored state. Assumes the caller already ran
-    ``_require_items``; both do, BEFORE touching the numbering sequence (see ``create_ticket``).
+    product rounded to ``MONEY_SCALE`` — what ``MoneyType`` will store (D-015); rounding to a
+    CURRENCY's own decimals is a posting/wire concern and stays out of stored state.
+
+    The rounding happens per line and the header sums the ROUNDED lines, deliberately. Summing the
+    exact products and rounding once at the end makes Σ(line_amount as stored) differ from
+    total_amount by a micro-unit whenever two lines each carry a half-quantum remainder — a check
+    whose itemisation does not add up to its bottom line, which no guest can be shown.
+
+    Assumes the caller already ran ``_require_items``; both do, BEFORE touching the numbering
+    sequence (see ``create_ticket``).
     """
     total = Decimal(0)
     for offset, line in enumerate(payload_lines):
-        amount = Decimal(str(line.quantity)) * Decimal(str(line.unit_price))
+        amount = quantize_money(
+            Decimal(str(line.quantity)) * Decimal(str(line.unit_price)), MONEY_SCALE
+        )
         total += amount
         session.add(
             OrderTicketLine(

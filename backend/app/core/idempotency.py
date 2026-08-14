@@ -117,9 +117,11 @@ class IdempotencyKey(TenantMixin, Base):
 
 
 def compute_request_hash(body: bytes) -> str:
-    """sha256 hex of the raw request body (D-013). The raw bytes are the canonical form here:
-    a replay must present the byte-identical body, and hashing bytes avoids re-serialization
-    ambiguity. An empty body hashes to the sha256 of b'' — stable and well-defined."""
+    """sha256 hex of the canonical request bytes (D-013). Raw bytes are the canonical form here:
+    a replay must present the byte-identical request, and hashing bytes avoids re-serialization
+    ambiguity. An empty body hashes to the sha256 of b'' — stable and well-defined, which is why
+    the guard feeds it the request TARGET followed by the body rather than the body alone (see
+    ``Idempotent.__call__``: an action route's body is empty and its identity is in its path)."""
     return hashlib.sha256(body).hexdigest()
 
 
@@ -329,7 +331,18 @@ class Idempotent:
         # (request._body), so the route handler's own body parsing still works after this read —
         # the stream is not consumed out from under it. A replay with a different body therefore
         # produces a different hash and is rejected as key-reuse.
-        request_hash = compute_request_hash(await request.body())
+        #
+        # The request TARGET is hashed WITH the body, because on an action route the body is empty
+        # and the identity of the thing being acted on is entirely in the path: every
+        # POST /tickets/{id}/fire, /journal-entries/{id}/post, /purchase-orders/{id}/send hashes
+        # b'' otherwise, so one key spent on one document would REPLAY that document's response for
+        # a different one — a 200 for an action that never ran, which is exactly the failure the
+        # different-body 422 exists to prevent and the only case it cannot see. Query string
+        # included for the same reason. The endpoint string stays the coarse namespace it always
+        # was; this narrows the hash within it, and a genuine retry (same key, same target, same
+        # body) still replays untouched.
+        target = f"{request.url.path}?{request.url.query}".encode()
+        request_hash = compute_request_hash(target + b"\n" + await request.body())
         await reserve(factory, tenant_id, self.endpoint, idempotency_key, request_hash)
 
         context = IdempotencyContext(

@@ -34,8 +34,11 @@ import sqlalchemy as sa
 from sqlalchemy.engine import Dialect
 from sqlalchemy.types import TypeDecorator
 
-# Scales (number of fractional decimal digits each type stores).
-_MONEY_SCALE = 6
+# Scales (number of fractional decimal digits each type stores). ``MONEY_SCALE`` is public because
+# a service that MAINTAINS a header total has to round each line to what the column will store
+# before summing — quantizing the sum instead lets the stored lines and the stored total differ by
+# a micro-unit (PLAN 19: the order-ticket line writer).
+MONEY_SCALE = 6
 _QUANTITY_SCALE = 6
 _RATE_SCALE = 10
 
@@ -98,7 +101,7 @@ class MoneyType(_ScaledDecimalType):
 
     # cache_ok must be set on each concrete TypeDecorator class, not just the base.
     cache_ok = True
-    scale = _MONEY_SCALE
+    scale = MONEY_SCALE
     precision = 18
 
 
@@ -204,6 +207,7 @@ def allocate(total: Decimal, weights: list[Decimal], places: int = 2) -> list[De
 
 
 __all__ = [
+    "MONEY_SCALE",
     "MoneyType",
     "QuantityType",
     "RateType",

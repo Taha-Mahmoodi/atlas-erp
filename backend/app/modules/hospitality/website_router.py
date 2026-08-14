@@ -49,7 +49,7 @@ from app.core.exceptions import ValidationFailedError
 from app.core.idempotency import Idempotent, IdempotentDep
 from app.core.jobs import schedule_job
 from app.core.models import utcnow
-from app.core.pagination import CursorParams, cursor_params
+from app.core.pagination import MAX_LIMIT, CursorParams, cursor_params
 from app.core.rbac import require_permission
 from app.core.schemas import Page
 from app.modules.finance import queries as finance_queries
@@ -151,7 +151,7 @@ async def list_menu_availability(
     response: Response,
     current: CurrentUserDep,
     session: SessionDep,
-    params: CursorParams = CursorParamsDep,
+    cursor: str | None = None,
 ) -> MenuAvailabilityPage | Response:
     """The 86 board — every item the kitchen has said something about, and NOTHING else.
 
@@ -161,10 +161,22 @@ async def list_menu_availability(
     validator — while an equivalent tag over ``inv_items`` would not move at all when the last
     portion sells, and the website would keep being told 304 for a dish that is gone.
 
+    **NO ``limit`` PARAMETER, and the page is always ``MAX_LIMIT``.** Every other list in Atlas
+    lets the client size its page; this one must not, because of the contract in
+    ``MenuAvailabilityPage``: everything ABSENT from the board is available. Under the shared
+    ``cursor_params`` default a property with 51 live overrides served 50 of them and told the
+    website the rest were fine — a sold-out dish sold, which is the exact failure Q2 stores
+    availability to prevent. ``as_of`` has the same dependency: it names ONE instant, and a board
+    stitched from two requests was never in that state. The board is a handful of rows through a
+    service (only overrides are stored), so serving it whole costs the same one statement.
+
+    Past ``MAX_LIMIT`` overrides — outside the envelope spec Q6 contracts for — ``next_cursor``
+    is non-null and the client MUST follow it; that is a v1 limit, stated, not a silent cut.
+
     A 304 costs ONE statement and returns no body; a 200 costs two. Absent items are available.
     """
     response.headers["Cache-Control"] = AVAILABILITY_CACHE_CONTROL
-    fingerprint = request_fingerprint(params.cursor, params.limit)
+    fingerprint = request_fingerprint(cursor, MAX_LIMIT)
     # The third component is the whole reason this endpoint does not share the plain two-aggregate
     # validator every other reference list uses: expiry is LAZY, so a snooze lapsing changes the
     # answer without changing a row, and COUNT/MAX would hold still through it. It rides the same
@@ -178,7 +190,7 @@ async def list_menu_availability(
 
     async def builder() -> MenuAvailabilityPage:
         page = await queries.list_availability_overrides(
-            session, current.tenant_id, cursor=params.cursor, limit=params.limit
+            session, current.tenant_id, cursor=cursor, limit=MAX_LIMIT
         )
         # ONE ``now`` for the whole page: the rows must be expired against a single instant, or two
         # rows on one page could be resolved against different clocks — which is also what ``as_of``
