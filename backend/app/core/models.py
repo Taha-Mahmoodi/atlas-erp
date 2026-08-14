@@ -171,7 +171,7 @@ class RefreshSession(UuidPKMixin, TenantMixin, TimestampMixin, Base):
     user_agent: Mapped[str | None] = mapped_column(sa.String(400), nullable=True)
 
 
-class ApiKey(UuidPKMixin, TenantMixin, TimestampMixin, Base):
+class ApiKey(UuidPKMixin, TenantMixin, AuditMixin, TimestampMixin, Base):
     """Machine credential for a first-party API client (the property's own website).
 
     Structurally mirrors RefreshSession: a hashed secret with revocation and expiry. Two
@@ -185,9 +185,19 @@ class ApiKey(UuidPKMixin, TenantMixin, TimestampMixin, Base):
     only ever NARROW them (see core/deps.py). Keys are bound to a real core_users row so
     the D-010 audit actor resolves — a synthetic principal id would insert cleanly and
     leave an unresolvable actor across the submitted_by/approver_id sites that deliberately
-    do not FK to core_users."""
+    do not FK to core_users.
+
+    AUDITED (D-010), unlike RefreshSession — the structural resemblance stops here.
+    RefreshSession is high-churn state a user's own login writes; an ApiKey is an operator's
+    deliberate grant of a machine credential carrying the bound user's whole permission set,
+    which is the same escalation UserRole grants, and UserRole is audited. Without capture,
+    "who issued the credential that made this change" is unanswerable one hop back from an
+    audit row's actor. ``secret_sha256`` is excluded for the reason ``password_hash`` is
+    excluded on User: the digest is a credential, and the audit viewer is a different
+    permission (``admin.audit.read``) from the one that may see keys."""
 
     __tablename__ = "core_api_keys"
+    __audit_exclude__ = frozenset({"secret_sha256"})
     __table_args__ = (
         tenant_unique(),
         tenant_fk("adm_tenants"),
@@ -201,10 +211,9 @@ class ApiKey(UuidPKMixin, TenantMixin, TimestampMixin, Base):
 
     user_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, nullable=False)
     name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
-    # The non-secret half of the key string, kept for display ("atk_acme"). Never any part
-    # of the secret. Sized for the scheme plus a full-length tenant slug: onboarding caps
-    # slugs at 63 chars (modules/industry/schemas.py), and VARCHAR overflow is a
-    # Postgres-only error SQLite would never show (D-003).
+    # The non-secret half of the key string, kept for display ("atk_<tenant uuid hex>").
+    # Never any part of the secret. 80 chars is generous for the scheme plus a 32-char hex
+    # ref; VARCHAR overflow is a Postgres-only error SQLite would never show (D-003).
     prefix: Mapped[str] = mapped_column(sa.String(80), nullable=False)
     secret_sha256: Mapped[str] = mapped_column(sa.String(64), nullable=False)
     scopes: Mapped[list[str] | None] = mapped_column(JSON_VARIANT, nullable=True)
