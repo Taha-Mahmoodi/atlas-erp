@@ -35,19 +35,29 @@ export function RfqListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">RFQs</h1>
-        {canManage && (
-          <Link
-            to="/procurement/rfqs/new"
-            className="btn-ink"
-          >
-            New RFQ
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/procurement" className="hover:underline">
+            Procurement
+          </Link>{" "}
+          / <span className="text-ink">RFQs</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">RFQs</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/procurement/rfqs/new"
+                className="btn-ink"
+              >
+                New RFQ
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4">
+      <div>
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value as RfqStatus | "")}
@@ -70,6 +80,8 @@ export function RfqListPage() {
           onRowClick={(row) => void navigate({ to: "/procurement/rfqs/$rfqId", params: { rfqId: row.id } })}
           loading={rfqs.isPending}
           emptyMessage="No RFQs yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={rfqs.hasNextPage}
           onLoadMore={() => void rfqs.fetchNextPage()}
           loadingMore={rfqs.isFetchingNextPage}

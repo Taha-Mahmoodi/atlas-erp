@@ -42,17 +42,24 @@ export function SalesOrderListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Sales Orders</h1>
-        {canManage && (
-          <Link
-            to="/sales/orders/new"
-            className="btn-ink"
-          >
-            New order
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/sales">Sales</Link> / <span className="text-ink">Sales Orders</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Sales Orders</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/sales/orders/new"
+                className="btn-ink"
+              >
+                New order
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
       <div className="mt-4">
         <select
@@ -80,6 +87,8 @@ export function SalesOrderListPage() {
           onRowClick={(row) => void navigate({ to: "/sales/orders/$orderId", params: { orderId: row.id } })}
           loading={orders.isPending}
           emptyMessage="No sales orders yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={orders.hasNextPage}
           onLoadMore={() => void orders.fetchNextPage()}
           loadingMore={orders.isFetchingNextPage}

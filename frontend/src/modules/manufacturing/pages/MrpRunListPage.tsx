@@ -51,17 +51,25 @@ export function MrpRunListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">MRP Runs</h1>
-        {canRun && (
-          <Link
-            to="/manufacturing/mrp/runs/new"
-            className="btn-ink"
-          >
-            Run MRP
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/manufacturing">Manufacturing</Link> /{" "}
+          <span className="text-ink">MRP Runs</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">MRP Runs</h1>
+          <div className="flex items-center gap-2.5">
+            {canRun && (
+              <Link
+                to="/manufacturing/mrp/runs/new"
+                className="btn-ink"
+              >
+                Run MRP
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
       <div className="mt-4">
         <select
@@ -84,6 +92,8 @@ export function MrpRunListPage() {
           onRowClick={(row) => void navigate({ to: "/manufacturing/mrp/runs/$runId", params: { runId: row.id } })}
           loading={runs.isPending}
           emptyMessage="No MRP runs yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={runs.hasNextPage}
           onLoadMore={() => void runs.fetchNextPage()}
           loadingMore={runs.isFetchingNextPage}

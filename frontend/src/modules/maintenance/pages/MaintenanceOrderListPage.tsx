@@ -55,19 +55,27 @@ export function MaintenanceOrderListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Maintenance orders</h1>
-        {canManage && (
-          <Link
-            to="/maintenance/orders/new"
-            className="btn-ink"
-          >
-            New corrective order
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/maintenance">Maintenance</Link> /{" "}
+          <span className="text-ink">Maintenance orders</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Maintenance orders</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/maintenance/orders/new"
+                className="btn-ink"
+              >
+                New corrective order
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4 flex gap-2">
+      <div className="flex gap-2">
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value as MaintenanceOrderStatus | "")}
@@ -99,6 +107,11 @@ export function MaintenanceOrderListPage() {
           onRowClick={(row) => void navigate({ to: "/maintenance/orders/$orderId", params: { orderId: row.id } })}
           loading={orders.isPending}
           emptyMessage="No maintenance orders. Create a corrective order, or run a preventive plan."
+          isFiltered={Boolean(status || orderType)}
+          onClearFilters={() => {
+            setStatus("");
+            setOrderType("");
+          }}
           hasMore={orders.hasNextPage}
           onLoadMore={() => void orders.fetchNextPage()}
           loadingMore={orders.isFetchingNextPage}

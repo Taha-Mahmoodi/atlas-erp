@@ -8,7 +8,7 @@
  * open quantity but still surfaces the 422 message if the operator raises it anyway.
  */
 
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -86,7 +86,17 @@ export function GoodsReceiptFormPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">New goods receipt</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/procurement/goods-receipts" className="hover:underline">
+            Goods Receipts
+          </Link>{" "}
+          / <span className="text-ink">New goods receipt</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">New goods receipt</h1>
+        </div>
+      </header>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
@@ -159,7 +169,7 @@ export function GoodsReceiptFormPage() {
       {purchaseOrderId && warehouseId && (
         <div className="mt-6">
           {order.isPending ? (
-            <p className="text-sm text-ink-muted">Loading purchase order lines…</p>
+            <p className="text-[13px] text-ink-muted">Loading purchase order lines…</p>
           ) : (
             <table className="w-full border-collapse text-[13px]">
               <thead>

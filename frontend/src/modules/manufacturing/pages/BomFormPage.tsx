@@ -8,7 +8,7 @@
  * per item at a time. Deactivating clears both status->INACTIVE and default->false.
  */
 
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -94,9 +94,9 @@ function BomComponentsSection({ bomId, isDraft }: { bomId: string; isDraft: bool
   };
 
   return (
-    <div className="mt-8 rounded-card border border-line bg-surface p-4 shadow-card">
-      <h2 className="text-sm font-semibold text-ink">Components</h2>
-      <p className="mt-1 text-xs text-ink-muted">
+    <div className="mt-8 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+      <h2 className="mono-caps mb-3.5 text-ink-muted">Components</h2>
+      <p className="text-[12px] text-ink-muted">
         Single-level only — a component's own BOM (if any) is resolved recursively at MRP explosion time.
       </p>
       {error && (
@@ -129,7 +129,7 @@ function BomComponentsSection({ bomId, isDraft }: { bomId: string; isDraft: bool
                   <button
                     type="button"
                     onClick={() => void remove(component.id)}
-                    className="text-xs font-medium text-danger hover:underline"
+                    className="text-[12.5px] font-medium text-danger hover:underline"
                   >
                     Remove
                   </button>
@@ -304,33 +304,39 @@ export function BomFormPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{isEdit ? "Edit BOM" : "New BOM"}</h1>
-        {isEdit && bom.data && (
-          <div className="flex gap-2">
-            {isDraft && (
-              <button
-                type="button"
-                onClick={() => void activate()}
-                disabled={activateBom.isPending}
-                className="btn-ink"
-              >
-                {activateBom.isPending ? "Activating…" : "Activate"}
-              </button>
-            )}
-            {isActive && (
-              <button
-                type="button"
-                onClick={() => void deactivate()}
-                disabled={deactivateBom.isPending}
-                className="btn-chip hover:border-danger hover:text-danger"
-              >
-                Deactivate
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/manufacturing/boms">Bills of Material</Link> /{" "}
+          <span className="text-ink">{isEdit ? "Edit BOM" : "New BOM"}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{isEdit ? "Edit BOM" : "New BOM"}</h1>
+          {isEdit && bom.data && (
+            <div className="flex items-center gap-2.5">
+              {isDraft && (
+                <button
+                  type="button"
+                  onClick={() => void activate()}
+                  disabled={activateBom.isPending}
+                  className="btn-ink"
+                >
+                  {activateBom.isPending ? "Activating…" : "Activate"}
+                </button>
+              )}
+              {isActive && (
+                <button
+                  type="button"
+                  onClick={() => void deactivate()}
+                  disabled={deactivateBom.isPending}
+                  className="btn-chip hover:border-danger hover:text-danger"
+                >
+                  Deactivate
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </header>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}

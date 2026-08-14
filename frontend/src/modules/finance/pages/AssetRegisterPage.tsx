@@ -4,6 +4,7 @@
  * (D-021 "Universal Journal is truth" pattern, same as the financial statements).
  */
 
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { formatMoney } from "@/lib/format";
@@ -19,9 +20,14 @@ export function AssetRegisterPage() {
 
   return (
     <div>
-      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Asset Register</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance">Finance</Link> / <span className="text-ink">Asset Register</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">Asset Register</h1>
+      </header>
 
-      <div className="mt-4">
+      <div>
         <input
           type="date"
           value={asOf}

@@ -82,37 +82,43 @@ export function MaintenancePlanListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Preventive plans</h1>
-        <div className="flex gap-2">
-          {canRun && (
-            <button
-              type="button"
-              onClick={() => void run()}
-              disabled={runPreventive.isPending}
-              className="btn-chip"
-            >
-              {runPreventive.isPending ? "Running…" : "Run preventive"}
-            </button>
-          )}
-          {canManage && (
-            <Link
-              to="/maintenance/plans/new"
-              className="btn-ink"
-            >
-              New plan
-            </Link>
-          )}
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/maintenance">Maintenance</Link> /{" "}
+          <span className="text-ink">Preventive plans</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Preventive plans</h1>
+          <div className="flex items-center gap-2.5">
+            {canRun && (
+              <button
+                type="button"
+                onClick={() => void run()}
+                disabled={runPreventive.isPending}
+                className="btn-chip"
+              >
+                {runPreventive.isPending ? "Running…" : "Run preventive"}
+              </button>
+            )}
+            {canManage && (
+              <Link
+                to="/maintenance/plans/new"
+                className="btn-ink"
+              >
+                New plan
+              </Link>
+            )}
+          </div>
         </div>
-      </div>
+      </header>
 
       {error && (
-        <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
+        <p role="alert" className="mb-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
         </p>
       )}
       {runResult && (
-        <p className="mt-4 rounded-control bg-success-tint px-3 py-2 text-xs text-success">
+        <p className="mb-4 rounded-control bg-success-tint px-3 py-2 text-xs text-success">
           {runResult.plans_due === 0
             ? `No plans were due as of ${formatDate(runResult.as_of_date)}.`
             : `${runResult.plans_due} plan${runResult.plans_due === 1 ? "" : "s"} due — ${runResult.orders_generated.length} preventive order${runResult.orders_generated.length === 1 ? "" : "s"} generated. `}
@@ -124,7 +130,7 @@ export function MaintenancePlanListPage() {
         </p>
       )}
 
-      <div className="mt-4">
+      <div>
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value as MaintenancePlanStatus | "")}
@@ -144,6 +150,8 @@ export function MaintenancePlanListPage() {
           onRowClick={(row) => void navigate({ to: "/maintenance/plans/$planId", params: { planId: row.id } })}
           loading={plans.isPending}
           emptyMessage="No preventive plans yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={plans.hasNextPage}
           onLoadMore={() => void plans.fetchNextPage()}
           loadingMore={plans.isFetchingNextPage}

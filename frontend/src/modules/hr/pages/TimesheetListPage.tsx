@@ -45,19 +45,26 @@ export function TimesheetListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Timesheets</h1>
-        {canManage && (
-          <Link
-            to="/hr/timesheets/new"
-            className="btn-ink"
-          >
-            New timesheet
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/hr">HR</Link> / <span className="text-ink">Timesheets</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Timesheets</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/hr/timesheets/new"
+                className="btn-ink"
+              >
+                New timesheet
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4">
+      <div>
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value as TimesheetStatus | "")}
@@ -79,6 +86,8 @@ export function TimesheetListPage() {
           onRowClick={(row) => void navigate({ to: "/hr/timesheets/$timesheetId", params: { timesheetId: row.id } })}
           loading={timesheets.isPending}
           emptyMessage="No timesheets yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={timesheets.hasNextPage}
           onLoadMore={() => void timesheets.fetchNextPage()}
           loadingMore={timesheets.isFetchingNextPage}

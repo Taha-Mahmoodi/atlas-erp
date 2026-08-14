@@ -5,7 +5,7 @@
  * warehouses (MAKE converts then ask for a warehouse at convert time).
  */
 
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -55,11 +55,17 @@ export function MrpRunFormPage() {
 
   return (
     <div className="mx-auto max-w-xl">
-      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Run MRP</h1>
-      <p className="mt-1 text-sm text-ink-muted">
-        Explodes sales demand and reorder points against supply into planned MAKE/BUY orders, plus a
-        rough capacity check per work center.
-      </p>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/manufacturing/mrp/runs">MRP Runs</Link> /{" "}
+          <span className="text-ink">Run MRP</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">Run MRP</h1>
+        <p className="mt-1 text-[13px] text-ink-muted">
+          Explodes sales demand and reorder points against supply into planned MAKE/BUY orders, plus a
+          rough capacity check per work center.
+        </p>
+      </header>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}

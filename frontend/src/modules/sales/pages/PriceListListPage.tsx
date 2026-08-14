@@ -34,17 +34,24 @@ export function PriceListListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Price Lists</h1>
-        {canManage && (
-          <Link
-            to="/sales/price-lists/new"
-            className="btn-ink"
-          >
-            New price list
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/sales">Sales</Link> / <span className="text-ink">Price Lists</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Price Lists</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/sales/price-lists/new"
+                className="btn-ink"
+              >
+                New price list
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
       <div className="mt-4">
         <select
@@ -66,6 +73,8 @@ export function PriceListListPage() {
           onRowClick={(row) => void navigate({ to: "/sales/price-lists/$priceListId", params: { priceListId: row.id } })}
           loading={priceLists.isPending}
           emptyMessage="No price lists yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={priceLists.hasNextPage}
           onLoadMore={() => void priceLists.fetchNextPage()}
           loadingMore={priceLists.isFetchingNextPage}

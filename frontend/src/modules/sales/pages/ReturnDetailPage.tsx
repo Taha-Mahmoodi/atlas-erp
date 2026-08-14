@@ -7,12 +7,13 @@
  * separate model). POSTED is terminal; CANCELLED only from DRAFT.
  */
 
-import { useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
 import { formatMoney, formatQuantity } from "@/lib/format";
 import { useMe } from "@/lib/session";
+import { StatusPill } from "@/components/StatusPill";
 import { useBinLookup, useItemLookup, useWarehouseLookup } from "@/modules/inventory/hooks";
 import { useCancelReturn, useCustomerOptions, usePostReturn, useReturn } from "@/modules/sales/hooks";
 
@@ -33,7 +34,7 @@ export function ReturnDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   if (returned.isPending || !returned.data) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-[13px] text-ink-muted">Loading…</p>;
   }
   const data = returned.data;
   const isDraft = data.status === "DRAFT";
@@ -75,54 +76,61 @@ export function ReturnDetailPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.return_number}</h1>
-        <div className="flex gap-2">
-          {isDraft && canManage && (
-            <button
-              type="button"
-              onClick={() => void cancel()}
-              disabled={cancelReturn.isPending}
-              className="btn-chip hover:border-danger hover:text-danger"
-            >
-              Cancel
-            </button>
-          )}
-          {isDraft && canPost && (
-            <button
-              type="button"
-              onClick={() => void post()}
-              disabled={postReturn.isPending}
-              className="btn-ink"
-            >
-              {postReturn.isPending ? "Posting…" : "Post"}
-            </button>
-          )}
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/sales/returns">Returns</Link> / <span className="text-ink">{data.return_number}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.return_number}</h1>
+          <div className="flex items-center gap-2.5">
+            {isDraft && canManage && (
+              <button
+                type="button"
+                onClick={() => void cancel()}
+                disabled={cancelReturn.isPending}
+                className="btn-chip hover:border-danger hover:text-danger"
+              >
+                Cancel
+              </button>
+            )}
+            {isDraft && canPost && (
+              <button
+                type="button"
+                onClick={() => void post()}
+                disabled={postReturn.isPending}
+                className="btn-ink"
+              >
+                {postReturn.isPending ? "Posting…" : "Post"}
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      </header>
 
       {error && (
-        <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
+        <p role="alert" className="mb-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
         </p>
       )}
 
-      <dl className="mt-6 grid grid-cols-4 gap-4 text-sm">
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-ink-muted">Status</dt>
-          <dd className="text-ink">{data.status}</dd>
+          <dt className="mono-caps text-ink-muted">Status</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
+            <StatusPill status={data.status} />
+          </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Customer</dt>
-          <dd className="text-ink">{customerLabel(data.customer_id)}</dd>
+          <dt className="mono-caps text-ink-muted">Customer</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{customerLabel(data.customer_id)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Warehouse</dt>
-          <dd className="text-ink">{warehouseLabel(data.warehouse_id)}</dd>
+          <dt className="mono-caps text-ink-muted">Warehouse</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{warehouseLabel(data.warehouse_id)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Reason</dt>
-          <dd className="text-ink">{data.reason ?? "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Reason</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.reason ?? "—"}</dd>
         </div>
       </dl>
 

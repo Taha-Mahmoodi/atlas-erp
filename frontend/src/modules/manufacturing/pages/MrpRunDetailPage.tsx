@@ -5,7 +5,7 @@
  * procurement requisition; a MAKE convert on an unscoped run needs a warehouse picked here.
  */
 
-import { useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -51,7 +51,7 @@ export function MrpRunDetailPage() {
   const cancelOrder = useCancelPlannedOrder(runId ?? "");
 
   if (run.isPending || !run.data) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-[13px] text-ink-muted">Loading…</p>;
   }
   const data = run.data;
   const rows = plannedOrders.data?.pages.flatMap((page) => page.items) ?? [];
@@ -111,7 +111,7 @@ export function MrpRunDetailPage() {
                       type="button"
                       onClick={() => void act(() => firmOrder.mutateAsync(row.id), "Unable to firm the planned order.")}
                       disabled={actionsBusy}
-                      className="text-xs font-medium text-primary hover:underline disabled:opacity-45"
+                      className="text-[12.5px] font-medium text-primary hover:underline disabled:opacity-45"
                     >
                       Firm
                     </button>
@@ -129,7 +129,7 @@ export function MrpRunDetailPage() {
                       )
                     }
                     disabled={actionsBusy}
-                    className="text-xs font-medium text-primary hover:underline disabled:opacity-45"
+                    className="text-[12.5px] font-medium text-primary hover:underline disabled:opacity-45"
                   >
                     Convert
                   </button>
@@ -139,7 +139,7 @@ export function MrpRunDetailPage() {
                       void act(() => cancelOrder.mutateAsync(row.id), "Unable to cancel the planned order.")
                     }
                     disabled={actionsBusy}
-                    className="text-xs font-medium text-danger hover:underline disabled:opacity-45"
+                    className="text-[12.5px] font-medium text-danger hover:underline disabled:opacity-45"
                   >
                     Cancel
                   </button>
@@ -153,10 +153,16 @@ export function MrpRunDetailPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="flex items-center gap-3">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.run_number}</h1>
-        <StatusPill status={data.status} />
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/manufacturing/mrp/runs">MRP Runs</Link> /{" "}
+          <span className="text-ink">{data.run_number}</span>
+        </p>
+        <div className="mt-1.5 flex items-center gap-3">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.run_number}</h1>
+          <StatusPill status={data.status} />
+        </div>
+      </header>
 
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
@@ -164,28 +170,28 @@ export function MrpRunDetailPage() {
         </p>
       )}
 
-      <dl className="mt-6 grid grid-cols-4 gap-4 text-sm">
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-ink-muted">Run date</dt>
-          <dd className="text-ink">{data.run_date}</dd>
+          <dt className="mono-caps text-ink-muted">Run date</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.run_date}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Horizon</dt>
-          <dd className="text-ink">{data.horizon_days} days</dd>
+          <dt className="mono-caps text-ink-muted">Horizon</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.horizon_days} days</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Planned MAKE</dt>
-          <dd className="text-ink tabular-nums">{data.planned_make_count}</dd>
+          <dt className="mono-caps text-ink-muted">Planned MAKE</dt>
+          <dd className="mt-1.5 text-[13px] text-ink tabular-nums">{data.planned_make_count}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Planned BUY</dt>
-          <dd className="text-ink tabular-nums">{data.planned_buy_count}</dd>
+          <dt className="mono-caps text-ink-muted">Planned BUY</dt>
+          <dd className="mt-1.5 text-[13px] text-ink tabular-nums">{data.planned_buy_count}</dd>
         </div>
       </dl>
 
       {data.capacity_loads.length > 0 && (
-        <div className="mt-8 rounded-card border border-line bg-surface p-4 shadow-card">
-          <h2 className="text-sm font-semibold text-ink">Rough capacity check</h2>
+        <div className="mt-8 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+          <h2 className="mono-caps mb-3.5 text-ink-muted">Rough capacity check</h2>
           <table className="mt-2 w-full border-collapse text-[13px]">
             <thead>
               <tr className="border-b border-line text-left mono-caps text-ink-muted">
@@ -212,7 +218,7 @@ export function MrpRunDetailPage() {
       )}
 
       <div className="mt-8 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-ink">Planned orders</h2>
+        <h2 className="mono-caps text-ink-muted">Planned orders</h2>
         <div className="flex gap-2">
           {canManagePlanned && needsConvertWarehouse && (
             <select
@@ -259,6 +265,11 @@ export function MrpRunDetailPage() {
           rowKey={(row) => row.id}
           loading={plannedOrders.isPending}
           emptyMessage="No planned orders in this run."
+          isFiltered={Boolean(orderType || status)}
+          onClearFilters={() => {
+            setOrderType("");
+            setStatus("");
+          }}
           hasMore={plannedOrders.hasNextPage}
           onLoadMore={() => void plannedOrders.fetchNextPage()}
           loadingMore={plannedOrders.isFetchingNextPage}

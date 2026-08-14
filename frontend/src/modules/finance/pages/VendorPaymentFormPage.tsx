@@ -74,8 +74,14 @@ export function VendorPaymentFormPage() {
   if (posted) {
     return (
       <div className="mx-auto max-w-2xl">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Payment posted</h1>
-        <div className="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
+        <header className="mb-6">
+          <p className="text-[12px] text-ink-muted">
+            <Link to="/finance/vendor-payments">Vendor Payments</Link> /{" "}
+            <span className="text-ink">Payment posted</span>
+          </p>
+          <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">Payment posted</h1>
+        </header>
+        <div className="rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
           <p className="text-sm text-ink">
             <span className="font-medium">{posted.payment_number}</span> for{" "}
             {formatMoney(posted.amount, posted.currency_code)} to {posted.partner_name}
@@ -115,7 +121,13 @@ export function VendorPaymentFormPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">New vendor payment</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance/vendor-payments">Vendor Payments</Link> /{" "}
+          <span className="text-ink">New vendor payment</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">New vendor payment</h1>
+      </header>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
@@ -207,9 +219,9 @@ export function VendorPaymentFormPage() {
             Open bills
           </h2>
           {openBills.isPending ? (
-            <p className="mt-2 text-sm text-ink-muted">Loading…</p>
+            <p className="mt-2 text-[13px] text-ink-muted">Loading…</p>
           ) : (openBills.data ?? []).length === 0 ? (
-            <p className="mt-2 text-sm text-ink-muted">This vendor has no open bills.</p>
+            <p className="mt-2 text-[13px] text-ink-muted">This vendor has no open bills.</p>
           ) : (
             <table className="mt-2 w-full border-collapse text-[13px]">
               <thead>

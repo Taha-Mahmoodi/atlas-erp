@@ -42,19 +42,29 @@ export function LeadListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Leads</h1>
-        {canManage && (
-          <Link
-            to="/crm/leads/new"
-            className="btn-ink"
-          >
-            New lead
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/crm" className="hover:underline">
+            CRM
+          </Link>{" "}
+          / <span className="text-ink">Leads</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Leads</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/crm/leads/new"
+                className="btn-ink"
+              >
+                New lead
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4">
+      <div>
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value as LeadStatus | "")}
@@ -77,6 +87,8 @@ export function LeadListPage() {
           onRowClick={(row) => void navigate({ to: "/crm/leads/$leadId", params: { leadId: row.id } })}
           loading={leads.isPending}
           emptyMessage="No leads yet — capture the first one."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={leads.hasNextPage}
           onLoadMore={() => void leads.fetchNextPage()}
           loadingMore={leads.isFetchingNextPage}

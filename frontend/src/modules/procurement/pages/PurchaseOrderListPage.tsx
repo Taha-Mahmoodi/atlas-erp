@@ -43,19 +43,29 @@ export function PurchaseOrderListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Purchase Orders</h1>
-        {canManage && (
-          <Link
-            to="/procurement/purchase-orders/new"
-            className="btn-ink"
-          >
-            New purchase order
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/procurement" className="hover:underline">
+            Procurement
+          </Link>{" "}
+          / <span className="text-ink">Purchase Orders</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Purchase Orders</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/procurement/purchase-orders/new"
+                className="btn-ink"
+              >
+                New purchase order
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4">
+      <div>
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value as PurchaseOrderStatus | "")}
@@ -82,6 +92,8 @@ export function PurchaseOrderListPage() {
           onRowClick={(row) => void navigate({ to: "/procurement/purchase-orders/$purchaseOrderId", params: { purchaseOrderId: row.id } })}
           loading={orders.isPending}
           emptyMessage="No purchase orders yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={orders.hasNextPage}
           onLoadMore={() => void orders.fetchNextPage()}
           loadingMore={orders.isFetchingNextPage}

@@ -42,32 +42,37 @@ export function LeaveTypeListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Leave Types</h1>
-        {canManage && (
-          <Link
-            to="/hr/leave-types/new"
-            className="btn-ink"
-          >
-            New leave type
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/hr">HR</Link> / <span className="text-ink">Leave types</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Leave Types</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/hr/leave-types/new"
+                className="btn-ink"
+              >
+                New leave type
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4">
-        <DataGrid
-          columns={COLUMNS}
-          rows={rows}
-          rowKey={(row) => row.id}
-          onRowClick={(row) => void navigate({ to: "/hr/leave-types/$leaveTypeId", params: { leaveTypeId: row.id } })}
-          loading={leaveTypes.isPending}
-          emptyMessage="No leave types yet."
-          hasMore={leaveTypes.hasNextPage}
-          onLoadMore={() => void leaveTypes.fetchNextPage()}
-          loadingMore={leaveTypes.isFetchingNextPage}
-          label="Leave types"
-        />
-      </div>
+      <DataGrid
+        columns={COLUMNS}
+        rows={rows}
+        rowKey={(row) => row.id}
+        onRowClick={(row) => void navigate({ to: "/hr/leave-types/$leaveTypeId", params: { leaveTypeId: row.id } })}
+        loading={leaveTypes.isPending}
+        emptyMessage="No leave types yet."
+        hasMore={leaveTypes.hasNextPage}
+        onLoadMore={() => void leaveTypes.fetchNextPage()}
+        loadingMore={leaveTypes.isFetchingNextPage}
+        label="Leave types"
+      />
     </div>
   );
 }

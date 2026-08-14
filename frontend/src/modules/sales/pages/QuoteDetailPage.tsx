@@ -11,6 +11,7 @@ import { useState } from "react";
 import { getErrorMessage } from "@/lib/apiClient";
 import { formatMoney, formatQuantity } from "@/lib/format";
 import { useMe } from "@/lib/session";
+import { StatusPill } from "@/components/StatusPill";
 import { useItemLookup, useUomOptions } from "@/modules/inventory/hooks";
 import {
   useAcceptQuote,
@@ -42,7 +43,7 @@ export function QuoteDetailPage() {
   const [convertedOrderId, setConvertedOrderId] = useState<string | null>(null);
 
   if (quote.isPending || !quote.data) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-[13px] text-ink-muted">Loading…</p>;
   }
   const data = quote.data;
   const canEdit = data.status === "DRAFT";
@@ -113,78 +114,83 @@ export function QuoteDetailPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.quote_number}</h1>
-        <div className="flex gap-2">
-          {canEdit && canManage && (
-            <Link
-              to="/sales/quotes/$quoteId/edit"
-              params={{ quoteId: data.id }}
-              className="btn-chip"
-            >
-              Edit
-            </Link>
-          )}
-          {canCancel && canManage && (
-            <button
-              type="button"
-              onClick={() => void cancel()}
-              disabled={cancelQuote.isPending}
-              className="btn-chip hover:border-danger hover:text-danger"
-            >
-              Cancel
-            </button>
-          )}
-          {canReject && canManage && (
-            <button
-              type="button"
-              onClick={() => void reject()}
-              disabled={rejectQuote.isPending}
-              className="btn-chip hover:border-danger hover:text-danger"
-            >
-              Reject
-            </button>
-          )}
-          {canAccept && canManage && (
-            <button
-              type="button"
-              onClick={() => void accept()}
-              disabled={acceptQuote.isPending}
-              className="btn-chip"
-            >
-              {acceptQuote.isPending ? "Accepting…" : "Accept"}
-            </button>
-          )}
-          {canSend && canManage && (
-            <button
-              type="button"
-              onClick={() => void send()}
-              disabled={sendQuote.isPending}
-              className="btn-ink"
-            >
-              {sendQuote.isPending ? "Sending…" : "Send"}
-            </button>
-          )}
-          {canConvert && canCreateOrder && (
-            <button
-              type="button"
-              onClick={() => void convert()}
-              disabled={convertToOrder.isPending}
-              className="btn-ink"
-            >
-              {convertToOrder.isPending ? "Converting…" : "Convert to order"}
-            </button>
-          )}
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/sales/quotes">Quotes</Link> / <span className="text-ink">{data.quote_number}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.quote_number}</h1>
+          <div className="flex items-center gap-2.5">
+            {canEdit && canManage && (
+              <Link
+                to="/sales/quotes/$quoteId/edit"
+                params={{ quoteId: data.id }}
+                className="btn-chip"
+              >
+                Edit
+              </Link>
+            )}
+            {canCancel && canManage && (
+              <button
+                type="button"
+                onClick={() => void cancel()}
+                disabled={cancelQuote.isPending}
+                className="btn-chip hover:border-danger hover:text-danger"
+              >
+                Cancel
+              </button>
+            )}
+            {canReject && canManage && (
+              <button
+                type="button"
+                onClick={() => void reject()}
+                disabled={rejectQuote.isPending}
+                className="btn-chip hover:border-danger hover:text-danger"
+              >
+                Reject
+              </button>
+            )}
+            {canAccept && canManage && (
+              <button
+                type="button"
+                onClick={() => void accept()}
+                disabled={acceptQuote.isPending}
+                className="btn-chip"
+              >
+                {acceptQuote.isPending ? "Accepting…" : "Accept"}
+              </button>
+            )}
+            {canSend && canManage && (
+              <button
+                type="button"
+                onClick={() => void send()}
+                disabled={sendQuote.isPending}
+                className="btn-ink"
+              >
+                {sendQuote.isPending ? "Sending…" : "Send"}
+              </button>
+            )}
+            {canConvert && canCreateOrder && (
+              <button
+                type="button"
+                onClick={() => void convert()}
+                disabled={convertToOrder.isPending}
+                className="btn-ink"
+              >
+                {convertToOrder.isPending ? "Converting…" : "Convert to order"}
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      </header>
 
       {error && (
-        <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
+        <p role="alert" className="mb-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
         </p>
       )}
       {convertedOrderId && (
-        <p className="mt-4 rounded-control bg-success-tint px-3 py-2 text-xs text-success">
+        <p className="mb-4 rounded-control bg-success-tint px-3 py-2 text-xs text-success">
           Sales order created —{" "}
           <Link to="/sales/orders/$orderId" params={{ orderId: convertedOrderId }} className="underline">
             view it
@@ -193,22 +199,24 @@ export function QuoteDetailPage() {
         </p>
       )}
 
-      <dl className="mt-6 grid grid-cols-4 gap-4 text-sm">
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-ink-muted">Status</dt>
-          <dd className="text-ink">{data.status}</dd>
+          <dt className="mono-caps text-ink-muted">Status</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
+            <StatusPill status={data.status} />
+          </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Customer</dt>
-          <dd className="text-ink">{customerLabel(data.customer_id)}</dd>
+          <dt className="mono-caps text-ink-muted">Customer</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{customerLabel(data.customer_id)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Valid until</dt>
-          <dd className="text-ink">{data.valid_until ?? "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Valid until</dt>
+          <dd className="mt-1.5 text-[13px] text-ink tabular-nums">{data.valid_until ?? "—"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Total</dt>
-          <dd className="text-ink">{formatMoney(data.total_amount, data.currency_code)}</dd>
+          <dt className="mono-caps text-ink-muted">Total</dt>
+          <dd className="mt-1.5 text-[13px] text-ink tabular-nums">{formatMoney(data.total_amount, data.currency_code)}</dd>
         </div>
       </dl>
 

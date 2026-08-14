@@ -4,9 +4,10 @@
  * register report is the authoritative aggregate NBV view, not this list.
  */
 
-import { useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 
 import { formatDate, formatMoney } from "@/lib/format";
+import { StatusPill } from "@/components/StatusPill";
 import {
   useAssets,
   useDepreciationEntries,
@@ -23,7 +24,7 @@ export function DepreciationRunDetailPage() {
   const currencyCode = currency.data ?? "—";
 
   if (run.isPending || !run.data) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-[13px] text-ink-muted">Loading…</p>;
   }
   const data = run.data;
   const assetLabel = (assetId: string) => {
@@ -33,24 +34,34 @@ export function DepreciationRunDetailPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.run_number ?? "Depreciation run"}</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance/depreciation-runs">Depreciation Runs</Link> /{" "}
+          <span className="text-ink">{data.run_number ?? "Depreciation run"}</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">
+          {data.run_number ?? "Depreciation run"}
+        </h1>
+      </header>
 
-      <dl className="mt-6 grid grid-cols-3 gap-4 text-sm">
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-ink-muted">Run date</dt>
-          <dd className="text-ink">{formatDate(data.run_date)}</dd>
+          <dt className="mono-caps text-ink-muted">Run date</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{formatDate(data.run_date)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Status</dt>
-          <dd className="text-ink">{data.status}</dd>
+          <dt className="mono-caps text-ink-muted">Status</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
+            <StatusPill status={data.status} />
+          </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Assets</dt>
-          <dd className="text-ink">{data.asset_count}</dd>
+          <dt className="mono-caps text-ink-muted">Assets</dt>
+          <dd className="mt-1.5 text-[13px] tabular-nums text-ink">{data.asset_count}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Total amount</dt>
-          <dd className="tabular-nums text-ink">{formatMoney(data.total_amount, currencyCode)}</dd>
+          <dt className="mono-caps text-ink-muted">Total amount</dt>
+          <dd className="mt-1.5 text-[13px] tabular-nums text-ink">{formatMoney(data.total_amount, currencyCode)}</dd>
         </div>
       </dl>
 

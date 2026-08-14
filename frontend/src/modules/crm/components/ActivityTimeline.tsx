@@ -66,7 +66,7 @@ export function ActivityTimeline({
 
   return (
     <section aria-label="Activities">
-      <h2 className="text-sm font-semibold text-ink">Activities</h2>
+      <h2 className="mb-3.5 mono-caps text-ink-muted">Activities</h2>
       {error && (
         <p role="alert" className="mt-3 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
@@ -152,7 +152,7 @@ export function ActivityTimeline({
                   type="button"
                   onClick={() => void act(complete, activity, "Unable to complete the activity.")}
                   disabled={complete.isPending}
-                  className="rounded-control px-2 py-0.5 text-xs font-medium text-primary transition-colors duration-150 hover:bg-primary-tint disabled:opacity-45"
+                  className="rounded-control px-2 py-0.5 text-[12.5px] font-medium text-primary transition-colors duration-150 hover:bg-primary-tint disabled:opacity-45"
                 >
                   Complete
                 </button>
@@ -160,7 +160,7 @@ export function ActivityTimeline({
                   type="button"
                   onClick={() => void act(cancel, activity, "Unable to cancel the activity.")}
                   disabled={cancel.isPending}
-                  className="rounded-control px-2 py-0.5 text-xs font-medium text-ink-muted transition-colors duration-150 hover:bg-panel hover:text-danger disabled:opacity-45"
+                  className="rounded-control px-2 py-0.5 text-[12.5px] font-medium text-ink-muted transition-colors duration-150 hover:bg-panel hover:text-danger disabled:opacity-45"
                 >
                   Cancel
                 </button>

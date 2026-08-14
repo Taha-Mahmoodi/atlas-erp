@@ -4,6 +4,8 @@
  * this page is a pure viewer.
  */
 
+import { Link } from "@tanstack/react-router";
+
 import { getErrorMessage } from "@/lib/apiClient";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
 import { useNumberSequences } from "@/modules/admin/hooks";
@@ -28,12 +30,20 @@ export function NumberSequenceListPage() {
 
   return (
     <div>
-      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Number Sequences</h1>
-      <p className="mt-1 text-sm text-ink-muted">
-        Read-only: sequences are created by document posting and the industry template; counters are never
-        edited so document numbering stays gapless.
-      </p>
-      <div className="mt-4">
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/admin" className="hover:text-ink">
+            Admin
+          </Link>{" "}
+          / <span className="text-ink">Number Sequences</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">Number Sequences</h1>
+        <p className="mt-1 text-[13px] text-ink-muted">
+          Read-only: sequences are created by document posting and the industry template; counters are never
+          edited so document numbering stays gapless.
+        </p>
+      </header>
+      <div>
         {sequences.isError ? (
           <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-sm text-danger">
             {getErrorMessage(sequences.error, "Unable to load number sequences.")}

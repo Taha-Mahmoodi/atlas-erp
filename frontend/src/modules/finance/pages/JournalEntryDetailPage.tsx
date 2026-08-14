@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/apiClient";
 import { formatDate, formatMoney } from "@/lib/format";
 import { useMe } from "@/lib/session";
+import { StatusPill } from "@/components/StatusPill";
 import {
   useAccountLookup,
   useJournalEntry,
@@ -48,7 +49,7 @@ export function JournalEntryDetailPage() {
   }, [entryId]);
 
   if (entry.isPending || !entry.data) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-[13px] text-ink-muted">Loading…</p>;
   }
   const data = entry.data;
   const permissions = me.data?.permissions ?? [];
@@ -81,32 +82,38 @@ export function JournalEntryDetailPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.entry_number ?? "Draft entry"}</h1>
-        <div className="flex gap-2">
-          {data.status === "DRAFT" && permissions.includes("finance.journal.post") && (
-            <button
-              type="button"
-              onClick={() => void post()}
-              disabled={postEntry.isPending}
-              className="btn-ink"
-            >
-              {postEntry.isPending ? "Posting…" : "Post entry"}
-            </button>
-          )}
-          {data.status === "POSTED" &&
-            permissions.includes("finance.journal.reverse") &&
-            !data.reversed_by_entry_id && (
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance/journal-entries">Journal Entries</Link> /{" "}
+          <span className="text-ink">{data.entry_number ?? "Draft entry"}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.entry_number ?? "Draft entry"}</h1>
+          <div className="flex items-center gap-2.5">
+            {data.status === "DRAFT" && permissions.includes("finance.journal.post") && (
               <button
                 type="button"
-                onClick={() => setReversing((prev) => !prev)}
-                className="btn-chip"
+                onClick={() => void post()}
+                disabled={postEntry.isPending}
+                className="btn-ink"
               >
-                Reverse
+                {postEntry.isPending ? "Posting…" : "Post entry"}
               </button>
             )}
+            {data.status === "POSTED" &&
+              permissions.includes("finance.journal.reverse") &&
+              !data.reversed_by_entry_id && (
+                <button
+                  type="button"
+                  onClick={() => setReversing((prev) => !prev)}
+                  className="btn-chip"
+                >
+                  Reverse
+                </button>
+              )}
+          </div>
         </div>
-      </div>
+      </header>
 
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
@@ -153,27 +160,29 @@ export function JournalEntryDetailPage() {
         </div>
       )}
 
-      <dl className="mt-6 grid grid-cols-3 gap-4 text-sm">
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-ink-muted">Posting date</dt>
-          <dd className="text-ink">{formatDate(data.posting_date)}</dd>
+          <dt className="mono-caps text-ink-muted">Posting date</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{formatDate(data.posting_date)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Status</dt>
-          <dd className="text-ink">{data.status}</dd>
+          <dt className="mono-caps text-ink-muted">Status</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
+            <StatusPill status={data.status} />
+          </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Type</dt>
-          <dd className="text-ink">{data.document_type}</dd>
+          <dt className="mono-caps text-ink-muted">Type</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.document_type}</dd>
         </div>
-        <div className="col-span-3">
-          <dt className="text-xs text-ink-muted">Description</dt>
-          <dd className="text-ink">{data.description ?? "—"}</dd>
+        <div className="col-span-2 sm:col-span-4">
+          <dt className="mono-caps text-ink-muted">Description</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.description ?? "—"}</dd>
         </div>
         {data.reverses_entry_id && (
           <div>
-            <dt className="text-xs text-ink-muted">Reverses</dt>
-            <dd>
+            <dt className="mono-caps text-ink-muted">Reverses</dt>
+            <dd className="mt-1.5 text-[13px]">
               <Link
                 to="/finance/journal-entries/$entryId"
                 params={{ entryId: data.reverses_entry_id }}
@@ -186,8 +195,8 @@ export function JournalEntryDetailPage() {
         )}
         {data.reversed_by_entry_id && (
           <div>
-            <dt className="text-xs text-ink-muted">Reversed by</dt>
-            <dd>
+            <dt className="mono-caps text-ink-muted">Reversed by</dt>
+            <dd className="mt-1.5 text-[13px]">
               <Link
                 to="/finance/journal-entries/$entryId"
                 params={{ entryId: data.reversed_by_entry_id }}

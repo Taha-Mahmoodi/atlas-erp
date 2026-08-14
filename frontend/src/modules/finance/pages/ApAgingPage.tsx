@@ -3,6 +3,7 @@
  * rolled-up totals row. A pure projection — no create/edit actions on this page.
  */
 
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { formatMoney } from "@/lib/format";
@@ -23,9 +24,14 @@ export function ApAgingPage() {
 
   return (
     <div>
-      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">AP Aging</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance">Finance</Link> / <span className="text-ink">AP Aging</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">AP Aging</h1>
+      </header>
 
-      <div className="mt-4 flex items-center gap-4">
+      <div className="flex items-center gap-4">
         <input
           type="date"
           value={asOf}

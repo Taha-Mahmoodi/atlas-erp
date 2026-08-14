@@ -32,19 +32,26 @@ export function EquipmentListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Equipment</h1>
-        {canManage && (
-          <Link
-            to="/maintenance/equipment/new"
-            className="btn-ink"
-          >
-            New equipment
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/maintenance">Maintenance</Link> / <span className="text-ink">Equipment</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Equipment</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/maintenance/equipment/new"
+                className="btn-ink"
+              >
+                New equipment
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4">
+      <div>
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value as EquipmentStatus | "")}
@@ -65,6 +72,8 @@ export function EquipmentListPage() {
           onRowClick={(row) => void navigate({ to: "/maintenance/equipment/$equipmentId", params: { equipmentId: row.id } })}
           loading={equipment.isPending}
           emptyMessage="No equipment yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={equipment.hasNextPage}
           onLoadMore={() => void equipment.fetchNextPage()}
           loadingMore={equipment.isFetchingNextPage}

@@ -77,17 +77,27 @@ export function OpportunityBoardPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Pipeline</h1>
-        {canManage && (
-          <Link
-            to="/crm/opportunities/new"
-            className="btn-ink"
-          >
-            New opportunity
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/crm" className="hover:underline">
+            CRM
+          </Link>{" "}
+          / <span className="text-ink">Pipeline</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Pipeline</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/crm/opportunities/new"
+                className="btn-ink"
+              >
+                New opportunity
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
@@ -97,7 +107,7 @@ export function OpportunityBoardPage() {
 
       <div className="mt-6">
         {board.isPending ? (
-          <p className="text-sm text-ink-muted">Loading…</p>
+          <p className="text-[13px] text-ink-muted">Loading…</p>
         ) : (
           <Kanban
             columns={columns}

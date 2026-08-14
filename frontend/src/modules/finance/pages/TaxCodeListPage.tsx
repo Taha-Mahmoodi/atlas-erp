@@ -42,19 +42,26 @@ export function TaxCodeListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Tax Codes</h1>
-        {canManage && (
-          <Link
-            to="/finance/tax-codes/new"
-            className="btn-ink"
-          >
-            New tax code
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance">Finance</Link> / <span className="text-ink">Tax Codes</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Tax Codes</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/finance/tax-codes/new"
+                className="btn-ink"
+              >
+                New tax code
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4">
+      <div>
         {taxCodes.isError ? (
           <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-sm text-danger">
             {getErrorMessage(taxCodes.error, "Unable to load tax codes.")}

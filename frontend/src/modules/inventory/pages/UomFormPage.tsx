@@ -3,7 +3,7 @@
  * create via `/inventory/uoms/new`. `code` is immutable after creation.
  */
 
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -57,7 +57,15 @@ export function UomFormPage() {
 
   return (
     <div className="mx-auto max-w-md">
-      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{isEdit ? "Edit unit of measure" : "New unit of measure"}</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/inventory/uoms">Units of Measure</Link> /{" "}
+          <span className="text-ink">{isEdit ? "Edit unit of measure" : "New unit of measure"}</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">
+          {isEdit ? "Edit unit of measure" : "New unit of measure"}
+        </h1>
+      </header>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}

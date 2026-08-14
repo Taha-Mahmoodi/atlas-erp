@@ -5,7 +5,7 @@
  * ones return a job to poll (202, PERFORMANCE §3) — this page handles both response shapes.
  */
 
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { ApiError } from "@/lib/apiClient";
@@ -74,7 +74,13 @@ export function BankStatementImportPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Import bank statement</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance/bank-statements">Bank Statements</Link> /{" "}
+          <span className="text-ink">Import bank statement</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">Import bank statement</h1>
+      </header>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}

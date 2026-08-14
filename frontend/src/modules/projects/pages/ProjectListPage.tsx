@@ -42,17 +42,24 @@ export function ProjectListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Projects</h1>
-        {canManage && (
-          <Link
-            to="/projects/new"
-            className="btn-ink"
-          >
-            New project
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/projects">Projects</Link> / <span className="text-ink">All projects</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Projects</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/projects/new"
+                className="btn-ink"
+              >
+                New project
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
       <div className="mt-4">
         <select
@@ -75,7 +82,9 @@ export function ProjectListPage() {
           rowKey={(row) => row.id}
           onRowClick={(row) => void navigate({ to: "/projects/$projectId", params: { projectId: row.id } })}
           loading={projects.isPending}
-          emptyMessage={status ? "No projects match this filter." : "No projects yet."}
+          emptyMessage="No projects yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={projects.hasNextPage}
           onLoadMore={() => void projects.fetchNextPage()}
           loadingMore={projects.isFetchingNextPage}

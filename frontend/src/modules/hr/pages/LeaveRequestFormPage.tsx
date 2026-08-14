@@ -5,7 +5,7 @@
  * (0.5 = a half day) — business-day computation from the dates is documented later (D-053).
  */
 
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -125,7 +125,15 @@ export function LeaveRequestFormPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{isEdit ? "Edit leave request" : "New leave request"}</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/hr/leave-requests">Leave requests</Link> /{" "}
+          <span className="text-ink">{isEdit ? "Edit leave request" : "New leave request"}</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">
+          {isEdit ? "Edit leave request" : "New leave request"}
+        </h1>
+      </header>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}

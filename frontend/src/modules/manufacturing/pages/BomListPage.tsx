@@ -43,17 +43,25 @@ export function BomListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Bills of Material</h1>
-        {canManage && (
-          <Link
-            to="/manufacturing/boms/new"
-            className="btn-ink"
-          >
-            New BOM
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/manufacturing">Manufacturing</Link> /{" "}
+          <span className="text-ink">Bills of Material</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Bills of Material</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/manufacturing/boms/new"
+                className="btn-ink"
+              >
+                New BOM
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
       <div className="mt-4">
         <select
@@ -76,6 +84,8 @@ export function BomListPage() {
           onRowClick={(row) => void navigate({ to: "/manufacturing/boms/$bomId", params: { bomId: row.id } })}
           loading={boms.isPending}
           emptyMessage="No BOMs yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={boms.hasNextPage}
           onLoadMore={() => void boms.fetchNextPage()}
           loadingMore={boms.isFetchingNextPage}

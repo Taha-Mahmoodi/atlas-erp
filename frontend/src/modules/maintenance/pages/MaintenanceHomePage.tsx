@@ -11,8 +11,10 @@ const TILE =
 export function MaintenanceHomePage() {
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Maintenance</h1>
-      <section className="mt-6 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
+      <header className="mb-6">
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Maintenance</h1>
+      </header>
+      <section className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
         <Link to="/maintenance/equipment" className={TILE}>
           <span className="block text-sm font-medium text-ink">Equipment</span>
           <span className="mt-0.5 block text-xs text-ink-muted">

@@ -97,8 +97,8 @@ export function WbsPanel({ projectId, canManage }: { projectId: string; canManag
 
   return (
     <section aria-label="WBS elements">
-      <h2 className="text-sm font-semibold text-ink">WBS elements</h2>
-      <p className="mt-0.5 text-xs text-ink-muted">
+      <h2 className="mono-caps text-ink-muted">WBS elements</h2>
+      <p className="mt-0.5 text-[12px] text-ink-muted">
         The costing objects — finance journal lines and HR time entries post to a WBS element.
       </p>
 
@@ -140,7 +140,7 @@ export function WbsPanel({ projectId, canManage }: { projectId: string; canManag
                     <button
                       type="button"
                       onClick={() => startEdit(node)}
-                      className="rounded-control px-2 py-0.5 text-xs font-medium text-primary transition-colors duration-150 hover:bg-primary-tint"
+                      className="rounded-control px-2 py-0.5 text-[12.5px] font-medium text-primary transition-colors duration-150 hover:bg-primary-tint"
                     >
                       Edit
                     </button>
@@ -153,16 +153,16 @@ export function WbsPanel({ projectId, canManage }: { projectId: string; canManag
       </div>
 
       {canManage && (
-        <div className="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
+        <div className="mt-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium text-ink">
+            <h3 className="text-[13.5px] font-semibold text-ink">
               {editingId ? "Edit WBS element" : "New WBS element"}
             </h3>
             {editingId && (
               <button
                 type="button"
                 onClick={reset}
-                className="text-xs font-medium text-ink-muted transition-colors duration-150 hover:text-ink"
+                className="text-[12.5px] font-medium text-ink-muted transition-colors duration-150 hover:text-ink"
               >
                 Cancel edit
               </button>

@@ -5,7 +5,7 @@
  * procurement's vendor-approved-items pattern.
  */
 
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -89,9 +89,9 @@ function PriceListItemsSection({ priceListId, currencyCode }: { priceListId: str
   };
 
   return (
-    <div className="mt-8 rounded-card border border-line bg-surface p-4 shadow-card">
-      <h2 className="text-sm font-semibold text-ink">Prices</h2>
-      <p className="mt-1 text-xs text-ink-muted">
+    <div className="mt-8 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+      <h2 className="mb-3.5 mono-caps text-ink-muted">Prices</h2>
+      <p className="mt-1 text-[12px] text-ink-muted">
         One flat price per item; the minimum quantity is the only quantity break this list supports.
       </p>
       {error && (
@@ -119,7 +119,7 @@ function PriceListItemsSection({ priceListId, currencyCode }: { priceListId: str
                 <button
                   type="button"
                   onClick={() => void remove(line.id)}
-                  className="text-xs font-medium text-danger hover:underline"
+                  className="text-[12.5px] font-medium text-danger hover:underline"
                 >
                   Remove
                 </button>
@@ -249,9 +249,19 @@ export function PriceListFormPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{isEdit ? "Edit price list" : "New price list"}</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/sales/price-lists">Price Lists</Link> /{" "}
+          <span className="text-ink">{isEdit ? "Edit price list" : "New price list"}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">
+            {isEdit ? "Edit price list" : "New price list"}
+          </h1>
+        </div>
+      </header>
       {error && (
-        <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
+        <p role="alert" className="mb-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
         </p>
       )}

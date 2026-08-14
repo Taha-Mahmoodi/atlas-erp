@@ -8,6 +8,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { formatDate, formatMoney } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { useDepreciationRuns, useFunctionalCurrency } from "@/modules/finance/hooks";
 import type { DepreciationRun } from "@/modules/finance/types";
 
@@ -30,24 +31,31 @@ export function DepreciationRunListPage() {
       render: (row) => formatMoney(row.total_amount, currency.data ?? "—"),
       width: "130px",
     },
-    { key: "status", header: "Status", render: (row) => row.status, width: "110px" },
+    { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "110px" },
   ];
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Depreciation Runs</h1>
-        {canRun && (
-          <Link
-            to="/finance/depreciation-runs/new"
-            className="btn-ink"
-          >
-            Run depreciation
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance">Finance</Link> / <span className="text-ink">Depreciation Runs</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Depreciation Runs</h1>
+          <div className="flex items-center gap-2.5">
+            {canRun && (
+              <Link
+                to="/finance/depreciation-runs/new"
+                className="btn-ink"
+              >
+                Run depreciation
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4">
+      <div>
         <DataGrid
           columns={columns}
           rows={rows}

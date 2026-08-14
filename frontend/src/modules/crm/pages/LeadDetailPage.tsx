@@ -30,7 +30,7 @@ export function LeadDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   if (lead.isPending || !lead.data) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-[13px] text-ink-muted">Loading…</p>;
   }
   const data = lead.data;
   const canQualify = data.status === "NEW" || data.status === "CONTACTED";
@@ -58,55 +58,63 @@ export function LeadDetailPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="flex items-center justify-between">
-        <h1 className="flex items-center gap-3 text-[22px] font-[650] tracking-[-0.01em] text-ink">
-          {data.lead_number} — {data.company_name}
-          <StatusPill status={data.status} />
-        </h1>
-        {canManage && (
-          <div className="flex gap-2">
-            {(canQualify || canDisqualify) && (
-              <Link
-                to="/crm/leads/$leadId/edit"
-                params={{ leadId: data.id }}
-                className="btn-chip"
-              >
-                Edit
-              </Link>
-            )}
-            {canDisqualify && (
-              <button
-                type="button"
-                onClick={() => void run(() => disqualify.mutateAsync(), "Unable to disqualify the lead.")}
-                disabled={disqualify.isPending}
-                className="btn-chip hover:border-danger hover:text-danger"
-              >
-                Disqualify
-              </button>
-            )}
-            {canQualify && (
-              <button
-                type="button"
-                onClick={() => void run(() => qualify.mutateAsync(), "Unable to qualify the lead.")}
-                disabled={qualify.isPending}
-                className="btn-ink"
-              >
-                {qualify.isPending ? "Qualifying…" : "Qualify"}
-              </button>
-            )}
-            {canConvert && (
-              <button
-                type="button"
-                onClick={() => void doConvert()}
-                disabled={convert.isPending}
-                className="btn-ink"
-              >
-                {convert.isPending ? "Converting…" : "Convert to opportunity"}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/crm/leads" className="hover:underline">
+            Leads
+          </Link>{" "}
+          / <span className="text-ink">{data.lead_number}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="flex items-center gap-3 text-[22px] font-[650] tracking-[-0.01em] text-ink">
+            {data.company_name}
+            <StatusPill status={data.status} />
+          </h1>
+          {canManage && (
+            <div className="flex items-center gap-2.5">
+              {(canQualify || canDisqualify) && (
+                <Link
+                  to="/crm/leads/$leadId/edit"
+                  params={{ leadId: data.id }}
+                  className="btn-chip"
+                >
+                  Edit
+                </Link>
+              )}
+              {canDisqualify && (
+                <button
+                  type="button"
+                  onClick={() => void run(() => disqualify.mutateAsync(), "Unable to disqualify the lead.")}
+                  disabled={disqualify.isPending}
+                  className="btn-chip hover:border-danger hover:text-danger"
+                >
+                  Disqualify
+                </button>
+              )}
+              {canQualify && (
+                <button
+                  type="button"
+                  onClick={() => void run(() => qualify.mutateAsync(), "Unable to qualify the lead.")}
+                  disabled={qualify.isPending}
+                  className="btn-ink"
+                >
+                  {qualify.isPending ? "Qualifying…" : "Qualify"}
+                </button>
+              )}
+              {canConvert && (
+                <button
+                  type="button"
+                  onClick={() => void doConvert()}
+                  disabled={convert.isPending}
+                  className="btn-ink"
+                >
+                  {convert.isPending ? "Converting…" : "Convert to opportunity"}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </header>
 
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
@@ -127,35 +135,35 @@ export function LeadDetailPage() {
         </p>
       )}
 
-      <dl className="mt-6 grid grid-cols-4 gap-4 text-sm">
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-ink-muted">Contact</dt>
-          <dd className="text-ink">{data.contact_name ?? "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Contact</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.contact_name ?? "—"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Email</dt>
-          <dd className="text-ink">{data.email ?? "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Email</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.email ?? "—"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Phone</dt>
-          <dd className="text-ink">{data.phone ?? "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Phone</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.phone ?? "—"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Source</dt>
-          <dd className="text-ink">{data.source ?? "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Source</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.source ?? "—"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Estimated value</dt>
-          <dd className="text-ink tabular-nums">
+          <dt className="mono-caps text-ink-muted">Estimated value</dt>
+          <dd className="mt-1.5 text-[13px] tabular-nums text-ink">
             {data.estimated_value !== null && data.currency_code
               ? formatMoney(data.estimated_value, data.currency_code)
               : "—"}
           </dd>
         </div>
         {data.notes && (
-          <div className="col-span-3">
-            <dt className="text-xs text-ink-muted">Notes</dt>
-            <dd className="text-ink">{data.notes}</dd>
+          <div className="col-span-2 sm:col-span-3">
+            <dt className="mono-caps text-ink-muted">Notes</dt>
+            <dd className="mt-1.5 text-[13px] text-ink">{data.notes}</dd>
           </div>
         )}
       </dl>

@@ -41,19 +41,26 @@ export function BankStatementListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Bank Statements</h1>
-        {canImport && (
-          <Link
-            to="/finance/bank-statements/import"
-            className="btn-ink"
-          >
-            Import statement
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance">Finance</Link> / <span className="text-ink">Bank Statements</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Bank Statements</h1>
+          <div className="flex items-center gap-2.5">
+            {canImport && (
+              <Link
+                to="/finance/bank-statements/import"
+                className="btn-ink"
+              >
+                Import statement
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4">
+      <div>
         <DataGrid
           columns={columns}
           rows={rows}

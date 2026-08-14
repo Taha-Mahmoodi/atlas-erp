@@ -9,7 +9,7 @@
  * and revenue (a credit note) in one transaction.
  */
 
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -94,9 +94,16 @@ export function ReturnFormPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">New return</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/sales/returns">Returns</Link> / <span className="text-ink">New return</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">New return</h1>
+        </div>
+      </header>
       {error && (
-        <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
+        <p role="alert" className="mb-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
         </p>
       )}
@@ -179,7 +186,7 @@ export function ReturnFormPage() {
       {salesOrderId && warehouseId && (
         <div className="mt-6">
           {order.isPending ? (
-            <p className="text-sm text-ink-muted">Loading sales order lines…</p>
+            <p className="text-[13px] text-ink-muted">Loading sales order lines…</p>
           ) : (
             <table className="w-full border-collapse text-[13px]">
               <thead>

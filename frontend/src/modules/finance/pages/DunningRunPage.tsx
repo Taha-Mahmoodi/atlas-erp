@@ -5,6 +5,7 @@
  * beyond this run's own result.
  */
 
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { ApiError } from "@/lib/apiClient";
@@ -41,7 +42,12 @@ export function DunningRunPage() {
 
   return (
     <div>
-      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Dunning Run</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance">Finance</Link> / <span className="text-ink">Dunning Run</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">Dunning Run</h1>
+      </header>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
