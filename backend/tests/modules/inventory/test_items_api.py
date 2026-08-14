@@ -8,8 +8,13 @@ the real router -> service -> uow path end to end.
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import API_KEY_PREFIX, mint_api_key
+from app.core.models import ApiKey
+from app.core.tenancy import tenant_context
 from tests.conftest import assert_query_budget
+from tests.modules.inventory.factories import InventoryPrincipal
 
 _REFERENCE_ENDPOINTS = (
     "/api/v1/inventory/item-categories",
@@ -228,3 +233,48 @@ async def test_cross_tenant_write_does_not_invalidate_etag(
     await inventory_client_b.post(url, json={"code": "KG", "name": "Kilogram"})
     a_again = await inventory_client.get(url, headers={"If-None-Match": a_etag})
     assert a_again.status_code == 304
+
+
+async def _api_key_client(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    principal: InventoryPrincipal,
+) -> AsyncClient:
+    """Swap the client's bearer for a machine API key bound to the same principal, so the
+    SAME endpoints can be measured under both credential shapes (spec Q1 / D-069)."""
+    full, digest = mint_api_key(principal.tenant_id)
+    with tenant_context(principal.tenant_id):
+        db_session.add(
+            ApiKey(
+                user_id=principal.user_id,
+                name="website",
+                prefix=f"{API_KEY_PREFIX}_{principal.tenant_id.hex}",
+                secret_sha256=digest,
+                scopes=None,
+            )
+        )
+        await db_session.commit()
+    client.headers["Authorization"] = f"Bearer {full}"
+    return client
+
+
+@pytest.mark.parametrize("url", _REFERENCE_ENDPOINTS)
+async def test_list_query_budget_under_api_key_auth(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    inventory_user_factory,  # noqa: ANN001 - fixture factory typed in the module conftest
+    query_counter,  # noqa: ANN001 - fixture factory typed in conftest
+    url: str,
+) -> None:
+    """PERFORMANCE §2 holds for the OTHER credential shape too (spec Q1 / D-069).
+
+    These endpoints compute a collection ETag, so their warm path is already 3 statements
+    under a JWT — auth + the ETag aggregate + the page — with zero slack. That is exactly
+    where a per-request tenant lookup in the API-key branch showed up: it made every one of
+    them 4, a real breach that /api/v1/admin/users (no ETag) could not see. The key now
+    carries the tenant UUID, so authentication costs the same one statement a JWT costs.
+    """
+    principal = await inventory_user_factory()
+    key_client = await _api_key_client(client, db_session, principal)
+
+    await assert_query_budget(key_client, query_counter, url)

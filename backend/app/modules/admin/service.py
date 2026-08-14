@@ -192,8 +192,10 @@ async def create_api_key(
     every request (core/deps.py), so a key can only ever narrow its user, and a later role
     change re-narrows it without orphaning the key.
 
-    The key string carries the tenant SLUG because that is what core/deps.py resolves it
-    with; minting on any other ref produces a key that authenticates against nothing.
+    The key string carries the tenant UUID because that is the ref core/deps.py sets the
+    D-007 ContextVar from; minting on any other ref produces a key that authenticates
+    against nothing. Not the slug: resolving a slug costs a query on EVERY request, which
+    put an API-key list request at 4 statements, over PERFORMANCE §2's ≤3.
     """
     unknown = sorted(set(payload.scopes or ()) - catalog_keys())
     if unknown:
@@ -202,8 +204,7 @@ async def create_api_key(
             message="Unknown permission key(s)",
             details={"keys": unknown},
         )
-    tenant = await session.get_one(Tenant, tenant_id)
-    full_key, secret_sha256 = mint_api_key(tenant.slug)
+    full_key, secret_sha256 = mint_api_key(tenant_id)
     key = ApiKey(
         tenant_id=tenant_id,
         user_id=payload.user_id,
@@ -213,7 +214,7 @@ async def create_api_key(
         # lands inside the secret about half the time and stores most of it in a column
         # the list endpoint displays. No part of the secret belongs here — operators tell
         # two keys apart by ``name``.
-        prefix=f"{API_KEY_PREFIX}_{tenant.slug}",
+        prefix=f"{API_KEY_PREFIX}_{tenant_id.hex}",
         secret_sha256=secret_sha256,
         scopes=payload.scopes,
         expires_at=payload.expires_at,

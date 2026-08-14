@@ -41,8 +41,8 @@ async def test_create_returns_the_secret_exactly_once(
     admin_client: AsyncClient, admin_user: ProvisionedUser
 ) -> None:
     body = await _create_key(admin_client, admin_user.user_id)
-    assert body["key"].startswith("atk_")
-    assert body["prefix"] == f"atk_{admin_user.tenant_slug}"
+    assert body["key"].startswith(f"atk_{admin_user.tenant_id.hex}_")
+    assert body["prefix"] == f"atk_{admin_user.tenant_id.hex}"
     assert "secret_sha256" not in body
 
     listed = await admin_client.get(_KEYS)
