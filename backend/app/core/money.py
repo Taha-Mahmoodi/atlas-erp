@@ -148,6 +148,15 @@ def quantize_money(value: Decimal, places: int = 2) -> Decimal:
     return value.quantize(Decimal(1).scaleb(-places), rounding=ROUND_HALF_UP)
 
 
+def quantize_quantity(value: Decimal) -> Decimal:
+    """Round ``value`` to the D-015 quantity scale (6 dp) HALF_UP — what ``QuantityType`` stores.
+
+    Derived quantities (a BOM explosion's scrap load, a recipe scaled to a ticket's portions) must
+    not carry more precision than the column keeps, or the number a test asserts and the number the
+    database returns differ in the last places."""
+    return value.quantize(Decimal(1).scaleb(-_QUANTITY_SCALE), rounding=ROUND_HALF_UP)
+
+
 def quantize_for_currency(value: Decimal, currency_code: str) -> Decimal:
     """Round ``value`` to ``currency_code``'s minor unit HALF_UP (D-015)."""
     return quantize_money(value, currency_decimals(currency_code))
@@ -202,4 +211,5 @@ __all__ = [
     "currency_decimals",
     "quantize_for_currency",
     "quantize_money",
+    "quantize_quantity",
 ]

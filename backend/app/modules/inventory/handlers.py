@@ -44,6 +44,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import docflow
 from app.core.tenancy import system_context
+from app.modules.hospitality.constants import TICKET_DEPLETED_BY_MOVE_LINK
+from app.modules.hospitality.events import TicketIngredientsConsumed
 from app.modules.industry.events import IndustryTemplateApplying
 from app.modules.inventory.constants import CostingMethod, MoveType
 from app.modules.inventory.models import ItemCategory, Uom
@@ -225,6 +227,42 @@ async def issue_production_components(
         )
 
 
+async def issue_ticket_ingredients(
+    session: AsyncSession, event: TicketIngredientsConsumed
+) -> None:
+    """Create the stock ISSUE moves for a fired restaurant ticket's ingredients (PLAN 19, Q4) — the
+    hospitality twin of ``issue_delivery_moves``, and like a delivery it passes NO valuation
+    override, because an ISSUE's default offset already IS the category's COGS account.
+
+    One move per AGGREGATED ingredient (hospitality collapses a ticket's shared onion/oil/salt
+    before publishing, so this loop is ~12 long for a 56-line check), each from the bin the event
+    resolved, dated the ticket's FIRE date. Runs inside the DEPLETION JOB's transaction, not the
+    sale's — insufficient stock still rolls the whole depletion back (D-020), but it rolls back a
+    background job instead of a guest's payment. Links the ticket document to each move document
+    ('depleted_by'). Registered via ``app.main.register_event_handlers``."""
+    move_date = date.fromisoformat(event.move_date)
+    for ingredient in event.ingredients:
+        move = await create_move(
+            session,
+            event.tenant_id,
+            StockMoveCreate(
+                move_type=MoveType.ISSUE,
+                item_id=ingredient.item_id,
+                quantity=ingredient.quantity,
+                from_bin_id=ingredient.bin_id,
+                move_date=move_date,
+                reference=event.ticket_number,
+            ),
+        )
+        await docflow.link_documents(
+            session,
+            event.tenant_id,
+            predecessor=event.document_id,
+            successor=move.document_id,
+            link_type=TICKET_DEPLETED_BY_MOVE_LINK,
+        )
+
+
 async def receive_finished_order_move(
     session: AsyncSession, event: OrderFinished
 ) -> None:
@@ -371,6 +409,7 @@ __all__ = [
     "disposition_rejected_stock",
     "issue_delivery_moves",
     "issue_production_components",
+    "issue_ticket_ingredients",
     "provision_inventory_for_template",
     "receive_finished_order_move",
     "receive_goods_receipt_moves",

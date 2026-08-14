@@ -157,6 +157,44 @@ async def default_bin_for_warehouse(
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
+async def issue_bins_for_items(
+    session: AsyncSession, tenant_id: uuid.UUID, item_ids: Iterable[uuid.UUID]
+) -> dict[uuid.UUID, uuid.UUID]:
+    """The bin to issue each item FROM — ``{item_id: bin_id}`` for a BATCH, in ONE query.
+
+    Picks the bin holding the MOST of the item (ties broken by bin id, so the answer is stable).
+    An item with no stock anywhere is ABSENT from the result rather than mapped to an empty bin:
+    the caller decides whether that is a hard error (a production issue) or a recorded failure (a
+    restaurant ticket's phantom stock-out, Q4). Reads the maintained ``inv_stock_quants``
+    projection (D-036).
+
+    Exists because a consumer with N components would otherwise loop ``on_hand_by_bin`` — an N+1
+    on a WRITE path, which PERFORMANCE §2's list-endpoint rule does not catch. Bin-level splits
+    are NOT resolved: an item with 3 in one bin and 5 in another issues 6 from the second and
+    fails, which a single-storeroom kitchen never sees and a multi-bin warehouse should be naming
+    its bin explicitly for anyway.
+    """
+    ids = list(item_ids)
+    if not ids:
+        return {}
+    stmt = (
+        select(StockQuant.item_id, StockQuant.bin_id, func.sum(StockQuant.on_hand_qty))
+        .where(
+            StockQuant.tenant_id == tenant_id,
+            StockQuant.item_id.in_(ids),
+            StockQuant.on_hand_qty > 0,
+        )
+        .group_by(StockQuant.item_id, StockQuant.bin_id)
+    )
+    rows = sorted(
+        (await session.execute(stmt)).all(), key=lambda row: (-row[2], row[1].bytes)
+    )
+    chosen: dict[uuid.UUID, uuid.UUID] = {}
+    for item_id, bin_id, _quantity in rows:
+        chosen.setdefault(item_id, bin_id)
+    return chosen
+
+
 async def lot_id_for_code(
     session: AsyncSession, tenant_id: uuid.UUID, item_id: uuid.UUID, lot_code: str
 ) -> uuid.UUID | None:

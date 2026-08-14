@@ -12,6 +12,7 @@ the caller's tenant context, so the D-007 filter applies on top — ordinary ten
 """
 
 import uuid
+from collections.abc import Iterable
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -69,6 +70,45 @@ async def bom_components(
         .order_by(BomComponent.line_number)
     )
     return list((await session.execute(stmt)).scalars().all())
+
+
+async def active_boms_for_items(
+    session: AsyncSession, tenant_id: uuid.UUID, item_ids: Iterable[uuid.UUID]
+) -> dict[uuid.UUID, Bom]:
+    """The ACTIVE default BOMs for a BATCH of items — ONE query, keyed by item_id. An item absent
+    from the result has no active BOM (MRP reads that as BUY; a restaurant ticket reads it as "this
+    menu item is not a recipe"). The batched twin of :func:`get_active_bom_for_item`: any exploder
+    walking more than one parent must use this rather than looping the singular one."""
+    ids = list(item_ids)
+    if not ids:
+        return {}
+    stmt = select(Bom).where(
+        Bom.tenant_id == tenant_id,
+        Bom.item_id.in_(ids),
+        Bom.status == BomStatus.ACTIVE.value,
+        Bom.is_default.is_(True),
+    )
+    return {bom.item_id: bom for bom in (await session.execute(stmt)).scalars().all()}
+
+
+async def components_for_boms(
+    session: AsyncSession, tenant_id: uuid.UUID, bom_ids: Iterable[uuid.UUID]
+) -> dict[uuid.UUID, list[BomComponent]]:
+    """The components of a BATCH of BOMs — ONE query, grouped by bom_id and ordered by line_number.
+    The batched twin of :func:`bom_components`, so a multi-parent explosion costs two queries in
+    total rather than two per parent."""
+    ids = list(bom_ids)
+    if not ids:
+        return {}
+    stmt = (
+        select(BomComponent)
+        .where(BomComponent.tenant_id == tenant_id, BomComponent.bom_id.in_(ids))
+        .order_by(BomComponent.line_number)
+    )
+    grouped: dict[uuid.UUID, list[BomComponent]] = {}
+    for component in (await session.execute(stmt)).scalars().all():
+        grouped.setdefault(component.bom_id, []).append(component)
+    return grouped
 
 
 async def get_routing(

@@ -143,6 +143,26 @@ register_permissions(
 # it and a rename must break in one place.
 DEPLETE_TICKET_JOB = "hospitality.deplete_ticket"
 
+# How many DISTINCT components one depletion job may issue. Backgrounding alone does NOT lift the
+# D-011 ceiling: the job runner executes its handler inside ``run_in_uow`` too (core/jobs.py:303),
+# so ``MAX_DISPATCHES_PER_UOW = 50`` applies to the job's transaction exactly as it applies to a
+# request's. MEASURED on this branch by running real depletion jobs at increasing widths: one ISSUE
+# move costs exactly ONE dispatch (StockValued -> the finance COGS handler) and the
+# TicketIngredientsConsumed event itself costs one more, so 49 components COMPLETE and 50 FAIL with
+# EventCycleError. 40 keeps a working margin, and an aggregate above it is SPLIT across
+# several jobs rather than refused — the plan's stated residual risk ("an extreme ticket could
+# still approach 50 dispatches") closed rather than documented. The inline/background threshold
+# shape it mirrors is COUNT_POST_SYNC_MAX_VARIANCES (inventory/constants.py); the difference is
+# that depletion has no inline branch at all, because Q4's phantom-stock-out argument applies to a
+# one-line ticket exactly as it applies to a fifty-line one.
+DEPLETE_MAX_COMPONENTS_PER_JOB = 40
+
+# docflow link type (D-012) joining a fired ticket's document to each ingredient ISSUE move the
+# depletion job posts: the ticket "depleted" the stock. Declared HERE, in the publishing module,
+# following the sales/procurement/manufacturing precedent — inventory's handler imports it to write
+# the edge from the side that owns the move.
+TICKET_DEPLETED_BY_MOVE_LINK = "depleted_by"
+
 # --- Order-ticket document type, numbering + event keys (Task 4, D-012/D-011) ---------------
 # An order ticket IS a posted document in the D-012 sense: it registers in core_documents and
 # claims its gapless number AT CREATION (the sales-order / goods-receipt branch, not finance's
@@ -163,3 +183,6 @@ ORDER_TICKET_NUMBER_PADDING = 6
 # (Phase 20.6's folio bridge) and Task 8's documentation name the same constant.
 ORDER_TICKET_FIRED_EVENT_KEY = "hospitality.order_ticket.fired"
 ORDER_TICKET_SETTLED_EVENT_KEY = "hospitality.order_ticket.settled"
+# Published by the DEPLETION JOB, not by the sale — inventory's handler turns it into the ISSUE
+# moves. Named for the fact it reports (the ingredients left the storeroom), not for the job.
+TICKET_INGREDIENTS_CONSUMED_EVENT_KEY = "hospitality.order_ticket.ingredients_consumed"

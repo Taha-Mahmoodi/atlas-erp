@@ -158,6 +158,11 @@ def register_event_handlers() -> None:
         post_stock_valuation_journal,
         provision_finance_for_template,
     )
+    from app.modules.hospitality.events import (
+        RestaurantOrderFired,
+        TicketIngredientsConsumed,
+    )
+    from app.modules.hospitality.handlers import submit_ticket_depletion
     from app.modules.hr.events import PayrollPosted
     from app.modules.industry.events import IndustryTemplateApplying
     from app.modules.inventory.events import StockValued
@@ -165,6 +170,7 @@ def register_event_handlers() -> None:
         disposition_rejected_stock,
         issue_delivery_moves,
         issue_production_components,
+        issue_ticket_ingredients,
         provision_inventory_for_template,
         receive_finished_order_move,
         receive_goods_receipt_moves,
@@ -301,3 +307,19 @@ def register_event_handlers() -> None:
         subscribe(IndustryTemplateApplying.key, provision_inventory_for_template)
     if provision_procurement_for_template not in handlers_for(IndustryTemplateApplying.key):
         subscribe(IndustryTemplateApplying.key, provision_procurement_for_template)
+    # Restaurant fire → background ingredient depletion (PLAN 19, spec Q4), a TWO-HOP chain whose
+    # hops are in DIFFERENT transactions — the only one in Atlas, and the whole point of the phase.
+    # Hop 1: firing a ticket publishes RestaurantOrderFired and hospitality's own
+    # submit_ticket_depletion explodes the recipes and submits the PENDING job row in the FIRE's
+    # transaction (so a D-013 replay returns the same job id). Hop 2: the job runner executes
+    # deplete_ticket_job in its OWN uow, which publishes TicketIngredientsConsumed for inventory's
+    # issue_ticket_ingredients to turn into ISSUE moves — which publish StockValued for the COGS
+    # handler registered at the top of this function, exactly as any other goods issue does.
+    # Synchronous depletion is what Q4 measured as an HTTP 500 at the guest's table
+    # (MAX_DISPATCHES_PER_UOW counts handler invocations and a 56-line ticket exceeds it) and as a
+    # phantom stock-out refusing a payment; hospitality never imports inventory's service
+    # (STRUCTURE §5), so both hops go through the bus.
+    if submit_ticket_depletion not in handlers_for(RestaurantOrderFired.key):
+        subscribe(RestaurantOrderFired.key, submit_ticket_depletion)
+    if issue_ticket_ingredients not in handlers_for(TicketIngredientsConsumed.key):
+        subscribe(TicketIngredientsConsumed.key, issue_ticket_ingredients)
