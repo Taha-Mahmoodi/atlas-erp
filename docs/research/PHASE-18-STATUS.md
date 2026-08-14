@@ -234,14 +234,9 @@ re-litigated:
   the repo carries, so changing it is a schema decision for the whole codebase rather than a review
   fix.
 
-## Scope fence — intact
+## Scope status
 
-`git diff dev...HEAD --name-only` contains no `PLAN.md`, `STRUCTURE.md` or `GITHUB-WORKFLOW.md`
-(verified, not assumed). Hospitality is still a proposal; this branch is an unmerged spike against a
-reviewed plan, not committed scope. Promoting it into `PLAN.md` is a separate, explicit decision.
-
-## To merge
-
-Open the PR to `dev` per GITHUB-WORKFLOW.md. Nothing else is owed. The one thing worth saying in the
-PR body is limit 1 above: **bind production keys to a dedicated service user**, because the audit
-trail cannot recover that distinction after the fact.
+**Committed.** Hospitality is tracked in `PLAN.md` as Phases 18-20 following the owner's explicit
+go-ahead on 2026-08-14, and this branch merged to `dev` as PR #188. The proposal-only fence this
+file previously described was correct while it stood and was lifted by a human decision, not by
+drift.

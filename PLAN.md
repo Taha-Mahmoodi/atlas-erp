@@ -152,6 +152,43 @@ Single source of truth for build order and task status. Tick a checkbox only whe
 
 **Promotion → `main` as v1.0.0.**
 
+## Phase 17b — Console design system
+
+- [x] 17b.1 Art-direction pass for the authenticated console (the "porcelain" direction): measured extraction of the shipped UI, `DIRECTION.md`, DTCG `tokens.json` in both themes, coded specs for 7 surfaces × light/dark, 5 measured technique prototypes
+- [x] 17b.2 Implement it: token remap reaching ~3,900 usages across 250 pages, light/dark as equals with a pre-paint boot script, rebuilt shell (248px sidebar, ⌘K glass command palette), shared primitives (Icon sprite, StatusPill, Sparkline, ErrorState, RouteErrorBoundary); fixes #180 (4xx → route error boundary), #181 (responsive shell), #182 (one canonical status vocabulary)
+- [x] 17b.3 Module page bodies conformed: real breadcrumbs, detail summary panels, `isFiltered`/`onClearFilters` wired on every filterable list
+
+**Promotion → `main` as v1.1.0.**
+
+## Phase 18 — Machine credential (hospitality prerequisite, independently useful)
+
+Plan: [`docs/research/hospitality-build-plan.md`](docs/research/hospitality-build-plan.md). Spec: that doc's Q1. Closes the "Released APIs and event-based integration" v1 scope cut recorded in `docs/research/s4hana-parity.md`.
+
+- [x] 18.1 `ApiKey` model + migration; `mint_api_key`/`parse_api_key` on the tenant UUID; the API-key branch in `get_current_user` (one joined query, scopes intersect and may only narrow — D-069)
+- [x] 18.2 Admin endpoints (create/list/revoke) behind `admin.apikey.manage`; a key may not mint a key wider than itself (D-070); credential lifecycle audited with `secret_sha256` excluded
+- [x] 18.3 Per-credential rate limiting at the nginx edge; operator flow in `docs/api.md`
+
+## Phase 19 — Restaurant Ordering
+
+Spec: hospitality plan Q2 (stored availability, derived suggestion), Q4 (depletion), Q6 (website read path).
+
+- [ ] 19.1 `hospitality.yaml` industry template (6th): Guest/Group Account terminology, Guest Ledger + F&B Revenue COA split, FIFO costing default, BOM sub-engine only
+- [ ] 19.2 `hsp_menu_availability` — stored state (AVAILABLE/LIMITED/EIGHTY_SIXED), countdown auto-86, lazy expiry on read; the derived "at risk" staff list from on-hand only, batch-exploded, never guest-facing
+- [ ] 19.3 `order_ticket` document type: OPEN → SENT_TO_KITCHEN → IN_PREP → READY → SERVED → SETTLED, seat-level lines, KDS as a status-filtered query
+- [ ] 19.4 Per-sale ingredient depletion through the job runner; settlement reusing Sales' invoice/payment primitives; split checks
+- [ ] 19.5 The website-facing read/write API: menu + availability reads with conditional GET, order writes under D-013 idempotency
+
+## Phase 20 — Rooms & Folio
+
+Spec: hospitality plan Q3 (overbooking), Q5 (folio, deposits, business date, night audit).
+
+- [ ] 20.1 `room_type`, `room` with housekeeping status, `rate_plan` (manual nightly rates); `housekeeping_task` document
+- [ ] 20.2 `reservation` document type + the overbooking guard (counter tables, `with_for_update`, portable CHECK — no Postgres-only exclusion constraint, D-003)
+- [ ] 20.3 `folio` document type: heterogeneous charge lines, doc-flow linked to their source documents, settlement posting
+- [ ] 20.4 Advance deposits — widening finance's `CustomerReceipt` clearing engine rather than duplicating it (a change to shipped finance)
+- [ ] 20.5 Business date + night audit as an idempotent job on the existing runner; group bookings with a master folio splitting back at settlement
+- [ ] 20.6 The room-charge bridge: `order_ticket.settle(charge_to_room)` → `RestaurantOrderSettled` → a folio line with a doc-flow link back
+
 ## Scope-cut rule
 
 If scope must be cut: cut frontend polish before backend correctness, and module breadth before financial-engine depth. Every cut lands in the parity doc in the same PR that makes it.

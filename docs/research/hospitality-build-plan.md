@@ -24,11 +24,13 @@ both. Q1 is the spec for Phase 18 below.
 
 ## Status of this document
 
-**This is a plan, not a commitment.** `PLAN.md`, `STRUCTURE.md` and `GITHUB-WORKFLOW.md` are
-deliberately untouched, and no code accompanies it — the owner asked for a standalone plan to review
-first. A prior session let a research doc drift into ticked `PLAN.md` phases and scaffold code
-before it was fully reverted (PR #143); this stays on the safe side of that line. Promoting these
-phases into `PLAN.md` is a separate, explicit decision.
+**Committed scope as of 2026-08-14.** These phases are tracked in `PLAN.md` (18-20) following the
+owner's explicit go-ahead. **Phase 18 is done and merged to `dev`** (PR #188) — six tasks built
+TDD, then eight adversarial reviews that found and fixed four real defects, including a privilege
+escalation (D-070). Its full record is in [`PHASE-18-STATUS.md`](./PHASE-18-STATUS.md).
+
+Phases 19 and 20 are roadmapped below; each gets its own task-level plan before it is built, on the
+principle that steps written several phases ahead go stale before anyone reads them.
 
 ## Global Constraints
 

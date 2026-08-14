@@ -995,13 +995,16 @@ reproduced.
 
 ## Status
 
-**Proposal only.** Not scheduled, not part of the v1 build order, no PLAN.md/STRUCTURE.md/
-GITHUB-WORKFLOW.md changes accompany this doc. A prior session scoped a different candidate
-capability (field-force tracking) and let it drift into a ticked PLAN.md phase and actual scaffold
-code before it was fully reverted as unplanned scope (PR #143, 2026-07-20) — this doc deliberately
-stays on the safe side of that line, the same way
-[field-force-tracking-market-scan.md](field-force-tracking-market-scan.md) did. The August 2026
-revision deepened the design and added measurements; it did not change that status. If hospitality is
-pursued, it needs its own explicit go-ahead and a proper implementation plan before any PLAN.md
-entry or code lands — and the Q1 machine credential in particular is a core change that would need
-its own DECISIONS.md entry and its own review, independent of whether hospitality ships.
+**Committed scope as of 2026-08-14.** The owner gave the explicit go-ahead ("everything should be in
+dev, we are building this now"), so hospitality is now tracked in `PLAN.md` as Phases 18-20 and this
+document is the spec those phases build against, not a proposal.
+
+Until that go-ahead this document deliberately carried a proposal-only fence, because a prior session
+scoped a different candidate capability (field-force tracking) and let it drift into a ticked
+`PLAN.md` phase and scaffold code before it was fully reverted as unplanned scope (PR #143,
+2026-07-20). The fence did its job: nothing entered `PLAN.md` until a human said so.
+
+**Phase 18 (the Q1 machine credential) is built and merged to `dev`** — PR #188, with D-069 and
+D-070 recorded in `DECISIONS.md` and its own review; see
+[`PHASE-18-STATUS.md`](./PHASE-18-STATUS.md). Phases 19 and 20 are planned in
+[`hospitality-build-plan.md`](./hospitality-build-plan.md).
