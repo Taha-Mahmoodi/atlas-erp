@@ -36,5 +36,13 @@ direction is one-way and there is no cycle.
 # package first, which registers the keys. It is also the convention ``core/rbac.py`` names in its
 # own catalog comment ("module __init__ files register theirs"). ``register_permissions`` is
 # idempotent, so Task 6's router importing the same keys costs nothing.
-from app.modules.hospitality import constants  # noqa: F401
+#
+# ``models`` is imported for the D-007 analogue of the same guarantee.
+# ``tests/core/test_tenancy.py`` enumerates ``Base.registry.mappers`` and parametrizes its three
+# tenancy guards over every TenantMixin model it finds, so a model no import path reaches at
+# app-import time is a tenant-scoped table NOTHING checks. Other modules get this for free because
+# their router imports their service, which imports their models; hospitality's router carries no
+# routes until Task 6, so the import is made here rather than left as a gap for a table that
+# already exists in the database.
+from app.modules.hospitality import constants, models  # noqa: F401
 

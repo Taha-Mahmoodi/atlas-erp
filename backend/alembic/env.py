@@ -16,6 +16,7 @@ import app.core.custom_fields  # noqa: F401 - core_custom_field_defs registry ta
 import app.modules.admin.models  # noqa: F401
 import app.modules.crm.models  # noqa: F401
 import app.modules.finance.models  # noqa: F401
+import app.modules.hospitality.models  # noqa: F401
 import app.modules.hr.models  # noqa: F401
 import app.modules.industry.models  # noqa: F401
 import app.modules.inventory.models  # noqa: F401
