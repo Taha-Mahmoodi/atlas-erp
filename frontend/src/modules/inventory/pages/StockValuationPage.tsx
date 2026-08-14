@@ -56,7 +56,7 @@ export function StockValuationPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-ink">Stock Valuation</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Stock Valuation</h1>
 
       <div className="mt-4 flex gap-4">
         <select

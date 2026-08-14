@@ -208,7 +208,7 @@ function BomComponentsSection({ bomId, isDraft }: { bomId: string; isDraft: bool
             type="button"
             onClick={() => void add()}
             disabled={!componentItemId || !quantityPer || !uomId || createComponent.isPending}
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+            className="btn-ink"
           >
             Add
           </button>
@@ -305,7 +305,7 @@ export function BomFormPage() {
   return (
     <div className="mx-auto max-w-2xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{isEdit ? "Edit BOM" : "New BOM"}</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{isEdit ? "Edit BOM" : "New BOM"}</h1>
         {isEdit && bom.data && (
           <div className="flex gap-2">
             {isDraft && (
@@ -313,7 +313,7 @@ export function BomFormPage() {
                 type="button"
                 onClick={() => void activate()}
                 disabled={activateBom.isPending}
-                className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+                className="btn-ink"
               >
                 {activateBom.isPending ? "Activating…" : "Activate"}
               </button>
@@ -323,7 +323,7 @@ export function BomFormPage() {
                 type="button"
                 onClick={() => void deactivate()}
                 disabled={deactivateBom.isPending}
-                className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-45"
+                className="btn-chip hover:border-danger hover:text-danger"
               >
                 Deactivate
               </button>

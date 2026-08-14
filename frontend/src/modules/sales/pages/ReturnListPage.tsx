@@ -8,22 +8,9 @@ import { useState } from "react";
 import { formatMoney } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { useCustomerOptions, useReturns } from "@/modules/sales/hooks";
 import type { Return, ReturnStatus } from "@/modules/sales/types";
-
-const STATUS_TONE: Record<ReturnStatus, string> = {
-  DRAFT: "bg-panel text-ink-muted",
-  POSTED: "bg-success-tint text-success",
-  CANCELLED: "bg-panel text-ink-muted",
-};
-
-function StatusChip({ status }: { status: ReturnStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status}
-    </span>
-  );
-}
 
 export function ReturnListPage() {
   const navigate = useNavigate();
@@ -51,17 +38,17 @@ export function ReturnListPage() {
       render: (row) => formatMoney(row.total_amount, row.currency_code),
       width: "140px",
     },
-    { key: "status", header: "Status", render: (row) => <StatusChip status={row.status} />, width: "110px" },
+    { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "110px" },
   ];
 
   return (
     <div>
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Returns</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Returns</h1>
         {canManage && (
           <Link
             to="/sales/returns/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
+            className="btn-ink"
           >
             New return
           </Link>

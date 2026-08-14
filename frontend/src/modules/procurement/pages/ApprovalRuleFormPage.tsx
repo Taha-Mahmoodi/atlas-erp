@@ -88,7 +88,7 @@ export function ApprovalRuleFormPage() {
 
   return (
     <div className="mx-auto max-w-xl">
-      <h1 className="text-xl font-semibold text-ink">{isEdit ? "Edit approval rule" : "New approval rule"}</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{isEdit ? "Edit approval rule" : "New approval rule"}</h1>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}

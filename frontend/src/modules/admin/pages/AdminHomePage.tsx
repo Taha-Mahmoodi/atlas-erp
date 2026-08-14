@@ -26,7 +26,7 @@ export function AdminHomePage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="text-xl font-semibold text-ink">Admin</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Admin</h1>
       {!me.isPending && visible.length === 0 && (
         <p className="mt-6 text-sm text-ink-muted">
           You do not have any admin permissions. Ask an administrator for access.

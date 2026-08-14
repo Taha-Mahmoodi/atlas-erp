@@ -55,7 +55,7 @@ export function MrpRunFormPage() {
 
   return (
     <div className="mx-auto max-w-xl">
-      <h1 className="text-xl font-semibold text-ink">Run MRP</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Run MRP</h1>
       <p className="mt-1 text-sm text-ink-muted">
         Explodes sales demand and reorder points against supply into planned MAKE/BUY orders, plus a
         rough capacity check per work center.
@@ -117,7 +117,7 @@ export function MrpRunFormPage() {
         type="button"
         onClick={() => void submit()}
         disabled={!runDate || runMrp.isPending || awaitingJob}
-        className="mt-6 rounded-control bg-primary px-4 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+        className="mt-6 btn-ink"
       >
         {awaitingJob ? "Running…" : runMrp.isPending ? "Submitting…" : "Run MRP"}
       </button>

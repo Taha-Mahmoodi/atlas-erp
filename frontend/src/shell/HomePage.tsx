@@ -4,6 +4,7 @@
  * tile grid of the modules the caller has any access to, each linking into its section.
  */
 
+import { Icon } from "@/components/Icon";
 import { useMe } from "@/lib/session";
 import { DashboardKpis } from "@/modules/reporting/components/DashboardKpis";
 import { useDashboard } from "@/modules/reporting/hooks";
@@ -16,38 +17,47 @@ export function HomePage() {
   const permissions = me.data?.permissions ?? [];
   const modules = modulesFor(permissions);
 
+  const today = new Date().toLocaleDateString(undefined, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+
   return (
     <div className="mx-auto max-w-6xl">
-      <h1 className="text-xl font-semibold text-ink">
-        {me.data?.full_name ? `Welcome, ${me.data.full_name}` : "Welcome"}
-      </h1>
+      <header className="mb-6">
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">
+          {me.data?.full_name ? `Welcome back, ${me.data.full_name}` : "Welcome back"}
+        </h1>
+        <p className="mt-1 text-[13px] text-ink-muted">{today}</p>
+      </header>
 
       <DashboardKpis data={dashboard.data} loading={dashboard.isPending} />
 
-      <h2 className="mt-8 text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">
-        Modules
-      </h2>
+      <h2 className="mono-caps mt-9 mb-3 text-ink-muted">Modules</h2>
       {modules.length === 0 ? (
-        <p className="mt-3 text-sm text-ink-muted">
+        <p className="text-[13px] text-ink-muted">
           Your role has no module access yet — ask an administrator to assign permissions.
         </p>
       ) : (
-        <section className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
+        <section className="grid grid-cols-[repeat(auto-fit,minmax(230px,1fr))] gap-4">
           {modules.map((entry) => (
             <ModuleLink
               key={entry.key}
               entry={entry}
-              className="flex items-start gap-3 rounded-card border border-line bg-surface p-4 shadow-card transition-colors duration-150 hover:border-primary"
+              className="flex items-start gap-3 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card transition-colors duration-150 hover:border-primary"
             >
               <span
                 aria-hidden="true"
-                className="flex size-9 shrink-0 items-center justify-center rounded-[6px] bg-primary-tint text-xs font-semibold text-primary"
+                className="flex size-9 shrink-0 items-center justify-center rounded-[9px] bg-primary-tint text-primary"
               >
-                {entry.label.slice(0, 2).toUpperCase()}
+                <Icon name={entry.icon} size={17} />
               </span>
-              <span>
-                <span className="block text-sm font-medium text-ink">{entry.label}</span>
-                <span className="mt-0.5 block text-xs text-ink-muted">{entry.description}</span>
+              <span className="min-w-0">
+                <span className="block text-[13.5px] font-semibold text-ink">{entry.label}</span>
+                <span className="mt-0.5 block text-[12px] leading-4 text-ink-muted">
+                  {entry.description}
+                </span>
               </span>
             </ModuleLink>
           ))}

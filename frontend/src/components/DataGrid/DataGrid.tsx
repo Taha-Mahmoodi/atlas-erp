@@ -40,6 +40,11 @@ export interface DataGridProps<T> {
   density?: "compact" | "regular";
   /** Accessible table name. */
   label?: string;
+  /** Whether a filter is currently narrowing the rows. A filtered-empty result must not look
+   * like a genuinely empty screen (CURRENT.md's absence sweep found the two identical) — it
+   * says so, and offers the way out. */
+  isFiltered?: boolean;
+  onClearFilters?: () => void;
 }
 
 const ALIGN = { left: "text-left", right: "text-right", center: "text-center" } as const;
@@ -63,8 +68,10 @@ export function DataGrid<T>({
   loadingMore = false,
   density = "compact",
   label,
+  isFiltered = false,
+  onClearFilters,
 }: DataGridProps<T>) {
-  const cellPad = density === "compact" ? "px-3 py-2" : "px-4 py-2.5";
+  const cellPad = density === "compact" ? "px-2.5 py-[11px]" : "px-3.5 py-3";
 
   const toggleSort = (column: DataGridColumn<T>) => {
     if (!column.sortable || !onSortChange) return;
@@ -84,14 +91,14 @@ export function DataGrid<T>({
     <div className="overflow-x-auto rounded-card border border-line bg-surface shadow-card">
       <table className="w-full border-collapse text-[13px]" {...(label ? { "aria-label": label } : {})}>
         <thead>
-          <tr className="sticky top-0 z-10 border-b border-line bg-panel">
+          <tr className="sticky top-0 z-10 border-b border-line bg-surface">
             {columns.map((column) => (
               <th
                 key={column.key}
                 scope="col"
                 aria-sort={headerAria(sort, column.key)}
                 {...(column.width ? { style: { width: column.width } } : {})}
-                className={`${cellPad} ${ALIGN[column.align ?? "left"]} text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted`}
+                className={`px-2.5 py-2 ${ALIGN[column.align ?? "left"]} mono-caps text-ink-muted`}
               >
                 {column.sortable && onSortChange ? (
                   <button
@@ -124,8 +131,23 @@ export function DataGrid<T>({
             ))}
           {!loading && rows.length === 0 && (
             <tr>
-              <td colSpan={columns.length} className="px-4 py-10 text-center text-sm text-ink-muted">
-                {emptyMessage}
+              <td colSpan={columns.length} className="px-4 py-12 text-center">
+                {isFiltered ? (
+                  <>
+                    <p className="text-[13px] text-ink">No rows match the current filters.</p>
+                    {onClearFilters && (
+                      <button
+                        type="button"
+                        onClick={onClearFilters}
+                        className="mt-3 text-[13px] font-medium text-primary hover:underline"
+                      >
+                        Clear filters
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-[13px] text-ink-muted">{emptyMessage}</p>
+                )}
               </td>
             </tr>
           )}
@@ -142,7 +164,7 @@ export function DataGrid<T>({
                     }
                   : {})}
                 className={`border-b border-line transition-colors duration-150 last:border-b-0 ${
-                  onRowClick ? "cursor-pointer hover:bg-primary-tint/50" : ""
+                  onRowClick ? "cursor-pointer hover:bg-panel" : ""
                 }`}
               >
                 {columns.map((column) => (
@@ -160,12 +182,12 @@ export function DataGrid<T>({
         </tbody>
       </table>
       {hasMore && !loading && (
-        <div className="border-t border-line bg-surface p-2 text-center">
+        <div className="border-t border-line bg-surface p-2.5 text-center">
           <button
             type="button"
             onClick={onLoadMore}
             disabled={loadingMore}
-            className="rounded-control px-3 py-1.5 text-[13px] font-medium text-primary transition-colors duration-150 hover:bg-primary-tint disabled:cursor-not-allowed disabled:opacity-45"
+            className="rounded-control px-3.5 py-2 text-[13px] font-medium text-primary transition-colors duration-150 hover:bg-primary-tint disabled:cursor-not-allowed disabled:opacity-45"
           >
             {loadingMore ? "Loading…" : "Load more"}
           </button>

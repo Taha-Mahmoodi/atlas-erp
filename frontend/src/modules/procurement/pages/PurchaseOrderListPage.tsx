@@ -8,28 +8,9 @@ import { useState } from "react";
 import { formatMoney } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { usePurchaseOrders, useVendorLookup } from "@/modules/procurement/hooks";
 import type { PurchaseOrder, PurchaseOrderStatus } from "@/modules/procurement/types";
-
-const STATUS_TONE: Record<PurchaseOrderStatus, string> = {
-  DRAFT: "bg-panel text-ink-muted",
-  PENDING_APPROVAL: "bg-warn-tint text-warn",
-  APPROVED: "bg-primary-tint text-primary",
-  REJECTED: "bg-danger-tint text-danger",
-  SENT: "bg-primary-tint text-primary",
-  PARTIALLY_RECEIVED: "bg-warn-tint text-warn",
-  RECEIVED: "bg-success-tint text-success",
-  CLOSED: "bg-success-tint text-success",
-  CANCELLED: "bg-panel text-ink-muted",
-};
-
-function StatusChip({ status }: { status: PurchaseOrderStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status.replace("_", " ")}
-    </span>
-  );
-}
 
 export function PurchaseOrderListPage() {
   const navigate = useNavigate();
@@ -57,17 +38,17 @@ export function PurchaseOrderListPage() {
       width: "140px",
     },
     { key: "expected_date", header: "Expected", render: (row) => row.expected_date ?? "—", width: "120px" },
-    { key: "status", header: "Status", render: (row) => <StatusChip status={row.status} />, width: "150px" },
+    { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "150px" },
   ];
 
   return (
     <div>
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Purchase Orders</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Purchase Orders</h1>
         {canManage && (
           <Link
             to="/procurement/purchase-orders/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
+            className="btn-ink"
           >
             New purchase order
           </Link>

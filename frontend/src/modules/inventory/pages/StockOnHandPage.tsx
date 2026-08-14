@@ -39,7 +39,7 @@ export function StockOnHandPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-ink">Stock On-Hand</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Stock On-Hand</h1>
 
       <div className="mt-4">
         <select

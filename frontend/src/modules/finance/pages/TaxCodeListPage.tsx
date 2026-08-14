@@ -43,11 +43,11 @@ export function TaxCodeListPage() {
   return (
     <div>
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Tax Codes</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Tax Codes</h1>
         {canManage && (
           <Link
             to="/finance/tax-codes/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
+            className="btn-ink"
           >
             New tax code
           </Link>

@@ -15,24 +15,7 @@ import { AuditDiffView } from "@/modules/admin/components/AuditDiffView";
 import type { AuditLogFilters } from "@/modules/admin/api";
 import { useAuditLogs } from "@/modules/admin/hooks";
 import type { AuditLog } from "@/modules/admin/types";
-
-const ACTION_TONE: Record<string, string> = {
-  INSERT: "bg-success-tint text-success",
-  UPDATE: "bg-warn-tint text-warn",
-  DELETE: "bg-danger-tint text-danger",
-};
-
-function ActionChip({ action }: { action: string }) {
-  return (
-    <span
-      className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${
-        ACTION_TONE[action] ?? "bg-panel text-ink-muted"
-      }`}
-    >
-      {action}
-    </span>
-  );
-}
+import { StatusPill } from "@/components/StatusPill";
 
 const COLUMNS: DataGridColumn<AuditLog>[] = [
   { key: "created_at", header: "When", render: (row) => formatDateTime(row.created_at), width: "180px" },
@@ -42,7 +25,7 @@ const COLUMNS: DataGridColumn<AuditLog>[] = [
     header: "Entity ID",
     render: (row) => <span className="tabular-nums text-xs">{row.entity_id}</span>,
   },
-  { key: "action", header: "Action", render: (row) => <ActionChip action={row.action} />, width: "100px" },
+  { key: "action", header: "Action", render: (row) => <StatusPill status={row.action} />, width: "100px" },
   {
     key: "actor_user_id",
     header: "Actor",
@@ -85,7 +68,7 @@ export function AuditLogListPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-ink">Audit Log</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Audit Log</h1>
       <p className="mt-1 text-sm text-ink-muted">
         Append-only change trail for this tenant — every insert, update, and delete with its before/after diff.
       </p>
@@ -134,7 +117,7 @@ export function AuditLogListPage() {
         </label>
         <button
           type="submit"
-          className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
+          className="btn-ink"
         >
           Apply
         </button>

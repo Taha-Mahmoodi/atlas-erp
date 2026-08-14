@@ -94,7 +94,7 @@ export function ReturnFormPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="text-xl font-semibold text-ink">New return</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">New return</h1>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
@@ -247,7 +247,7 @@ export function ReturnFormPage() {
         type="button"
         onClick={() => void submit()}
         disabled={!canSubmit || createReturn.isPending}
-        className="mt-6 rounded-control bg-primary px-4 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+        className="mt-6 btn-ink"
       >
         {createReturn.isPending ? "Creating…" : "Create draft"}
       </button>

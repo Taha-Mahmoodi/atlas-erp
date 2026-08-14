@@ -7,22 +7,9 @@ import { useState } from "react";
 
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { useCustomerOptions, useDeliveries } from "@/modules/sales/hooks";
 import type { Delivery, DeliveryStatus } from "@/modules/sales/types";
-
-const STATUS_TONE: Record<DeliveryStatus, string> = {
-  DRAFT: "bg-panel text-ink-muted",
-  POSTED: "bg-success-tint text-success",
-  CANCELLED: "bg-panel text-ink-muted",
-};
-
-function StatusChip({ status }: { status: DeliveryStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status}
-    </span>
-  );
-}
 
 export function DeliveryListPage() {
   const navigate = useNavigate();
@@ -43,17 +30,17 @@ export function DeliveryListPage() {
     { key: "delivery_number", header: "Delivery #", render: (row) => row.delivery_number, width: "140px" },
     { key: "customer_id", header: "Customer", render: (row) => customerLabel(row.customer_id) },
     { key: "delivery_date", header: "Delivery date", render: (row) => row.delivery_date, width: "120px" },
-    { key: "status", header: "Status", render: (row) => <StatusChip status={row.status} />, width: "110px" },
+    { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "110px" },
   ];
 
   return (
     <div>
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Deliveries</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Deliveries</h1>
         {canManage && (
           <Link
             to="/sales/deliveries/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
+            className="btn-ink"
           >
             New delivery
           </Link>

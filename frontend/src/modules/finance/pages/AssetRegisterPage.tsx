@@ -19,7 +19,7 @@ export function AssetRegisterPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-ink">Asset Register</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Asset Register</h1>
 
       <div className="mt-4">
         <input

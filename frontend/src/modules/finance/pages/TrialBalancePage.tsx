@@ -21,7 +21,7 @@ export function TrialBalancePage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-ink">Trial Balance</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Trial Balance</h1>
 
       <div className="mt-4 flex items-center gap-4">
         <input

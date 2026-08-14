@@ -82,14 +82,14 @@ export function GoodsReceiptDetailPage() {
   return (
     <div className="mx-auto max-w-4xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{data.gr_number}</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.gr_number}</h1>
         <div className="flex gap-2">
           {isDraft && canManage && (
             <button
               type="button"
               onClick={() => void cancel()}
               disabled={cancelReceipt.isPending}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-chip hover:border-danger hover:text-danger"
             >
               Cancel
             </button>
@@ -99,7 +99,7 @@ export function GoodsReceiptDetailPage() {
               type="button"
               onClick={() => void post()}
               disabled={postReceipt.isPending}
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-ink"
             >
               {postReceipt.isPending ? "Posting…" : "Post"}
             </button>

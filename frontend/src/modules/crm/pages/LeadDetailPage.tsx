@@ -12,7 +12,7 @@ import { formatMoney } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { ActivityTimeline } from "@/modules/crm/components/ActivityTimeline";
 import { useConvertLead, useDisqualifyLead, useLead, useQualifyLead } from "@/modules/crm/hooks";
-import { LeadStatusChip } from "@/modules/crm/pages/LeadListPage";
+import { StatusPill } from "@/components/StatusPill";
 
 export function LeadDetailPage() {
   const { leadId } = useParams({ strict: false });
@@ -59,9 +59,9 @@ export function LeadDetailPage() {
   return (
     <div className="mx-auto max-w-4xl">
       <div className="flex items-center justify-between">
-        <h1 className="flex items-center gap-3 text-xl font-semibold text-ink">
+        <h1 className="flex items-center gap-3 text-[22px] font-[650] tracking-[-0.01em] text-ink">
           {data.lead_number} — {data.company_name}
-          <LeadStatusChip status={data.status} />
+          <StatusPill status={data.status} />
         </h1>
         {canManage && (
           <div className="flex gap-2">
@@ -69,7 +69,7 @@ export function LeadDetailPage() {
               <Link
                 to="/crm/leads/$leadId/edit"
                 params={{ leadId: data.id }}
-                className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-primary"
+                className="btn-chip"
               >
                 Edit
               </Link>
@@ -79,7 +79,7 @@ export function LeadDetailPage() {
                 type="button"
                 onClick={() => void run(() => disqualify.mutateAsync(), "Unable to disqualify the lead.")}
                 disabled={disqualify.isPending}
-                className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-45"
+                className="btn-chip hover:border-danger hover:text-danger"
               >
                 Disqualify
               </button>
@@ -89,7 +89,7 @@ export function LeadDetailPage() {
                 type="button"
                 onClick={() => void run(() => qualify.mutateAsync(), "Unable to qualify the lead.")}
                 disabled={qualify.isPending}
-                className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+                className="btn-ink"
               >
                 {qualify.isPending ? "Qualifying…" : "Qualify"}
               </button>
@@ -99,7 +99,7 @@ export function LeadDetailPage() {
                 type="button"
                 onClick={() => void doConvert()}
                 disabled={convert.isPending}
-                className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+                className="btn-ink"
               >
                 {convert.isPending ? "Converting…" : "Convert to opportunity"}
               </button>

@@ -21,14 +21,7 @@ import {
   useRejectSuggestion,
   useSuggestMatches,
 } from "@/modules/finance/hooks";
-import type { LineStatus } from "@/modules/finance/types";
-
-const LINE_STATUS_TONE: Record<LineStatus, string> = {
-  UNMATCHED: "bg-panel text-ink-muted",
-  SUGGESTED: "bg-warn-tint text-warn",
-  MATCHED: "bg-success-tint text-success",
-  CLEARED: "bg-success-tint text-success",
-};
+import { StatusPill } from "@/components/StatusPill";
 
 export function BankStatementDetailPage() {
   const { statementId } = useParams({ strict: false });
@@ -64,13 +57,13 @@ export function BankStatementDetailPage() {
   return (
     <div>
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Statement — {formatDate(data.statement_date)}</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Statement — {formatDate(data.statement_date)}</h1>
         {canReconcile && (
           <button
             type="button"
             onClick={() => void suggestMatches.mutateAsync()}
             disabled={suggestMatches.isPending}
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+            className="btn-ink"
           >
             {suggestMatches.isPending ? "Matching…" : "Suggest matches"}
           </button>
@@ -136,9 +129,7 @@ export function BankStatementDetailPage() {
                       {formatMoney(line.amount, currencyCode)}
                     </td>
                     <td className="px-3 py-1.5">
-                      <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${LINE_STATUS_TONE[line.status]}`}>
-                        {line.status}
-                      </span>
+                      <StatusPill status={line.status} />
                     </td>
                     {canReconcile && (
                       <td className="px-3 py-1.5">

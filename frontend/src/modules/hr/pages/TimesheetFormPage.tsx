@@ -55,7 +55,7 @@ export function TimesheetFormPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-xl font-semibold text-ink">New timesheet</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">New timesheet</h1>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}

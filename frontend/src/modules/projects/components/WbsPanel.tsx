@@ -14,6 +14,7 @@ import { useFunctionalCurrency } from "@/modules/finance/hooks";
 import { treeOrder } from "@/modules/projects/components/wbsTree";
 import { useCreateWbsElement, useUpdateWbsElement, useWbsElements } from "@/modules/projects/hooks";
 import type { WbsElement, WbsElementCreate, WbsElementUpdate, WbsStatus } from "@/modules/projects/types";
+import { StatusPill } from "@/components/StatusPill";
 
 const EMPTY: FormValues = { status: "OPEN", is_billable: false };
 
@@ -128,13 +129,7 @@ export function WbsPanel({ projectId, canManage }: { projectId: string; canManag
                 </td>
                 <td className="px-3 py-1.5 text-ink">{node.name}</td>
                 <td className="px-3 py-1.5">
-                  <span
-                    className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${
-                      node.status === "OPEN" ? "bg-success-tint text-success" : "bg-panel text-ink-muted"
-                    }`}
-                  >
-                    {node.status}
-                  </span>
+                  <StatusPill status={node.status} />
                 </td>
                 <td className="px-3 py-1.5 text-ink-muted">{node.is_billable ? "Yes" : "—"}</td>
                 <td className="px-3 py-1.5 text-right tabular-nums">

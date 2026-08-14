@@ -27,7 +27,7 @@ export function ModulePlaceholderPage() {
   }
   return (
     <div>
-      <h1 className="text-xl font-semibold text-ink">{entry.label}</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{entry.label}</h1>
       <p className="mt-2 text-sm text-ink-muted">
         {entry.description}. This module's UI ships in a later phase of PLAN 15.
       </p>

@@ -20,6 +20,7 @@ import {
   useUomOptions,
   useWarehouseLookup,
 } from "@/modules/inventory/hooks";
+import { StatusPill } from "@/components/StatusPill";
 import {
   useCancelProductionOrder,
   useFinishProductionOrder,
@@ -28,7 +29,6 @@ import {
   useReleaseProductionOrder,
   useWorkCenterOptions,
 } from "@/modules/manufacturing/hooks";
-import { OrderStatusChip } from "@/modules/manufacturing/pages/ProductionOrderListPage";
 
 const CONTROL =
   "w-full rounded-control border border-line bg-surface px-2 py-1.5 text-sm text-ink transition-colors duration-150 hover:border-ink-faint";
@@ -135,7 +135,7 @@ function FinishSection({
           type="button"
           onClick={() => void finish()}
           disabled={!finishedQuantity || !binId || finishOrder.isPending}
-          className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+          className="btn-ink"
         >
           {finishOrder.isPending ? "Finishing…" : "Finish"}
         </button>
@@ -208,8 +208,8 @@ export function ProductionOrderDetailPage() {
     <div className="mx-auto max-w-4xl">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold text-ink">{data.order_number}</h1>
-          <OrderStatusChip status={data.status} />
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.order_number}</h1>
+          <StatusPill status={data.status} />
         </div>
         <div className="flex gap-2">
           {showCancel && (
@@ -217,7 +217,7 @@ export function ProductionOrderDetailPage() {
               type="button"
               onClick={() => void act(() => cancelOrder.mutateAsync(), "Unable to cancel the order.")}
               disabled={cancelOrder.isPending}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-chip hover:border-danger hover:text-danger"
             >
               Cancel order
             </button>
@@ -229,7 +229,7 @@ export function ProductionOrderDetailPage() {
                 void act(() => issueComponents.mutateAsync({}), "Unable to issue the components.")
               }
               disabled={issueComponents.isPending}
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-ink"
             >
               {issueComponents.isPending ? "Issuing…" : "Issue remaining components"}
             </button>
@@ -239,7 +239,7 @@ export function ProductionOrderDetailPage() {
               type="button"
               onClick={() => void act(() => releaseOrder.mutateAsync(), "Unable to release the order.")}
               disabled={releaseOrder.isPending}
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-ink"
             >
               {releaseOrder.isPending ? "Releasing…" : "Release"}
             </button>

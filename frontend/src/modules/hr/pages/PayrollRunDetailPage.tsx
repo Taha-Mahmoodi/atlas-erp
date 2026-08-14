@@ -19,7 +19,8 @@ import {
   usePayrollRun,
   usePostPayrollRun,
 } from "@/modules/hr/hooks";
-import { PayrollDisclaimer, PayrollRunStatusChip } from "@/modules/hr/pages/PayrollRunListPage";
+import { PayrollDisclaimer } from "@/modules/hr/pages/PayrollRunListPage";
+import { StatusPill } from "@/components/StatusPill";
 
 export function PayrollRunDetailPage() {
   const { runId } = useParams({ strict: false });
@@ -65,14 +66,14 @@ export function PayrollRunDetailPage() {
   return (
     <div className="mx-auto max-w-5xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{data.run_number ?? "Draft payroll run"}</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.run_number ?? "Draft payroll run"}</h1>
         <div className="flex gap-2">
           {isDraft && canManage && (
             <button
               type="button"
               onClick={() => void act(() => cancelRun.mutateAsync(), "Unable to cancel the run.")}
               disabled={busy}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-chip hover:border-danger hover:text-danger"
             >
               {cancelRun.isPending ? "Cancelling…" : "Cancel"}
             </button>
@@ -82,7 +83,7 @@ export function PayrollRunDetailPage() {
               type="button"
               onClick={() => void act(() => postRun.mutateAsync({}), "Unable to post the run.")}
               disabled={busy}
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-ink"
             >
               {postRun.isPending ? "Posting…" : "Post journal"}
             </button>
@@ -102,7 +103,7 @@ export function PayrollRunDetailPage() {
         <div>
           <dt className="text-xs text-ink-muted">Status</dt>
           <dd className="text-ink">
-            <PayrollRunStatusChip status={data.status} />
+            <StatusPill status={data.status} />
           </dd>
         </div>
         <div>

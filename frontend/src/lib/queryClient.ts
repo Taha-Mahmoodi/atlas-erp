@@ -19,6 +19,13 @@ export const queryClient = new QueryClient({
         if (error instanceof ApiError && error.status < 500) return false;
         return failureCount < 2;
       },
+      // #180: a 4xx on a read means "this record can't be shown" — not found, not readable,
+      // or an unreadable id. Throwing it to RouteErrorBoundary is the single-point fix for
+      // pages that used to render a blank editable form or spin forever instead. 401 is
+      // excluded: apiClient owns the refresh-and-retry flow and AuthGate owns the fallout.
+      // 5xx and network errors stay inline and retryable rather than replacing the page.
+      throwOnError: (error) =>
+        error instanceof ApiError && error.status >= 400 && error.status < 500 && error.status !== 401,
     },
     mutations: { retry: false },
   },

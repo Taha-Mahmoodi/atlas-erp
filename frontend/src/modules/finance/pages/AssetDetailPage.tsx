@@ -44,12 +44,12 @@ export function AssetDetailPage() {
   return (
     <div className="mx-auto max-w-2xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{data.asset_number ?? data.name}</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.asset_number ?? data.name}</h1>
         {canManage && data.status === "DRAFT" && (
           <Link
             to="/finance/assets/$assetId/edit"
             params={{ assetId: data.id }}
-            className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-primary"
+            className="btn-chip"
           >
             Edit
           </Link>
@@ -124,7 +124,7 @@ export function AssetDetailPage() {
             type="button"
             onClick={() => void activate()}
             disabled={activateAsset.isPending}
-            className="mt-3 rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+            className="mt-3 btn-ink"
           >
             {activateAsset.isPending ? "Activating…" : "Activate"}
           </button>

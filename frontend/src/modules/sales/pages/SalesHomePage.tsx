@@ -21,7 +21,7 @@ const SECTIONS = [
 export function SalesHomePage() {
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="text-xl font-semibold text-ink">Sales</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Sales</h1>
       <section className="mt-6 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
         {SECTIONS.map((section) => (
           <Link

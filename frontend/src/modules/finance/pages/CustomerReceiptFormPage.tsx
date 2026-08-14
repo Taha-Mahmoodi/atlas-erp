@@ -73,7 +73,7 @@ export function CustomerReceiptFormPage() {
   if (posted) {
     return (
       <div className="mx-auto max-w-2xl">
-        <h1 className="text-xl font-semibold text-ink">Receipt posted</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Receipt posted</h1>
         <div className="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
           <p className="text-sm text-ink">
             <span className="font-medium">{posted.receipt_number}</span> for{" "}
@@ -114,7 +114,7 @@ export function CustomerReceiptFormPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-xl font-semibold text-ink">New customer receipt</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">New customer receipt</h1>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
@@ -253,7 +253,7 @@ export function CustomerReceiptFormPage() {
         type="button"
         onClick={() => void submit()}
         disabled={!canSubmit || createReceipt.isPending}
-        className="mt-6 rounded-control bg-primary px-4 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+        className="mt-6 btn-ink"
       >
         {createReceipt.isPending ? "Receiving…" : "Create receipt"}
       </button>

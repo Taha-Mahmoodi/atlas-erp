@@ -41,13 +41,13 @@ export function CustomerInvoiceDetailPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{data.invoice_number ?? "Draft invoice"}</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.invoice_number ?? "Draft invoice"}</h1>
         {data.status === "DRAFT" && canPost && (
           <button
             type="button"
             onClick={() => void post()}
             disabled={postInvoice.isPending}
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+            className="btn-ink"
           >
             {postInvoice.isPending ? "Posting…" : "Post invoice"}
           </button>

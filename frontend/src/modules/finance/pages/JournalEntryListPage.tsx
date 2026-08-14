@@ -9,29 +9,16 @@ import { useState } from "react";
 import { formatDate } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { useJournalEntries } from "@/modules/finance/hooks";
 import type { EntryStatus, JournalEntry } from "@/modules/finance/types";
-
-const STATUS_TONE: Record<EntryStatus, string> = {
-  DRAFT: "bg-warn-tint text-warn",
-  POSTED: "bg-success-tint text-success",
-  REVERSED: "bg-panel text-ink-muted",
-};
-
-function StatusChip({ status }: { status: EntryStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status}
-    </span>
-  );
-}
 
 const COLUMNS: DataGridColumn<JournalEntry>[] = [
   { key: "entry_number", header: "Entry #", render: (row) => row.entry_number ?? "(draft)", width: "140px" },
   { key: "posting_date", header: "Posting date", render: (row) => formatDate(row.posting_date), width: "140px" },
   { key: "document_type", header: "Type", render: (row) => row.document_type, width: "110px" },
   { key: "description", header: "Description", render: (row) => row.description ?? "—" },
-  { key: "status", header: "Status", render: (row) => <StatusChip status={row.status} />, width: "100px" },
+  { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "100px" },
 ];
 
 export function JournalEntryListPage() {
@@ -46,11 +33,11 @@ export function JournalEntryListPage() {
   return (
     <div>
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Journal Entries</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Journal Entries</h1>
         {canPost && (
           <Link
             to="/finance/journal-entries/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
+            className="btn-ink"
           >
             New entry
           </Link>

@@ -53,7 +53,7 @@ export function LeaveBalancesPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-xl font-semibold text-ink">Leave Balances</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Leave Balances</h1>
 
       {canRunAccrual && (
         <div className="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
@@ -87,7 +87,7 @@ export function LeaveBalancesPage() {
               type="button"
               onClick={() => void accrue()}
               disabled={runAccrual.isPending}
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-ink"
             >
               {runAccrual.isPending ? "Running…" : "Run accrual"}
             </button>

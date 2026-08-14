@@ -19,7 +19,7 @@ export function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <h1 className="text-xl font-semibold text-ink">Dashboard</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Dashboard</h1>
 
       <div className="mt-4 flex items-center gap-2">
         <label htmlFor="dashboard-as-of" className="text-sm text-ink-muted">

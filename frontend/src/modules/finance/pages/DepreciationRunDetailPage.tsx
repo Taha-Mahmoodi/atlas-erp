@@ -33,7 +33,7 @@ export function DepreciationRunDetailPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-xl font-semibold text-ink">{data.run_number ?? "Depreciation run"}</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.run_number ?? "Depreciation run"}</h1>
 
       <dl className="mt-6 grid grid-cols-3 gap-4 text-sm">
         <div>

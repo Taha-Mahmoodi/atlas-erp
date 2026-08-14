@@ -14,7 +14,7 @@ const SECTIONS = [
 export function CrmHomePage() {
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="text-xl font-semibold text-ink">CRM</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">CRM</h1>
       <p className="mt-1 text-sm text-ink-muted">
         Won opportunities convert into a real sales customer and quote in one action.
       </p>

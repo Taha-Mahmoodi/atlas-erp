@@ -125,7 +125,7 @@ export function OpportunityFormPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="text-xl font-semibold text-ink">
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">
         {isEdit ? "Edit opportunity" : "New opportunity"}
       </h1>
       {error && (
