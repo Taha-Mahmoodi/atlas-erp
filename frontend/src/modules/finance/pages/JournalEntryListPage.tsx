@@ -32,19 +32,26 @@ export function JournalEntryListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Journal Entries</h1>
-        {canPost && (
-          <Link
-            to="/finance/journal-entries/new"
-            className="btn-ink"
-          >
-            New entry
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance">Finance</Link> / <span className="text-ink">Journal Entries</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Journal Entries</h1>
+          <div className="flex items-center gap-2.5">
+            {canPost && (
+              <Link
+                to="/finance/journal-entries/new"
+                className="btn-ink"
+              >
+                New entry
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4">
+      <div>
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value as EntryStatus | "")}
@@ -65,6 +72,8 @@ export function JournalEntryListPage() {
           onRowClick={(row) => void navigate({ to: "/finance/journal-entries/$entryId", params: { entryId: row.id } })}
           loading={entries.isPending}
           emptyMessage="No journal entries yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={entries.hasNextPage}
           onLoadMore={() => void entries.fetchNextPage()}
           loadingMore={entries.isFetchingNextPage}

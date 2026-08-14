@@ -40,19 +40,26 @@ export function AssetListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Fixed Assets</h1>
-        {canManage && (
-          <Link
-            to="/finance/assets/new"
-            className="btn-ink"
-          >
-            New asset
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance">Finance</Link> / <span className="text-ink">Fixed Assets</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Fixed Assets</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/finance/assets/new"
+                className="btn-ink"
+              >
+                New asset
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4">
+      <div>
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value as AssetStatus | "")}
@@ -73,6 +80,8 @@ export function AssetListPage() {
           onRowClick={(row) => void navigate({ to: "/finance/assets/$assetId", params: { assetId: row.id } })}
           loading={assets.isPending}
           emptyMessage="No fixed assets yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={assets.hasNextPage}
           onLoadMore={() => void assets.fetchNextPage()}
           loadingMore={assets.isFetchingNextPage}

@@ -13,7 +13,7 @@ export function ProjectsHomePage() {
   return (
     <div className="mx-auto max-w-4xl">
       <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Projects</h1>
-      <p className="mt-1 text-sm text-ink-muted">
+      <p className="mt-1 text-[13px] text-ink-muted">
         WBS elements are the costing objects finance journal lines and HR time entries post to;
         each project's cost report projects those actuals against budget.
       </p>

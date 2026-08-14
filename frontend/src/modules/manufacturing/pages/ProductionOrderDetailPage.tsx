@@ -7,7 +7,7 @@
  * UI doesn't surface yet).
  */
 
-import { useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -69,9 +69,9 @@ function FinishSection({
   };
 
   return (
-    <div className="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
-      <h2 className="text-sm font-semibold text-ink">Finish to stock</h2>
-      <p className="mt-1 text-xs text-ink-muted">
+    <div className="mt-6 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+      <h2 className="mono-caps mb-3.5 text-ink-muted">Finish to stock</h2>
+      <p className="text-[12px] text-ink-muted">
         Receives finished goods (Dr Inventory / Cr WIP); the final finish posts the WIP variance so
         WIP nets to zero.
       </p>
@@ -166,7 +166,7 @@ export function ProductionOrderDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   if (order.isPending || !order.data) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-[13px] text-ink-muted">Loading…</p>;
   }
   const data = order.data;
   const showRelease = data.status === "DRAFT" && canRelease;
@@ -206,46 +206,52 @@ export function ProductionOrderDetailPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.order_number}</h1>
-          <StatusPill status={data.status} />
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/manufacturing/production-orders">Production Orders</Link> /{" "}
+          <span className="text-ink">{data.order_number}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.order_number}</h1>
+            <StatusPill status={data.status} />
+          </div>
+          <div className="flex items-center gap-2.5">
+            {showCancel && (
+              <button
+                type="button"
+                onClick={() => void act(() => cancelOrder.mutateAsync(), "Unable to cancel the order.")}
+                disabled={cancelOrder.isPending}
+                className="btn-chip hover:border-danger hover:text-danger"
+              >
+                Cancel order
+              </button>
+            )}
+            {showIssue && hasUnissued && (
+              <button
+                type="button"
+                onClick={() =>
+                  void act(() => issueComponents.mutateAsync({}), "Unable to issue the components.")
+                }
+                disabled={issueComponents.isPending}
+                className="btn-ink"
+              >
+                {issueComponents.isPending ? "Issuing…" : "Issue remaining components"}
+              </button>
+            )}
+            {showRelease && (
+              <button
+                type="button"
+                onClick={() => void act(() => releaseOrder.mutateAsync(), "Unable to release the order.")}
+                disabled={releaseOrder.isPending}
+                className="btn-ink"
+              >
+                {releaseOrder.isPending ? "Releasing…" : "Release"}
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex gap-2">
-          {showCancel && (
-            <button
-              type="button"
-              onClick={() => void act(() => cancelOrder.mutateAsync(), "Unable to cancel the order.")}
-              disabled={cancelOrder.isPending}
-              className="btn-chip hover:border-danger hover:text-danger"
-            >
-              Cancel order
-            </button>
-          )}
-          {showIssue && hasUnissued && (
-            <button
-              type="button"
-              onClick={() =>
-                void act(() => issueComponents.mutateAsync({}), "Unable to issue the components.")
-              }
-              disabled={issueComponents.isPending}
-              className="btn-ink"
-            >
-              {issueComponents.isPending ? "Issuing…" : "Issue remaining components"}
-            </button>
-          )}
-          {showRelease && (
-            <button
-              type="button"
-              onClick={() => void act(() => releaseOrder.mutateAsync(), "Unable to release the order.")}
-              disabled={releaseOrder.isPending}
-              className="btn-ink"
-            >
-              {releaseOrder.isPending ? "Releasing…" : "Release"}
-            </button>
-          )}
-        </div>
-      </div>
+      </header>
 
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
@@ -253,40 +259,40 @@ export function ProductionOrderDetailPage() {
         </p>
       )}
 
-      <dl className="mt-6 grid grid-cols-4 gap-4 text-sm">
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-ink-muted">Item</dt>
-          <dd className="text-ink">{itemLabel(data.item_id)}</dd>
+          <dt className="mono-caps text-ink-muted">Item</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{itemLabel(data.item_id)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Quantity</dt>
-          <dd className="text-ink tabular-nums">
+          <dt className="mono-caps text-ink-muted">Quantity</dt>
+          <dd className="mt-1.5 text-[13px] text-ink tabular-nums">
             {formatQuantity(data.quantity)} ({formatQuantity(data.finished_quantity)} finished)
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Warehouse</dt>
-          <dd className="text-ink">{warehouseLabel(data.warehouse_id)}</dd>
+          <dt className="mono-caps text-ink-muted">Warehouse</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{warehouseLabel(data.warehouse_id)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">WIP cost</dt>
-          <dd className="text-ink tabular-nums">{formatMoney(data.accumulated_wip_cost, currencyCode)}</dd>
+          <dt className="mono-caps text-ink-muted">WIP cost</dt>
+          <dd className="mt-1.5 text-[13px] text-ink tabular-nums">{formatMoney(data.accumulated_wip_cost, currencyCode)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Planned start</dt>
-          <dd className="text-ink">{data.planned_start_date ?? "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Planned start</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.planned_start_date ?? "—"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Planned end</dt>
-          <dd className="text-ink">{data.planned_end_date ?? "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Planned end</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.planned_end_date ?? "—"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Released</dt>
-          <dd className="text-ink">{data.released_at ? data.released_at.slice(0, 10) : "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Released</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.released_at ? data.released_at.slice(0, 10) : "—"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Finished</dt>
-          <dd className="text-ink">{data.finished_at ? data.finished_at.slice(0, 10) : "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Finished</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.finished_at ? data.finished_at.slice(0, 10) : "—"}</dd>
         </div>
       </dl>
       {data.notes && <p className="mt-4 text-sm text-ink-muted">{data.notes}</p>}
@@ -295,10 +301,10 @@ export function ProductionOrderDetailPage() {
         <FinishSection orderId={orderId} warehouseId={data.warehouse_id} remainingQuantity={remainingQuantity} />
       )}
 
-      <h2 className="mt-8 text-sm font-semibold text-ink">Components</h2>
+      <h2 className="mono-caps mt-8 text-ink-muted">Components</h2>
       <table className="mt-2 w-full border-collapse text-[13px]">
         <thead>
-          <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+          <tr className="border-b border-line text-left mono-caps text-ink-muted">
             <th className="py-2 pr-2">Line</th>
             <th className="py-2 pr-2">Component</th>
             <th className="py-2 pr-2 text-right">Required</th>
@@ -321,10 +327,10 @@ export function ProductionOrderDetailPage() {
 
       {data.operations.length > 0 && (
         <>
-          <h2 className="mt-8 text-sm font-semibold text-ink">Operations</h2>
+          <h2 className="mono-caps mt-8 text-ink-muted">Operations</h2>
           <table className="mt-2 w-full border-collapse text-[13px]">
             <thead>
-              <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+              <tr className="border-b border-line text-left mono-caps text-ink-muted">
                 <th className="py-2 pr-2">Op</th>
                 <th className="py-2 pr-2">Work center</th>
                 <th className="py-2 pr-2">Description</th>

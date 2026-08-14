@@ -32,17 +32,24 @@ export function WarehouseListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Warehouses</h1>
-        {canManage && (
-          <Link
-            to="/inventory/warehouses/new"
-            className="btn-ink"
-          >
-            New warehouse
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/inventory">Inventory</Link> / <span className="text-ink">Warehouses</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Warehouses</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/inventory/warehouses/new"
+                className="btn-ink"
+              >
+                New warehouse
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
       <div className="mt-4">
         <DataGrid

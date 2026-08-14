@@ -43,19 +43,29 @@ export function InvoiceMatchListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Invoice Matches</h1>
-        {canManage && (
-          <Link
-            to="/procurement/invoice-matches/new"
-            className="btn-ink"
-          >
-            New match
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/procurement" className="hover:underline">
+            Procurement
+          </Link>{" "}
+          / <span className="text-ink">Invoice Matches</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Invoice Matches</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/procurement/invoice-matches/new"
+                className="btn-ink"
+              >
+                New match
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4">
+      <div>
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value as MatchStatus | "")}
@@ -78,6 +88,8 @@ export function InvoiceMatchListPage() {
           onRowClick={(row) => void navigate({ to: "/procurement/invoice-matches/$invoiceMatchId", params: { invoiceMatchId: row.id } })}
           loading={matches.isPending}
           emptyMessage="No invoice matches yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={matches.hasNextPage}
           onLoadMore={() => void matches.fetchNextPage()}
           loadingMore={matches.isFetchingNextPage}

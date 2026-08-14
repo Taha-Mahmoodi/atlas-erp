@@ -33,7 +33,7 @@ export function StatementGroupTable({ groups, total, totalLabel, currencyCode }:
       {groups.map((group) => (
         <tbody key={group.group_code}>
           <tr>
-            <td colSpan={2} className="px-3 pt-3 pb-1 text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">
+            <td colSpan={2} className="px-3 pt-3 pb-1 mono-caps text-ink-muted">
               {group.group_name}
             </td>
           </tr>

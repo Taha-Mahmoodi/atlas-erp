@@ -45,17 +45,24 @@ export function BillingListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Billings</h1>
-        {canManage && (
-          <Link
-            to="/sales/billings/new"
-            className="btn-ink"
-          >
-            New billing
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/sales">Sales</Link> / <span className="text-ink">Billings</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Billings</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/sales/billings/new"
+                className="btn-ink"
+              >
+                New billing
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
       <div className="mt-4">
         <select
@@ -78,6 +85,8 @@ export function BillingListPage() {
           onRowClick={(row) => void navigate({ to: "/sales/billings/$billingId", params: { billingId: row.id } })}
           loading={billings.isPending}
           emptyMessage="No billings yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={billings.hasNextPage}
           onLoadMore={() => void billings.fetchNextPage()}
           loadingMore={billings.isFetchingNextPage}

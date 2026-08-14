@@ -5,7 +5,7 @@
  * backend but has no picker UI yet — no cost-center lookup exists frontend-side.
  */
 
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -102,13 +102,23 @@ export function EquipmentFormPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{isEdit ? "Edit equipment" : "New equipment"}</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/maintenance/equipment">Equipment</Link> /{" "}
+          <span className="text-ink">{isEdit ? "Edit equipment" : "New equipment"}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">
+            {isEdit ? "Edit equipment" : "New equipment"}
+          </h1>
+        </div>
+      </header>
       {error && (
-        <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
+        <p role="alert" className="mb-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
         </p>
       )}
-      <div className="mt-6">
+      <div>
         <FormBuilder
           fields={fieldsFor(isEdit)}
           values={values}

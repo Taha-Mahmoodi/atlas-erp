@@ -5,6 +5,7 @@
  * frequency, capped — a same-period re-run grants nothing).
  */
 
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -53,12 +54,17 @@ export function LeaveBalancesPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Leave Balances</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/hr">HR</Link> / <span className="text-ink">Leave balances</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">Leave Balances</h1>
+      </header>
 
       {canRunAccrual && (
-        <div className="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
-          <h2 className="text-sm font-semibold text-ink">Accrual run</h2>
-          <p className="mt-1 text-xs text-ink-muted">
+        <div className="rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+          <h2 className="mb-3.5 mono-caps text-ink-muted">Accrual run</h2>
+          <p className="text-[12px] text-ink-muted">
             Grants every active employee the per-period days of each active leave type of this
             frequency. Idempotent — a same-period re-run grants nothing.
           </p>
@@ -118,15 +124,15 @@ export function LeaveBalancesPage() {
       </div>
 
       {employeeId && (
-        <div className="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
+        <div className="mt-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
           {balances.isPending ? (
-            <p className="text-sm text-ink-muted">Loading…</p>
+            <p className="text-[13px] text-ink-muted">Loading…</p>
           ) : (balances.data?.length ?? 0) === 0 ? (
-            <p className="text-sm text-ink-muted">No balances yet — run an accrual first.</p>
+            <p className="text-[13px] text-ink-muted">No balances yet — run an accrual first.</p>
           ) : (
             <table className="w-full border-collapse text-[13px]">
               <thead>
-                <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+                <tr className="border-b border-line text-left mono-caps text-ink-muted">
                   <th className="py-2 pr-2">Leave type</th>
                   <th className="py-2 pr-2 text-right">Balance (days)</th>
                   <th className="py-2 pr-2 text-right">Accrued to date</th>

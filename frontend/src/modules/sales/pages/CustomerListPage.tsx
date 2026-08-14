@@ -31,17 +31,24 @@ export function CustomerListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Customers</h1>
-        {canManage && (
-          <Link
-            to="/sales/customers/new"
-            className="btn-ink"
-          >
-            New customer
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/sales">Sales</Link> / <span className="text-ink">Customers</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Customers</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/sales/customers/new"
+                className="btn-ink"
+              >
+                New customer
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
       <div className="mt-4">
         <select
@@ -64,6 +71,8 @@ export function CustomerListPage() {
           onRowClick={(row) => void navigate({ to: "/sales/customers/$customerId", params: { customerId: row.id } })}
           loading={customers.isPending}
           emptyMessage="No customers yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={customers.hasNextPage}
           onLoadMore={() => void customers.fetchNextPage()}
           loadingMore={customers.isFetchingNextPage}

@@ -6,6 +6,7 @@
  * cost-layer lookup tool (FIFO items, pick item + warehouse to see its layers oldest-first).
  */
 
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { formatMoney, formatQuantity } from "@/lib/format";
@@ -56,7 +57,12 @@ export function StockValuationPage() {
 
   return (
     <div>
-      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Stock Valuation</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/inventory">Inventory</Link> / <span className="text-ink">Stock Valuation</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">Stock Valuation</h1>
+      </header>
 
       <div className="mt-4 flex gap-4">
         <select
@@ -92,6 +98,11 @@ export function StockValuationPage() {
           rowKey={(row) => `${row.item_id}:${row.warehouse_id}`}
           loading={valuations.isPending}
           emptyMessage="No moving-average valuation for this filter — FIFO items are valued via cost layers below instead."
+          isFiltered={Boolean(itemId || warehouseId)}
+          onClearFilters={() => {
+            setItemId("");
+            setWarehouseId("");
+          }}
           hasMore={valuations.hasNextPage}
           onLoadMore={() => void valuations.fetchNextPage()}
           loadingMore={valuations.isFetchingNextPage}
@@ -114,9 +125,9 @@ function CostLayersLookup() {
   const currencyCode = currency.data ?? "—";
 
   return (
-    <div className="mt-8 rounded-card border border-line bg-surface p-4 shadow-card">
-      <h2 className="text-sm font-semibold text-ink">FIFO cost layers</h2>
-      <p className="mt-1 text-xs text-ink-muted">Oldest-first; layers are consumed in this order as stock issues.</p>
+    <div className="mt-8 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+      <h2 className="mono-caps text-ink-muted">FIFO cost layers</h2>
+      <p className="mt-1 text-[12px] text-ink-muted">Oldest-first; layers are consumed in this order as stock issues.</p>
 
       <div className="mt-3 flex gap-4">
         <select
@@ -148,7 +159,7 @@ function CostLayersLookup() {
       {itemId && warehouseId && (
         <table className="mt-3 w-full border-collapse text-[13px]">
           <thead>
-            <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+            <tr className="border-b border-line text-left mono-caps text-ink-muted">
               <th className="py-1.5 pr-2">Received</th>
               <th className="py-1.5 pr-2 text-right">Original qty</th>
               <th className="py-1.5 pr-2 text-right">Remaining qty</th>
@@ -158,11 +169,11 @@ function CostLayersLookup() {
           <tbody>
             {layers.isPending ? (
               <tr>
-                <td colSpan={4} className="py-4 text-center text-sm text-ink-muted">Loading…</td>
+                <td colSpan={4} className="py-4 text-center text-[13px] text-ink-muted">Loading…</td>
               </tr>
             ) : (layers.data?.items ?? []).length === 0 ? (
               <tr>
-                <td colSpan={4} className="py-4 text-center text-sm text-ink-muted">No cost layers.</td>
+                <td colSpan={4} className="py-4 text-center text-[13px] text-ink-muted">No cost layers.</td>
               </tr>
             ) : (
               layers.data?.items.map((layer) => (

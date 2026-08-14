@@ -38,17 +38,24 @@ export function StockCountListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Stock Counts</h1>
-        {canManage && (
-          <Link
-            to="/inventory/stock-counts/new"
-            className="btn-ink"
-          >
-            New count
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/inventory">Inventory</Link> / <span className="text-ink">Stock Counts</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Stock Counts</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/inventory/stock-counts/new"
+                className="btn-ink"
+              >
+                New count
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
       <div className="mt-4">
         <select
@@ -72,6 +79,8 @@ export function StockCountListPage() {
           onRowClick={(row) => void navigate({ to: "/inventory/stock-counts/$countId", params: { countId: row.id } })}
           loading={counts.isPending}
           emptyMessage="No stock counts yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           label="Stock counts"
         />
       </div>

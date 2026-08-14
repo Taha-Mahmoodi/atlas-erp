@@ -4,7 +4,7 @@
  * goods receipt whose line is flagged `requires_inspection`, never via the API.
  */
 
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { formatDate, formatQuantity } from "@/lib/format";
@@ -60,9 +60,16 @@ export function InspectionLotListPage() {
 
   return (
     <div>
-      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Inspection lots</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/quality">Quality</Link> / <span className="text-ink">Inspection lots</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Inspection lots</h1>
+        </div>
+      </header>
 
-      <div className="mt-4">
+      <div>
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value as InspectionLotStatus | "")}
@@ -84,6 +91,8 @@ export function InspectionLotListPage() {
           onRowClick={(row) => void navigate({ to: "/quality/inspection-lots/$lotId", params: { lotId: row.id } })}
           loading={lots.isPending}
           emptyMessage="No inspection lots. Posting a goods receipt with a line flagged for inspection creates one."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={lots.hasNextPage}
           onLoadMore={() => void lots.fetchNextPage()}
           loadingMore={lots.isFetchingNextPage}

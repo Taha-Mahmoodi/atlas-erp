@@ -7,6 +7,7 @@
  * construction — a false value flags a data bug, not something to fix here.
  */
 
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { formatMoney } from "@/lib/format";
@@ -25,9 +26,14 @@ export function BalanceSheetPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Balance Sheet</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance">Finance</Link> / <span className="text-ink">Balance Sheet</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">Balance Sheet</h1>
+      </header>
 
-      <div className="mt-4 flex items-center gap-4">
+      <div className="flex items-center gap-4">
         <input
           type="date"
           value={asOf}
@@ -42,12 +48,12 @@ export function BalanceSheetPage() {
       </div>
 
       {balanceSheet.isPending ? (
-        <p className="mt-6 text-sm text-ink-muted">Loading…</p>
+        <p className="mt-6 text-[13px] text-ink-muted">Loading…</p>
       ) : (
         balanceSheet.data && (
           <div className="mt-6 grid grid-cols-2 gap-4">
-            <div className="rounded-card border border-line bg-surface p-4 shadow-card">
-              <h2 className="text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">Assets</h2>
+            <div className="rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+              <h2 className="mb-3.5 mono-caps text-ink-muted">Assets</h2>
               <StatementGroupTable
                 groups={balanceSheet.data.asset_groups}
                 total={balanceSheet.data.asset_total}
@@ -56,8 +62,8 @@ export function BalanceSheetPage() {
               />
             </div>
             <div className="space-y-4">
-              <div className="rounded-card border border-line bg-surface p-4 shadow-card">
-                <h2 className="text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">Liabilities</h2>
+              <div className="rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+                <h2 className="mb-3.5 mono-caps text-ink-muted">Liabilities</h2>
                 <StatementGroupTable
                   groups={balanceSheet.data.liability_groups}
                   total={balanceSheet.data.liability_total}
@@ -65,8 +71,8 @@ export function BalanceSheetPage() {
                   currencyCode={currencyCode}
                 />
               </div>
-              <div className="rounded-card border border-line bg-surface p-4 shadow-card">
-                <h2 className="text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">Equity</h2>
+              <div className="rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+                <h2 className="mb-3.5 mono-caps text-ink-muted">Equity</h2>
                 <StatementGroupTable
                   groups={balanceSheet.data.equity_groups}
                   total={balanceSheet.data.equity_total}

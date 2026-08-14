@@ -52,17 +52,25 @@ export function WorkCenterListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Work Centers</h1>
-        {canManage && (
-          <Link
-            to="/manufacturing/work-centers/new"
-            className="btn-ink"
-          >
-            New work center
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/manufacturing">Manufacturing</Link> /{" "}
+          <span className="text-ink">Work Centers</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Work Centers</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/manufacturing/work-centers/new"
+                className="btn-ink"
+              >
+                New work center
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
       <div className="mt-4">
         <select
@@ -84,6 +92,8 @@ export function WorkCenterListPage() {
           onRowClick={(row) => void navigate({ to: "/manufacturing/work-centers/$workCenterId", params: { workCenterId: row.id } })}
           loading={workCenters.isPending}
           emptyMessage="No work centers yet."
+          isFiltered={Boolean(activeOnly)}
+          onClearFilters={() => setActiveOnly("")}
           hasMore={workCenters.hasNextPage}
           onLoadMore={() => void workCenters.fetchNextPage()}
           loadingMore={workCenters.isFetchingNextPage}

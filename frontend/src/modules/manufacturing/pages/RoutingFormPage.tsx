@@ -5,7 +5,7 @@
  * ACTIVE+default version of the same item; deactivating clears status AND the default flag.
  */
 
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -81,9 +81,9 @@ function RoutingOperationsSection({ routingId, isDraft }: { routingId: string; i
   };
 
   return (
-    <div className="mt-8 rounded-card border border-line bg-surface p-4 shadow-card">
-      <h2 className="text-sm font-semibold text-ink">Operations</h2>
-      <p className="mt-1 text-xs text-ink-muted">
+    <div className="mt-8 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+      <h2 className="mono-caps mb-3.5 text-ink-muted">Operations</h2>
+      <p className="text-[12px] text-ink-muted">
         Ordered steps with setup and per-unit run times at a work center — a production order snapshots
         these at create time.
       </p>
@@ -95,7 +95,7 @@ function RoutingOperationsSection({ routingId, isDraft }: { routingId: string; i
 
       <table className="mt-3 w-full border-collapse text-[13px]">
         <thead>
-          <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+          <tr className="border-b border-line text-left mono-caps text-ink-muted">
             <th className="py-1.5 pr-2">Op</th>
             <th className="py-1.5 pr-2">Work center</th>
             <th className="py-1.5 pr-2">Description</th>
@@ -119,7 +119,7 @@ function RoutingOperationsSection({ routingId, isDraft }: { routingId: string; i
                   <button
                     type="button"
                     onClick={() => void remove(operation.id)}
-                    className="text-xs font-medium text-danger hover:underline"
+                    className="text-[12.5px] font-medium text-danger hover:underline"
                   >
                     Remove
                   </button>
@@ -282,33 +282,39 @@ export function RoutingFormPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{isEdit ? "Edit routing" : "New routing"}</h1>
-        {isEdit && routing.data && (
-          <div className="flex gap-2">
-            {isDraft && (
-              <button
-                type="button"
-                onClick={() => void activate()}
-                disabled={activateRouting.isPending}
-                className="btn-ink"
-              >
-                {activateRouting.isPending ? "Activating…" : "Activate"}
-              </button>
-            )}
-            {isActive && (
-              <button
-                type="button"
-                onClick={() => void deactivate()}
-                disabled={deactivateRouting.isPending}
-                className="btn-chip hover:border-danger hover:text-danger"
-              >
-                Deactivate
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/manufacturing/routings">Routings</Link> /{" "}
+          <span className="text-ink">{isEdit ? "Edit routing" : "New routing"}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{isEdit ? "Edit routing" : "New routing"}</h1>
+          {isEdit && routing.data && (
+            <div className="flex items-center gap-2.5">
+              {isDraft && (
+                <button
+                  type="button"
+                  onClick={() => void activate()}
+                  disabled={activateRouting.isPending}
+                  className="btn-ink"
+                >
+                  {activateRouting.isPending ? "Activating…" : "Activate"}
+                </button>
+              )}
+              {isActive && (
+                <button
+                  type="button"
+                  onClick={() => void deactivate()}
+                  disabled={deactivateRouting.isPending}
+                  className="btn-chip hover:border-danger hover:text-danger"
+                >
+                  Deactivate
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </header>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}

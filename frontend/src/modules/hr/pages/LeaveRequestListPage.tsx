@@ -45,19 +45,26 @@ export function LeaveRequestListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Leave Requests</h1>
-        {canRequest && (
-          <Link
-            to="/hr/leave-requests/new"
-            className="btn-ink"
-          >
-            New request
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/hr">HR</Link> / <span className="text-ink">Leave requests</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Leave Requests</h1>
+          <div className="flex items-center gap-2.5">
+            {canRequest && (
+              <Link
+                to="/hr/leave-requests/new"
+                className="btn-ink"
+              >
+                New request
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4">
+      <div>
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value as LeaveRequestStatus | "")}
@@ -80,6 +87,8 @@ export function LeaveRequestListPage() {
           onRowClick={(row) => void navigate({ to: "/hr/leave-requests/$requestId", params: { requestId: row.id } })}
           loading={requests.isPending}
           emptyMessage="No leave requests yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={requests.hasNextPage}
           onLoadMore={() => void requests.fetchNextPage()}
           loadingMore={requests.isFetchingNextPage}

@@ -4,7 +4,7 @@
  * create-then-post only per the backend surface (no PATCH endpoint).
  */
 
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { ApiError } from "@/lib/apiClient";
@@ -76,7 +76,12 @@ export function VendorBillFormPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">New vendor bill</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance/vendor-bills">Vendor Bills</Link> / <span className="text-ink">New vendor bill</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">New vendor bill</h1>
+      </header>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}

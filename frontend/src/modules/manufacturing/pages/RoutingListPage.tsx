@@ -44,17 +44,25 @@ export function RoutingListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Routings</h1>
-        {canManage && (
-          <Link
-            to="/manufacturing/routings/new"
-            className="btn-ink"
-          >
-            New routing
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/manufacturing">Manufacturing</Link> /{" "}
+          <span className="text-ink">Routings</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Routings</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/manufacturing/routings/new"
+                className="btn-ink"
+              >
+                New routing
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
       <div className="mt-4">
         <select
@@ -79,6 +87,8 @@ export function RoutingListPage() {
           }
           loading={routings.isPending}
           emptyMessage="No routings yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={routings.hasNextPage}
           onLoadMore={() => void routings.fetchNextPage()}
           loadingMore={routings.isFetchingNextPage}

@@ -12,6 +12,7 @@ import { useState } from "react";
 import { getErrorMessage } from "@/lib/apiClient";
 import { formatQuantity } from "@/lib/format";
 import { useMe } from "@/lib/session";
+import { StatusPill } from "@/components/StatusPill";
 import { useItemLookup, useUomOptions } from "@/modules/inventory/hooks";
 import {
   useCancelRequisition,
@@ -47,7 +48,7 @@ export function RequisitionDetailPage() {
   const [convertedTo, setConvertedTo] = useState<{ kind: "rfq" | "po"; id: string } | null>(null);
 
   if (requisition.isPending || !requisition.data) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-[13px] text-ink-muted">Loading…</p>;
   }
   const data = requisition.data;
   const isDraft = data.status === "DRAFT";
@@ -114,40 +115,48 @@ export function RequisitionDetailPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.requisition_number}</h1>
-        <div className="flex gap-2">
-          {isDraft && canManage && (
-            <Link
-              to="/procurement/requisitions/$requisitionId/edit"
-              params={{ requisitionId: data.id }}
-              className="btn-chip"
-            >
-              Edit
-            </Link>
-          )}
-          {canCancel && canManage && (
-            <button
-              type="button"
-              onClick={() => void cancel()}
-              disabled={cancelRequisition.isPending}
-              className="btn-chip hover:border-danger hover:text-danger"
-            >
-              Cancel
-            </button>
-          )}
-          {isDraft && canManage && (
-            <button
-              type="button"
-              onClick={() => void submit()}
-              disabled={submitRequisition.isPending}
-              className="btn-ink"
-            >
-              {submitRequisition.isPending ? "Submitting…" : "Submit"}
-            </button>
-          )}
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/procurement/requisitions" className="hover:underline">
+            Requisitions
+          </Link>{" "}
+          / <span className="text-ink">{data.requisition_number}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.requisition_number}</h1>
+          <div className="flex items-center gap-2.5">
+            {isDraft && canManage && (
+              <Link
+                to="/procurement/requisitions/$requisitionId/edit"
+                params={{ requisitionId: data.id }}
+                className="btn-chip"
+              >
+                Edit
+              </Link>
+            )}
+            {canCancel && canManage && (
+              <button
+                type="button"
+                onClick={() => void cancel()}
+                disabled={cancelRequisition.isPending}
+                className="btn-chip hover:border-danger hover:text-danger"
+              >
+                Cancel
+              </button>
+            )}
+            {isDraft && canManage && (
+              <button
+                type="button"
+                onClick={() => void submit()}
+                disabled={submitRequisition.isPending}
+                className="btn-ink"
+              >
+                {submitRequisition.isPending ? "Submitting…" : "Submit"}
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      </header>
 
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
@@ -169,8 +178,8 @@ export function RequisitionDetailPage() {
       )}
 
       {isApproved && (canCreateRfq || canCreatePo) && !convertedTo && (
-        <div className="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
-          <h2 className="text-sm font-semibold text-ink">Convert to a sourcing document</h2>
+        <div className="mt-6 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+          <h2 className="mb-3.5 mono-caps text-ink-muted">Convert to a sourcing document</h2>
           <label htmlFor="convert-vendor" className="mb-1 mt-3 block text-xs font-medium text-ink-muted">
             Vendor
           </label>
@@ -212,24 +221,26 @@ export function RequisitionDetailPage() {
         </div>
       )}
 
-      <dl className="mt-6 grid grid-cols-3 gap-4 text-sm">
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-ink-muted">Status</dt>
-          <dd className="text-ink">{data.status}</dd>
+          <dt className="mono-caps text-ink-muted">Status</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
+            <StatusPill status={data.status} />
+          </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Needed by</dt>
-          <dd className="text-ink">{data.needed_by_date ?? "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Needed by</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.needed_by_date ?? "—"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Notes</dt>
-          <dd className="text-ink">{data.notes ?? "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Notes</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.notes ?? "—"}</dd>
         </div>
       </dl>
 
       {isSubmitted && canApprove && (
-        <div className="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
-          <h2 className="text-sm font-semibold text-ink">Decision</h2>
+        <div className="mt-6 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+          <h2 className="mb-3.5 mono-caps text-ink-muted">Decision</h2>
           <label htmlFor="comment" className="mb-1 mt-3 block text-xs font-medium text-ink-muted">
             Comment (optional)
           </label>
@@ -262,7 +273,7 @@ export function RequisitionDetailPage() {
 
       <table className="mt-6 w-full border-collapse text-[13px]">
         <thead>
-          <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+          <tr className="border-b border-line text-left mono-caps text-ink-muted">
             <th className="py-2 pr-2">Item</th>
             <th className="py-2 pr-2">Description</th>
             <th className="py-2 pr-2 text-right">Quantity</th>

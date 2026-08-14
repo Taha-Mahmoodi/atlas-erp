@@ -66,19 +66,26 @@ export function EmployeeListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Employees</h1>
-        {canCreate && (
-          <Link
-            to="/hr/employees/new"
-            className="btn-ink"
-          >
-            New employee
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/hr">HR</Link> / <span className="text-ink">Employees</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Employees</h1>
+          <div className="flex items-center gap-2.5">
+            {canCreate && (
+              <Link
+                to="/hr/employees/new"
+                className="btn-ink"
+              >
+                New employee
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4 flex gap-2">
+      <div className="flex gap-2">
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value as EmploymentStatus | "")}
@@ -111,6 +118,11 @@ export function EmployeeListPage() {
           onRowClick={(row) => void navigate({ to: "/hr/employees/$employeeId", params: { employeeId: row.id } })}
           loading={employees.isPending}
           emptyMessage="No employees yet."
+          isFiltered={Boolean(status || departmentId)}
+          onClearFilters={() => {
+            setStatus("");
+            setDepartmentId("");
+          }}
           hasMore={employees.hasNextPage}
           onLoadMore={() => void employees.fetchNextPage()}
           loadingMore={employees.isFetchingNextPage}

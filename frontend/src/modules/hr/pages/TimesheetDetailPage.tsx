@@ -7,7 +7,7 @@
  * unvalidated); cost centers come from finance's reference list.
  */
 
-import { useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -122,7 +122,7 @@ function EntryAddRow({ timesheetId }: { timesheetId: string }) {
             type="button"
             onClick={() => void add()}
             disabled={addEntry.isPending || !entryDate || !hours}
-            className="text-xs font-medium text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-45"
+            className="text-[12.5px] font-medium text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-45"
           >
             Add
           </button>
@@ -161,7 +161,7 @@ export function TimesheetDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   if (timesheet.isPending || !timesheet.data) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-[13px] text-ink-muted">Loading…</p>;
   }
   const data = timesheet.data;
   const isDraft = data.status === "DRAFT";
@@ -190,51 +190,56 @@ export function TimesheetDetailPage() {
 
   return (
     <div className="mx-auto max-w-5xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.timesheet_number}</h1>
-        <div className="flex gap-2">
-          {isDraft && canManage && (
-            <button
-              type="button"
-              onClick={() => void act(() => submitTimesheet.mutateAsync(), "Unable to submit the timesheet.")}
-              disabled={busy}
-              className={PRIMARY}
-            >
-              {submitTimesheet.isPending ? "Submitting…" : "Submit"}
-            </button>
-          )}
-          {isSubmitted && canManage && (
-            <button
-              type="button"
-              onClick={() => void act(() => reopenTimesheet.mutateAsync(), "Unable to reopen the timesheet.")}
-              disabled={busy}
-              className={OUTLINE}
-            >
-              {reopenTimesheet.isPending ? "Reopening…" : "Reopen to draft"}
-            </button>
-          )}
-          {isSubmitted && canApprove && (
-            <>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/hr/timesheets">Timesheets</Link> / <span className="text-ink">{data.timesheet_number}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.timesheet_number}</h1>
+          <div className="flex items-center gap-2.5">
+            {isDraft && canManage && (
               <button
                 type="button"
-                onClick={() => void act(() => rejectTimesheet.mutateAsync({}), "Unable to reject the timesheet.")}
-                disabled={busy}
-                className={DANGER_OUTLINE}
-              >
-                {rejectTimesheet.isPending ? "Rejecting…" : "Reject"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void act(() => approveTimesheet.mutateAsync({}), "Unable to approve the timesheet.")}
+                onClick={() => void act(() => submitTimesheet.mutateAsync(), "Unable to submit the timesheet.")}
                 disabled={busy}
                 className={PRIMARY}
               >
-                {approveTimesheet.isPending ? "Approving…" : "Approve"}
+                {submitTimesheet.isPending ? "Submitting…" : "Submit"}
               </button>
-            </>
-          )}
+            )}
+            {isSubmitted && canManage && (
+              <button
+                type="button"
+                onClick={() => void act(() => reopenTimesheet.mutateAsync(), "Unable to reopen the timesheet.")}
+                disabled={busy}
+                className={OUTLINE}
+              >
+                {reopenTimesheet.isPending ? "Reopening…" : "Reopen to draft"}
+              </button>
+            )}
+            {isSubmitted && canApprove && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void act(() => rejectTimesheet.mutateAsync({}), "Unable to reject the timesheet.")}
+                  disabled={busy}
+                  className={DANGER_OUTLINE}
+                >
+                  {rejectTimesheet.isPending ? "Rejecting…" : "Reject"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void act(() => approveTimesheet.mutateAsync({}), "Unable to approve the timesheet.")}
+                  disabled={busy}
+                  className={PRIMARY}
+                >
+                  {approveTimesheet.isPending ? "Approving…" : "Approve"}
+                </button>
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      </header>
 
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
@@ -242,32 +247,32 @@ export function TimesheetDetailPage() {
         </p>
       )}
 
-      <dl className="mt-6 grid grid-cols-4 gap-4 text-sm">
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-ink-muted">Status</dt>
-          <dd className="text-ink">
+          <dt className="mono-caps text-ink-muted">Status</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
             <StatusPill status={data.status} />
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Employee</dt>
-          <dd className="text-ink">{employeeLabel(data.employee_id)}</dd>
+          <dt className="mono-caps text-ink-muted">Employee</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{employeeLabel(data.employee_id)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Period</dt>
-          <dd className="text-ink">
+          <dt className="mono-caps text-ink-muted">Period</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
             {data.period_start} → {data.period_end}
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Total hours</dt>
-          <dd className="text-ink tabular-nums">{formatQuantity(data.total_hours)}</dd>
+          <dt className="mono-caps text-ink-muted">Total hours</dt>
+          <dd className="mt-1.5 text-[13px] tabular-nums text-ink">{formatQuantity(data.total_hours)}</dd>
         </div>
       </dl>
 
       <table className="mt-6 w-full border-collapse text-[13px]">
         <thead>
-          <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+          <tr className="border-b border-line text-left mono-caps text-ink-muted">
             <th className="py-2 pr-2">Date</th>
             <th className="py-2 pr-2 text-right">Hours</th>
             <th className="py-2 pr-2">Project</th>
@@ -291,7 +296,7 @@ export function TimesheetDetailPage() {
                   <button
                     type="button"
                     onClick={() => void act(() => removeEntry.mutateAsync(entry.id), "Unable to remove the entry.")}
-                    className="text-xs font-medium text-danger hover:underline"
+                    className="text-[12.5px] font-medium text-danger hover:underline"
                   >
                     Remove
                   </button>
@@ -303,7 +308,7 @@ export function TimesheetDetailPage() {
         </tbody>
       </table>
       {(entries.data?.length ?? 0) === 0 && !isDraft && (
-        <p className="mt-2 text-sm text-ink-muted">No time entries.</p>
+        <p className="mt-2 text-[13px] text-ink-muted">No time entries.</p>
       )}
     </div>
   );

@@ -6,6 +6,7 @@
  * resolution internally when pricing a quote/order line; this page exposes it standalone.
  */
 
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { formatMoney, formatQuantity } from "@/lib/format";
@@ -34,13 +35,20 @@ export function PriceQuoteLookupPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Price Quote</h1>
-      <p className="mt-1 text-sm text-ink-muted">
-        Look up what a customer would actually pay for an item — resolves against price lists
-        without creating any document.
-      </p>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/sales">Sales</Link> / <span className="text-ink">Price Quote</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Price Quote</h1>
+        </div>
+        <p className="mt-1 text-[13px] text-ink-muted">
+          Look up what a customer would actually pay for an item — resolves against price lists
+          without creating any document.
+        </p>
+      </header>
 
-      <div className="mt-6 grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <div>
           <label htmlFor="quote-customer" className="mb-1 block text-xs font-medium text-ink-muted">
             Customer
@@ -105,26 +113,28 @@ export function PriceQuoteLookupPage() {
       </div>
 
       {params && (
-        <div className="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
+        <div className="mt-6 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
           {quote.isPending ? (
-            <p className="text-sm text-ink-muted">Resolving…</p>
+            <p className="text-[13px] text-ink-muted">Resolving…</p>
           ) : quote.data?.matched ? (
-            <dl className="grid grid-cols-2 gap-4 text-sm">
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
               <div>
-                <dt className="text-xs text-ink-muted">Unit price</dt>
-                <dd className="text-ink">{formatMoney(quote.data.unit_price ?? "0", quote.data.currency_code ?? "—")}</dd>
+                <dt className="mono-caps text-ink-muted">Unit price</dt>
+                <dd className="mt-1.5 text-[13px] text-ink tabular-nums">
+                  {formatMoney(quote.data.unit_price ?? "0", quote.data.currency_code ?? "—")}
+                </dd>
               </div>
               <div>
-                <dt className="text-xs text-ink-muted">Quantity</dt>
-                <dd className="text-ink">{formatQuantity(quote.data.quantity)}</dd>
+                <dt className="mono-caps text-ink-muted">Quantity</dt>
+                <dd className="mt-1.5 text-[13px] text-ink tabular-nums">{formatQuantity(quote.data.quantity)}</dd>
               </div>
               <div>
-                <dt className="text-xs text-ink-muted">Price list</dt>
-                <dd className="text-ink">{quote.data.price_list_code}</dd>
+                <dt className="mono-caps text-ink-muted">Price list</dt>
+                <dd className="mt-1.5 text-[13px] text-ink">{quote.data.price_list_code}</dd>
               </div>
             </dl>
           ) : (
-            <p className="text-sm text-ink-muted">
+            <p className="text-[13px] text-ink-muted">
               No price list matches this customer, item, quantity, and date.
             </p>
           )}

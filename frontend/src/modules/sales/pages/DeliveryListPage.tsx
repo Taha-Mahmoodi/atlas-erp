@@ -35,17 +35,24 @@ export function DeliveryListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Deliveries</h1>
-        {canManage && (
-          <Link
-            to="/sales/deliveries/new"
-            className="btn-ink"
-          >
-            New delivery
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/sales">Sales</Link> / <span className="text-ink">Deliveries</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Deliveries</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/sales/deliveries/new"
+                className="btn-ink"
+              >
+                New delivery
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
       <div className="mt-4">
         <select
@@ -68,6 +75,8 @@ export function DeliveryListPage() {
           onRowClick={(row) => void navigate({ to: "/sales/deliveries/$deliveryId", params: { deliveryId: row.id } })}
           loading={deliveries.isPending}
           emptyMessage="No deliveries yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={deliveries.hasNextPage}
           onLoadMore={() => void deliveries.fetchNextPage()}
           loadingMore={deliveries.isFetchingNextPage}

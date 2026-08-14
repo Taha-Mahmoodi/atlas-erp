@@ -8,13 +8,14 @@
  * depreciation-run pattern.
  */
 
-import { useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
 import { pollJob } from "@/lib/jobs";
 import { formatMoney, formatQuantity } from "@/lib/format";
 import { useMe } from "@/lib/session";
+import { StatusPill } from "@/components/StatusPill";
 import { useFunctionalCurrency } from "@/modules/finance/hooks";
 import {
   useBinLookup,
@@ -52,7 +53,7 @@ export function StockCountDetailPage() {
   const [awaitingJob, setAwaitingJob] = useState(false);
 
   if (count.isPending || !count.data) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-[13px] text-ink-muted">Loading…</p>;
   }
   const data = count.data;
   const isEditable = data.status === "DRAFT" || data.status === "COUNTING";
@@ -118,42 +119,48 @@ export function StockCountDetailPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.count_number}</h1>
-        {isEditable && (
-          <div className="flex gap-2">
-            {canManage && (
-              <button
-                type="button"
-                onClick={() => setShowPreview(true)}
-                className="btn-chip"
-              >
-                Preview variance
-              </button>
-            )}
-            {canManage && (
-              <button
-                type="button"
-                onClick={() => void cancel()}
-                disabled={cancelCount.isPending}
-                className="btn-chip hover:border-danger hover:text-danger"
-              >
-                Cancel
-              </button>
-            )}
-            {canPost && (
-              <button
-                type="button"
-                onClick={() => void post()}
-                disabled={postCount.isPending || awaitingJob}
-                className="btn-ink"
-              >
-                {awaitingJob ? "Processing large count…" : postCount.isPending ? "Posting…" : "Post"}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/inventory/stock-counts">Stock Counts</Link> /{" "}
+          <span className="text-ink">{data.count_number}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.count_number}</h1>
+          {isEditable && (
+            <div className="flex items-center gap-2.5">
+              {canManage && (
+                <button
+                  type="button"
+                  onClick={() => setShowPreview(true)}
+                  className="btn-chip"
+                >
+                  Preview variance
+                </button>
+              )}
+              {canManage && (
+                <button
+                  type="button"
+                  onClick={() => void cancel()}
+                  disabled={cancelCount.isPending}
+                  className="btn-chip hover:border-danger hover:text-danger"
+                >
+                  Cancel
+                </button>
+              )}
+              {canPost && (
+                <button
+                  type="button"
+                  onClick={() => void post()}
+                  disabled={postCount.isPending || awaitingJob}
+                  className="btn-ink"
+                >
+                  {awaitingJob ? "Processing large count…" : postCount.isPending ? "Posting…" : "Post"}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </header>
 
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
@@ -161,30 +168,32 @@ export function StockCountDetailPage() {
         </p>
       )}
 
-      <dl className="mt-6 grid grid-cols-4 gap-4 text-sm">
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-ink-muted">Status</dt>
-          <dd className="text-ink">{data.status}</dd>
+          <dt className="mono-caps text-ink-muted">Status</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
+            <StatusPill status={data.status} />
+          </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Type</dt>
-          <dd className="text-ink">{data.count_type}</dd>
+          <dt className="mono-caps text-ink-muted">Type</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.count_type}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Warehouse</dt>
-          <dd className="text-ink">{warehouseLabel(data.warehouse_id)}</dd>
+          <dt className="mono-caps text-ink-muted">Warehouse</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{warehouseLabel(data.warehouse_id)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Description</dt>
-          <dd className="text-ink">{data.description ?? "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Description</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.description ?? "—"}</dd>
         </div>
       </dl>
 
       {showPreview && (
-        <div className="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
-          <h2 className="text-sm font-semibold text-ink">Variance preview</h2>
+        <div className="mt-6 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+          <h2 className="mb-3.5 mono-caps text-ink-muted">Variance preview</h2>
           {preview.isPending ? (
-            <p className="mt-2 text-sm text-ink-muted">Loading…</p>
+            <p className="text-[13px] text-ink-muted">Loading…</p>
           ) : (
             <>
               <div className="mt-2 flex items-center justify-between text-sm">
@@ -195,7 +204,7 @@ export function StockCountDetailPage() {
               </div>
               <table className="mt-3 w-full border-collapse text-[13px]">
                 <thead>
-                  <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+                  <tr className="border-b border-line text-left mono-caps text-ink-muted">
                     <th className="py-1.5 pr-2">Item</th>
                     <th className="py-1.5 pr-2">Bin</th>
                     <th className="py-1.5 pr-2 text-right">System</th>
@@ -230,7 +239,7 @@ export function StockCountDetailPage() {
 
       <table className="mt-6 w-full border-collapse text-[13px]">
         <thead>
-          <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+          <tr className="border-b border-line text-left mono-caps text-ink-muted">
             <th className="py-2 pr-2">Item</th>
             <th className="py-2 pr-2">Bin</th>
             <th className="py-2 pr-2 text-right">System qty</th>
@@ -269,7 +278,7 @@ export function StockCountDetailPage() {
                     type="button"
                     onClick={() => void saveCount(line.id)}
                     disabled={!countedInputs[line.id] || recordCount.isPending}
-                    className="text-xs font-medium text-primary hover:underline disabled:opacity-45"
+                    className="text-[12.5px] font-medium text-primary hover:underline disabled:opacity-45"
                   >
                     Save
                   </button>
