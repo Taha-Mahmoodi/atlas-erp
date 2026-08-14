@@ -225,9 +225,16 @@ async def create_api_key(
 
 
 async def revoke_api_key(session: AsyncSession, key: ApiKey) -> ApiKey:
-    """Revoke a key, keeping the FIRST revocation timestamp so a retry is a no-op rather
-    than an error. It takes effect on the very next request: core/deps.py re-reads the row
-    on every call and nothing caches it."""
+    """Revoke a key, keeping the first revocation timestamp so a SEQUENTIAL retry is a no-op
+    rather than an error. It takes effect on the very next request: core/deps.py re-reads the
+    row on every call and nothing caches it.
+
+    Sequential, precisely: two revokes of one key racing in separate transactions both read
+    ``revoked_at IS NULL`` and both write, so the later stamp can win and one caller is told a
+    time that is not the stored one (tests/core/test_api_key_concurrency.py pins this). Left
+    as-is deliberately — closing it needs an atomic ``UPDATE ... WHERE revoked_at IS NULL``,
+    and a Core UPDATE skips the ORM flush events D-010 audit capture hooks. The credential is
+    equally revoked either way."""
     if key.revoked_at is None:
         key.revoked_at = now_utc()
         await session.flush()

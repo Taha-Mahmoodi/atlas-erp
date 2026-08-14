@@ -333,7 +333,8 @@ async def revoke_api_key(
     key_id: uuid.UUID, current: CurrentUserDep, session: SessionDep
 ) -> ApiKeyRead:
     """Revoke a key; effective on the credential's very next request. Idempotent by design:
-    revoking twice returns 200 with the FIRST timestamp, so a client retry is not an error."""
+    revoking twice in sequence returns 200 with the first timestamp, so a client retry is not
+    an error (two SIMULTANEOUS revokes can report two stamps — see service.revoke_api_key)."""
     key = await queries.get_api_key(session, current.tenant_id, key_id)
     if key is None:
         raise NotFoundError(message="API key not found", code="admin.api_key_not_found")
