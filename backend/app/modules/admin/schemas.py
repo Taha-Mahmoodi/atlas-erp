@@ -84,6 +84,38 @@ class AuditLogRead(ApiModel):
     created_at: datetime
 
 
+class ApiKeyCreate(ApiModel):
+    """Issue a machine credential bound to one of the tenant's users (spec Q1). ``scopes``
+    absent/null means "inherit that user's permissions unnarrowed"; a list may only ever
+    narrow them, and every key in it is validated against the RBAC catalog (D-009)."""
+
+    name: str = Field(min_length=1, max_length=200)
+    user_id: uuid.UUID
+    scopes: list[str] | None = None
+    expires_at: datetime | None = None
+
+
+class ApiKeyRead(ApiModel):
+    """A machine credential as the admin API exposes it: the secret and its digest are
+    deliberately absent, so ``prefix`` (scheme + tenant ref) is the only displayable half."""
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    name: str
+    prefix: str
+    scopes: list[str] | None
+    expires_at: datetime | None
+    revoked_at: datetime | None
+    created_at: datetime
+
+
+class ApiKeyCreated(ApiKeyRead):
+    """The 201 body — the ONE time the full key is returned. Only its sha256 is stored, so
+    a lost key is re-issued, never recovered."""
+
+    key: str
+
+
 class NumberSequenceRead(ApiModel):
     """One per-tenant number sequence as the read-only viewer exposes it (D-012):
     ``next_value`` is the counter's current position — the next number a claim would hand out."""

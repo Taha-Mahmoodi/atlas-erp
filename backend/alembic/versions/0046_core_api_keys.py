@@ -31,7 +31,7 @@ def upgrade() -> None:
         sa.Column("tenant_id", sa.Uuid(), nullable=False),
         sa.Column("user_id", sa.Uuid(), nullable=False),
         sa.Column("name", sa.String(length=200), nullable=False),
-        sa.Column("prefix", sa.String(length=40), nullable=False),
+        sa.Column("prefix", sa.String(length=80), nullable=False),
         sa.Column("secret_sha256", sa.String(length=64), nullable=False),
         sa.Column("scopes", JSON_VARIANT, nullable=True),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),

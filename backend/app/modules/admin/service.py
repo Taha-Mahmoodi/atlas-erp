@@ -8,19 +8,22 @@ from collections.abc import Iterable
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import hash_password_async
+from app.core.auth import API_KEY_PREFIX, hash_password_async, mint_api_key, now_utc
 from app.core.exceptions import ValidationFailedError
-from app.core.models import Permission, Role, RolePermission, User, UserRole
+from app.core.models import ApiKey, Permission, Role, RolePermission, User, UserRole
 from app.core.rbac import (
+    ADMIN_APIKEY_MANAGE,
     ADMIN_AUDIT_READ,
     ADMIN_NUMBERING_READ,
     ADMIN_ROLE_MANAGE,
     ADMIN_TENANT_MANAGE,
     ADMIN_USER_MANAGE,
+    catalog_keys,
     invalidate,
 )
 from app.core.tenancy import system_context
 from app.modules.admin.models import Tenant
+from app.modules.admin.schemas import ApiKeyCreate
 
 # The admin keys a tenant's first user (the admin) gets via grant_admin_role.
 _ADMIN_PERMISSION_KEYS = (
@@ -29,6 +32,7 @@ _ADMIN_PERMISSION_KEYS = (
     ADMIN_AUDIT_READ,
     ADMIN_TENANT_MANAGE,
     ADMIN_NUMBERING_READ,
+    ADMIN_APIKEY_MANAGE,
 )
 
 
@@ -170,3 +174,60 @@ async def grant_admin_role(
     )
     await assign_role(session, tenant_id, user_id, role.id, token_version)
     return role
+
+
+# --- Machine credentials (spec Q1) --------------------------------------------
+
+
+async def create_api_key(
+    session: AsyncSession, tenant_id: uuid.UUID, payload: ApiKeyCreate
+) -> tuple[ApiKey, str]:
+    """Mint a key for one of the tenant's users and store only its digest, returning
+    (row, full key). The caller shows the full key ONCE — it is never stored, so a lost
+    key is re-issued, never recovered.
+
+    Scopes validate against the CODE catalog, not the tenant's granted rows (D-009): a
+    tenant cannot scope a key to a permission no code path checks. No subset check against
+    the bound user's own permissions is done here — authentication intersects the two on
+    every request (core/deps.py), so a key can only ever narrow its user, and a later role
+    change re-narrows it without orphaning the key.
+
+    The key string carries the tenant SLUG because that is what core/deps.py resolves it
+    with; minting on any other ref produces a key that authenticates against nothing.
+    """
+    unknown = sorted(set(payload.scopes or ()) - catalog_keys())
+    if unknown:
+        raise ValidationFailedError(
+            code="rbac.unknown_permission",
+            message="Unknown permission key(s)",
+            details={"keys": unknown},
+        )
+    tenant = await session.get_one(Tenant, tenant_id)
+    full_key, secret_sha256 = mint_api_key(tenant.slug)
+    key = ApiKey(
+        tenant_id=tenant_id,
+        user_id=payload.user_id,
+        name=payload.name,
+        # Scheme + tenant ref, rebuilt from its parts rather than sliced off the key:
+        # secrets.token_urlsafe emits '_', so splitting the key on the LAST underscore
+        # lands inside the secret about half the time and stores most of it in a column
+        # the list endpoint displays. No part of the secret belongs here — operators tell
+        # two keys apart by ``name``.
+        prefix=f"{API_KEY_PREFIX}_{tenant.slug}",
+        secret_sha256=secret_sha256,
+        scopes=payload.scopes,
+        expires_at=payload.expires_at,
+    )
+    session.add(key)
+    await session.flush()
+    return key, full_key
+
+
+async def revoke_api_key(session: AsyncSession, key: ApiKey) -> ApiKey:
+    """Revoke a key, keeping the FIRST revocation timestamp so a retry is a no-op rather
+    than an error. It takes effect on the very next request: core/deps.py re-reads the row
+    on every call and nothing caches it."""
+    if key.revoked_at is None:
+        key.revoked_at = now_utc()
+        await session.flush()
+    return key

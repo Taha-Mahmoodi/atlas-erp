@@ -201,8 +201,11 @@ class ApiKey(UuidPKMixin, TenantMixin, TimestampMixin, Base):
 
     user_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, nullable=False)
     name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
-    # The non-secret lookup half of the key string, kept for display ("atk_acme_a1b2…").
-    prefix: Mapped[str] = mapped_column(sa.String(40), nullable=False)
+    # The non-secret half of the key string, kept for display ("atk_acme"). Never any part
+    # of the secret. Sized for the scheme plus a full-length tenant slug: onboarding caps
+    # slugs at 63 chars (modules/industry/schemas.py), and VARCHAR overflow is a
+    # Postgres-only error SQLite would never show (D-003).
+    prefix: Mapped[str] = mapped_column(sa.String(80), nullable=False)
     secret_sha256: Mapped[str] = mapped_column(sa.String(64), nullable=False)
     scopes: Mapped[list[str] | None] = mapped_column(JSON_VARIANT, nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)

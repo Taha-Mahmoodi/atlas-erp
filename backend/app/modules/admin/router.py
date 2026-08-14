@@ -6,6 +6,7 @@ no migration):
 * Users   — GET/POST ``/users``, GET ``/users/{id}`` (with roles), POST ``/users/assign-role``.
 * Roles   — GET/POST ``/roles``, GET ``/roles/{id}`` (with permissions).
 * Catalog — GET ``/permissions`` (the global grantable permission set).
+* Keys    — GET/POST ``/api-keys``, POST ``/api-keys/{id}/revoke`` (machine credentials).
 * Audit   — GET ``/audit-logs`` (read-only viewer, filterable).
 * Numbers — GET ``/number-sequences`` (read-only viewer).
 
@@ -18,7 +19,8 @@ Writes reuse admin.service and commit through ``run_in_uow`` (D-011) so audit ri
 transaction; write results are validated into their Read schema AFTER the uow commits. Reads are
 cursor-paginated (D-014). RBAC (D-009): users/roles guarded by the existing ``admin.user.manage`` /
 ``admin.role.manage`` keys, the audit viewer by ``admin.audit.read``, the number-sequence viewer by
-``admin.numbering.read``. STRUCTURE §5: this router imports core + admin only.
+``admin.numbering.read``, machine credentials by ``admin.apikey.manage``. STRUCTURE §5: this router
+imports core + admin only.
 """
 
 import uuid
@@ -30,8 +32,10 @@ from fastapi import APIRouter, Depends
 from app.core.deps import CurrentUserDep, SessionDep
 from app.core.events import run_in_uow
 from app.core.exceptions import NotFoundError
+from app.core.models import ApiKey
 from app.core.pagination import CursorParams, cursor_params, map_page
 from app.core.rbac import (
+    ADMIN_APIKEY_MANAGE,
     ADMIN_AUDIT_READ,
     ADMIN_NUMBERING_READ,
     ADMIN_ROLE_MANAGE,
@@ -41,6 +45,9 @@ from app.core.rbac import (
 from app.core.schemas import Page
 from app.modules.admin import queries, service
 from app.modules.admin.schemas import (
+    ApiKeyCreate,
+    ApiKeyCreated,
+    ApiKeyRead,
     AuditLogRead,
     NumberSequenceRead,
     PermissionRead,
@@ -253,6 +260,66 @@ async def list_permissions(
     Reading it is part of role management, so it shares the ``admin.role.manage`` guard."""
     permissions = await queries.list_permissions(session)
     return [PermissionRead.model_validate(permission) for permission in permissions]
+
+
+# --- Machine credentials (spec Q1) --------------------------------------------
+
+
+@router.post(
+    "/api-keys",
+    response_model=ApiKeyCreated,
+    status_code=201,
+    dependencies=[Depends(require_permission(ADMIN_APIKEY_MANAGE))],
+)
+async def create_api_key(
+    payload: ApiKeyCreate, current: CurrentUserDep, session: SessionDep
+) -> ApiKeyCreated:
+    """Issue a key bound to one of the tenant's users. The full key is in this response and
+    nowhere else — only its sha256 is stored. An unknown scope is a 422 (D-009); a user id
+    from another tenant is simply not found under the D-007 filter."""
+    if await queries.get_user(session, current.tenant_id, payload.user_id) is None:
+        raise NotFoundError(message="User not found", code="admin.user_not_found")
+    holder: list[tuple[ApiKey, str]] = []
+
+    async def _work() -> None:
+        holder.append(await service.create_api_key(session, current.tenant_id, payload))
+
+    await run_in_uow(session, _work)
+    key, full_key = holder[0]
+    return ApiKeyCreated(**ApiKeyRead.model_validate(key).model_dump(), key=full_key)
+
+
+@router.get(
+    "/api-keys",
+    response_model=Page[ApiKeyRead],
+    dependencies=[Depends(require_permission(ADMIN_APIKEY_MANAGE))],
+)
+async def list_api_keys(
+    current: CurrentUserDep,
+    session: SessionDep,
+    params: CursorParams = CursorParamsDep,
+) -> Page[ApiKeyRead]:
+    page = await queries.list_api_keys(
+        session, current.tenant_id, cursor=params.cursor, limit=params.limit
+    )
+    return map_page(page, ApiKeyRead)
+
+
+@router.post(
+    "/api-keys/{key_id}/revoke",
+    response_model=ApiKeyRead,
+    dependencies=[Depends(require_permission(ADMIN_APIKEY_MANAGE))],
+)
+async def revoke_api_key(
+    key_id: uuid.UUID, current: CurrentUserDep, session: SessionDep
+) -> ApiKeyRead:
+    """Revoke a key; effective on the credential's very next request. Idempotent by design:
+    revoking twice returns 200 with the FIRST timestamp, so a client retry is not an error."""
+    key = await queries.get_api_key(session, current.tenant_id, key_id)
+    if key is None:
+        raise NotFoundError(message="API key not found", code="admin.api_key_not_found")
+    await run_in_uow(session, lambda: service.revoke_api_key(session, key))
+    return ApiKeyRead.model_validate(key)
 
 
 # --- Audit viewer (read-only) -------------------------------------------------

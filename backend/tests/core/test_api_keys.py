@@ -17,7 +17,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import mint_api_key, parse_api_key
+from app.core.auth import API_KEY_PREFIX, mint_api_key, parse_api_key
 from app.core.models import ApiKey, AuditLog
 from app.core.rbac import ADMIN_USER_MANAGE
 from app.core.tenancy import tenant_context
@@ -100,8 +100,10 @@ def api_key_factory(db_session: AsyncSession) -> ApiKeyFactory:
                 ApiKey(
                     user_id=principal.user_id,
                     name="website",
-                    # Scheme + tenant ref: everything but the secret, safe to display.
-                    prefix=full.rsplit("_", 1)[0],
+                    # Scheme + tenant ref, built from its parts like the real issuer
+                    # (admin/service.create_api_key): slicing the key on its LAST
+                    # underscore lands inside the urlsafe secret about half the time.
+                    prefix=f"{API_KEY_PREFIX}_{tenant_ref or principal.tenant_slug}",
                     secret_sha256=digest,
                     scopes=scopes,
                     expires_at=expires_at,
