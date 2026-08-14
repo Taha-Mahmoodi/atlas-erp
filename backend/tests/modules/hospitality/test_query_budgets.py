@@ -18,7 +18,6 @@ pins "does not scale". Absolute counts are named in the assertion messages so a 
 measurement rather than just the verdict.
 """
 
-import uuid
 from collections.abc import Callable
 from decimal import Decimal
 
@@ -68,7 +67,9 @@ async def test_the_priced_menu_read_does_not_scale_with_the_menu(
             item_code=f"MENU-{index:03d}",
             recipe={},
         )
-        await build_menu_price(db_session, website_api.tenant_id, website_api.price_list_id, dish, "12.00")
+        await build_menu_price(
+            db_session, website_api.tenant_id, website_api.price_list_id, dish, "12.00"
+        )
 
     with query_counter() as large:
         second = await client.get(MENU_URL, params={"limit": 200})
