@@ -43,6 +43,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import docflow
+from app.core.exceptions import ValidationFailedError
 from app.core.tenancy import system_context
 from app.modules.hospitality.constants import TICKET_DEPLETED_BY_MOVE_LINK
 from app.modules.hospitality.events import TicketIngredientsConsumed
@@ -239,28 +240,51 @@ async def issue_ticket_ingredients(
     resolved, dated the ticket's FIRE date. Runs inside the DEPLETION JOB's transaction, not the
     sale's — insufficient stock still rolls the whole depletion back (D-020), but it rolls back a
     background job instead of a guest's payment. Links the ticket document to each move document
-    ('depleted_by'). Registered via ``app.main.register_event_handlers``."""
+    ('depleted_by'). Registered via ``app.main.register_event_handlers``.
+
+    Failures are RE-RAISED naming the ticket: this is the last frame holding it. ``core/jobs.py``
+    records a failure as ``str(exc)`` alone (code and details dropped, and ``JobRead`` never
+    exposes the payload), the moves roll back so no docflow edge survives, and Q4 pays for the
+    guest's dinner with a QUIET failure — so this string is the ONLY place the property can learn
+    which check went undepleted."""
     move_date = date.fromisoformat(event.move_date)
     for ingredient in event.ingredients:
-        move = await create_move(
-            session,
-            event.tenant_id,
-            StockMoveCreate(
-                move_type=MoveType.ISSUE,
-                item_id=ingredient.item_id,
-                quantity=ingredient.quantity,
-                from_bin_id=ingredient.bin_id,
-                move_date=move_date,
-                reference=event.ticket_number,
-            ),
-        )
-        await docflow.link_documents(
-            session,
-            event.tenant_id,
-            predecessor=event.document_id,
-            successor=move.document_id,
-            link_type=TICKET_DEPLETED_BY_MOVE_LINK,
-        )
+        try:
+            move = await create_move(
+                session,
+                event.tenant_id,
+                StockMoveCreate(
+                    move_type=MoveType.ISSUE,
+                    item_id=ingredient.item_id,
+                    quantity=ingredient.quantity,
+                    from_bin_id=ingredient.bin_id,
+                    move_date=move_date,
+                    reference=event.ticket_number,
+                ),
+            )
+            await docflow.link_documents(
+                session,
+                event.tenant_id,
+                predecessor=event.document_id,
+                successor=move.document_id,
+                link_type=TICKET_DEPLETED_BY_MOVE_LINK,
+            )
+        except Exception as exc:
+            # Broad on purpose: a closed period is caught by finance's service check, but D-018's
+            # DB trigger backstops it, and a trigger surfaces as a DBAPIError whose text is raw
+            # SQL. Whatever raised, the recorded line has to start with the ticket.
+            raise ValidationFailedError(
+                message=(
+                    f"Ticket {event.ticket_number} ({event.ticket_id}) could not deplete item "
+                    f"{ingredient.item_id} from bin {ingredient.bin_id}: {exc}"
+                ),
+                code=getattr(exc, "code", "hospitality.depletion_failed"),
+                details={
+                    "ticket_id": str(event.ticket_id),
+                    "item_id": str(ingredient.item_id),
+                    "bin_id": str(ingredient.bin_id),
+                },
+            ) from exc
 
 
 async def receive_finished_order_move(

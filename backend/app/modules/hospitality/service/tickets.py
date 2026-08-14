@@ -313,11 +313,11 @@ async def fire_ticket(
             details={"ticket_id": str(ticket_id), "item_ids": unavailable},
         )
 
+    burns: dict[uuid.UUID, Decimal] = {}
     for line in lines:
         if resolved[line.item_id].state == AvailabilityState.LIMITED:
-            await availability.decrement_remaining(
-                session, tenant_id, line.item_id, Decimal(line.quantity)
-            )
+            burns[line.item_id] = burns.get(line.item_id, Decimal(0)) + Decimal(line.quantity)
+    await availability.decrement_remaining_many(session, tenant_id, burns)
 
     fired_at = utcnow()
     ticket.fired_at = fired_at

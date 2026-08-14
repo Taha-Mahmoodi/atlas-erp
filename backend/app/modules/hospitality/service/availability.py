@@ -17,7 +17,7 @@ BACKGROUND concern (Q4, Task 5); this file must stay off the settle path entirel
 """
 
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -176,26 +176,56 @@ async def clear_86(session: AsyncSession, tenant_id: uuid.UUID, item_id: uuid.UU
 async def decrement_remaining(
     session: AsyncSession, tenant_id: uuid.UUID, item_id: uuid.UUID, quantity: Decimal
 ) -> None:
-    """Burn ``quantity`` off a countdown, flipping the item to EIGHTY_SIXED at zero.
+    """Burn ``quantity`` off ONE item's countdown — the single-item spelling of
+    :func:`decrement_remaining_many`, which is where the rule lives."""
+    await decrement_remaining_many(session, tenant_id, {item_id: quantity})
+
+
+async def decrement_remaining_many(
+    session: AsyncSession, tenant_id: uuid.UUID, quantities: Mapping[uuid.UUID, Decimal]
+) -> None:
+    """Burn a whole ticket's countdowns in ONE locked read, flipping each item to EIGHTY_SIXED at
+    zero.
 
     This is the ONLY automatic 86 in Phase 19 — a per-item counter, exactly what Toast's and
     Square's auto-86 is, and NOT a recipe explosion (Q2: a BOM-derived answer over-reports on
     shared ingredients and cannot be the guest-facing number). Recipe math stays advisory, in the
     staff-facing "at risk" list.
 
+    BATCHED because the caller is a ticket, not an item. Firing burns one countdown per LINE, so a
+    per-item locked read cost two statements a line (the SELECT, plus the autoflushed UPDATE of the
+    previous one) on the request a guest waits on — 58 statements for a 24-line ticket against 14
+    for a 2-line one, and neither ``OrderTicketCreate`` nor ``WebsiteOrderCreate`` caps ``lines``.
+    The caller sums per item first, which also collapses two lines of the same dish into one burn.
+
     A no-op unless the item has a live countdown: most dishes have no counter and must not be 86'd
     merely by being ordered, and a LAPSED row already reads AVAILABLE, so decrementing it would
-    resurrect an override the read path has stopped honouring.
+    resurrect an override the read path has stopped honouring. An item with no row at all is simply
+    absent from the result set.
     """
-    row = await _locked_row(session, tenant_id, item_id)
-    now = utcnow()
-    if row is None or row.remaining_qty is None or _is_expired(row, now):
+    if not quantities:
         return
-    remaining = Decimal(row.remaining_qty) - quantity
-    row.remaining_qty = max(remaining, Decimal(0))
-    if row.remaining_qty <= 0:
-        row.state = AvailabilityState.EIGHTY_SIXED.value
-        row.source = AvailabilitySource.AUTO.value
+    stmt = (
+        select(MenuAvailability)
+        .where(
+            MenuAvailability.tenant_id == tenant_id,
+            MenuAvailability.item_id.in_(list(quantities)),
+        )
+        # A stable lock order. Two tickets sharing two countdown dishes used to take the row locks
+        # in their own line order, which is the classic deadlock shape; ordering the read makes the
+        # common index-scan plan acquire them in the same sequence for both.
+        .order_by(MenuAvailability.item_id)
+        .with_for_update()
+    )
+    now = utcnow()
+    for row in (await session.execute(stmt)).scalars().all():
+        if row.remaining_qty is None or _is_expired(row, now):
+            continue
+        remaining = Decimal(row.remaining_qty) - quantities[row.item_id]
+        row.remaining_qty = max(remaining, Decimal(0))
+        if row.remaining_qty <= 0:
+            row.state = AvailabilityState.EIGHTY_SIXED.value
+            row.source = AvailabilitySource.AUTO.value
 
 
 async def availability_for_items(

@@ -23,7 +23,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.events import run_in_uow
 from app.core.tenancy import tenant_context
 from app.main import register_event_handlers
-from app.modules.hospitality.service import tickets
+from app.modules.hospitality.constants import AvailabilityState
+from app.modules.hospitality.service import availability, tickets
 from app.modules.inventory import service
 from app.modules.inventory.constants import MoveType
 from app.modules.inventory.schemas import StockMoveCreate
@@ -39,6 +40,13 @@ STOCK_MOVE_ISSUE_CEILING = 45
 # MEASURED at 10 statements for an 8-dish ticket exploding to 12 distinct ingredients — against
 # 12 x 38 = 456 if those ingredients were issued inline. Headroom for incidental growth only: any
 # ceiling near the per-ingredient cost means depletion has moved back onto the sale.
+#
+# Two more shapes measured against this same ceiling, both flat in the ticket's size:
+#   * every dish carrying a LIMITED countdown costs 12 — the burn's one locked read and its one
+#     batched UPDATE, whatever the line count (it was 10 + 2 PER LINE until the burn was batched);
+#   * the count rises by ONE per DEPLETE_MAX_COMPONENTS_PER_JOB distinct ingredients, because each
+#     chunk is its own job INSERT (12 statements at 120 distinct ingredients). That is the chunking
+#     working as designed, and the only axis on this path that is not flat.
 FIRED_TICKET_CEILING = 14
 
 
@@ -121,3 +129,59 @@ async def test_firing_a_ticket_stays_within_its_ceiling(
         "where it shows:\n" + "\n".join(counted.statements)
     )
     print(f"\n[perf] firing an 8-dish / 12-ingredient ticket: {counted.count} statements")
+
+
+async def test_firing_does_not_scale_with_countdown_lines(
+    db_session: AsyncSession,
+    tenant_a: uuid.UUID,
+    query_counter: Callable[[], QueryCounter],
+) -> None:
+    """The SAME flatness claim, on the branch the test above never enters: a ticket whose dishes
+    all carry a LIMITED countdown.
+
+    ``fire_ticket`` burns a countdown per LINE, and a burn that reads its row one item at a time is
+    an N+1 on the path a guest waits on — the shape PERFORMANCE §2 bans, on a WRITE where the
+    list-endpoint rule does not reach. Neither schema caps ``lines`` (``OrderTicketCreate``,
+    ``WebsiteOrderCreate``), so the multiplier is the caller's, not ours: an 86-board-heavy property
+    running specials with counts is exactly the tenant that gets there.
+
+    Asserting EQUALITY between 2 lines and 24, not just the ceiling, is the point — a ceiling alone
+    would be satisfied by a shape that still grows one query per line up to it.
+    """
+    register_event_handlers()
+    recipes = {f"DISH-{index:02d}": {"ONION": Decimal(1)} for index in range(24)}
+    kitchen = await build_kitchen(db_session, tenant_a, recipes, stock=Decimal(5000))
+    codes = sorted(recipes)
+    with tenant_context(tenant_a):
+        for code in codes:
+            await availability.set_availability(
+                db_session,
+                tenant_a,
+                kitchen.dishes[code],
+                state=AvailabilityState.LIMITED,
+                remaining_qty=Decimal(1000),
+            )
+        await db_session.commit()
+
+    counts: dict[int, int] = {}
+    for line_count in (2, 24):
+        ticket_id = await build_open_ticket(
+            db_session, tenant_a, [(kitchen.dishes[code], "1") for code in codes[:line_count]]
+        )
+
+        async def fire(ticket_id: uuid.UUID = ticket_id) -> None:
+            await tickets.fire_ticket(db_session, tenant_a, ticket_id)
+
+        with query_counter() as counted, tenant_context(tenant_a):
+            await run_in_uow(db_session, fire)
+        counts[line_count] = counted.count
+        print(f"\n[perf] firing a {line_count}-line all-countdown ticket: {counted.count}")
+
+    assert counts[24] == counts[2], (
+        f"firing cost {counts[2]} statements for 2 countdown lines and {counts[24]} for 24 — the "
+        "countdown burn scales with the ticket"
+    )
+    assert counts[24] <= FIRED_TICKET_CEILING, (
+        f"firing a 24-line countdown ticket costs {counts[24]} statements "
+        f"(ceiling {FIRED_TICKET_CEILING})"
+    )

@@ -17,6 +17,7 @@ from app.modules.hospitality.service.availability import (
     availability_for_items,
     clear_86,
     decrement_remaining,
+    decrement_remaining_many,
     resolve,
     set_availability,
 )
@@ -47,6 +48,7 @@ __all__ = [
     "clear_86",
     "create_ticket",
     "decrement_remaining",
+    "decrement_remaining_many",
     "deplete_ticket",
     "deplete_ticket_job",
     "fire_ticket",
