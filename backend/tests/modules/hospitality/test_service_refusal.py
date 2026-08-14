@@ -17,9 +17,10 @@ Every one of those is a hard 422 somewhere in inventory or finance. The assertio
 the same two-part one: the ticket reaches SENT_TO_KITCHEN (and can still be SETTLED), and the
 failure is on a FAILED job row.
 
-The second half of the trade is the last two tests: a failure that no one can attribute to a ticket
-is not "recorded", it is lost. Q4's concession is bought with VISIBILITY, so what a reader can
-actually see through ``GET /api/v1/jobs`` is asserted here too.
+The second half of the trade is the last three tests: a failure that no one can attribute to a
+ticket is not "recorded", it is lost. Q4's concession is bought with VISIBILITY, so what a reader
+can actually see through ``GET /api/v1/jobs`` is asserted here too — along with the known ceiling
+of the trade, which is that one bad ingredient un-depletes its whole chunk.
 """
 
 import uuid
@@ -44,6 +45,7 @@ from app.modules.hospitality.constants import (
     OrderTicketStatus,
 )
 from app.modules.hospitality.service import availability, depletion, tickets
+from app.modules.inventory import queries as inventory_queries
 from tests.modules.hospitality.factories import build_dish, build_kitchen, build_open_ticket
 from tests.modules.inventory.factories import build_item, build_item_category
 from tests.modules.manufacturing.factories import build_bom, build_bom_component
@@ -354,6 +356,35 @@ async def test_a_failed_depletion_is_attributable_to_its_ticket(
     assert str(kitchen.ingredients["ING-BEEF"]) in error, (
         f"the failure must name the ingredient a human has to go count: {error!r}"
     )
+
+
+async def test_one_bad_ingredient_rolls_back_the_whole_chunk(
+    db_session: AsyncSession,
+    tenant_a: uuid.UUID,
+    job_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """The KNOWN CEILING of backgrounding, pinned so nobody mistakes it for a bug later: the job's
+    own uow is still all-or-nothing (D-011), so one short ingredient un-depletes every OTHER
+    ingredient in its chunk — up to ``DEPLETE_MAX_COMPONENTS_PER_JOB`` of them. The guest is served
+    and the failure is recorded, which is the trade Q4 made; what it costs is that a kitchen
+    re-counting after a failed depletion must re-count the WHOLE ticket, not one item."""
+    register_event_handlers()
+    kitchen = await build_kitchen(
+        db_session,
+        tenant_a,
+        {"DISH-PLATE": {"ING-SHORT": Decimal(20), "ING-FINE": Decimal(1)}},
+        stock=Decimal(5),
+    )
+    ticket_id = await build_open_ticket(db_session, tenant_a, [(kitchen.dishes["DISH-PLATE"], "1")])
+
+    await _fire_and_drain(db_session, tenant_a, ticket_id, job_factory)
+
+    jobs = await _assert_guest_was_served(db_session, tenant_a, ticket_id)
+    assert [job.status for job in jobs] == [JobStatus.FAILED.value]
+    with tenant_context(tenant_a):
+        assert await inventory_queries.total_on_hand(
+            db_session, tenant_a, kitchen.ingredients["ING-FINE"]
+        ) == Decimal(5), "the healthy ingredient's issue rolled back with the failing one"
 
 
 async def test_a_failed_depletion_is_visible_to_the_property_over_http(
