@@ -23,8 +23,8 @@ import {
   useScheduleMaintenanceOrder,
   useStartMaintenanceOrder,
 } from "@/modules/maintenance/hooks";
-import { OrderStatusChip } from "@/modules/maintenance/pages/MaintenanceOrderListPage";
 import type { MaintenanceOrder } from "@/modules/maintenance/types";
+import { StatusPill } from "@/components/StatusPill";
 
 function SchedulePanel({ order }: { order: MaintenanceOrder }) {
   const scheduleOrder = useScheduleMaintenanceOrder(order.id);
@@ -42,14 +42,14 @@ function SchedulePanel({ order }: { order: MaintenanceOrder }) {
   };
 
   return (
-    <div className="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
-      <h2 className="text-sm font-semibold text-ink">{isDraft ? "Schedule" : "Re-schedule"}</h2>
+    <div className="mt-6 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+      <h2 className="mono-caps mb-3.5 text-ink-muted">{isDraft ? "Schedule" : "Re-schedule"}</h2>
       {error && (
-        <p role="alert" className="mt-2 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
+        <p role="alert" className="mb-3.5 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
         </p>
       )}
-      <div className="mt-3 flex items-end gap-2">
+      <div className="flex items-end gap-2">
         <div>
           <label htmlFor="scheduled-date" className="mb-1 block text-xs font-medium text-ink-muted">
             Scheduled date
@@ -66,7 +66,7 @@ function SchedulePanel({ order }: { order: MaintenanceOrder }) {
           type="button"
           onClick={() => void schedule()}
           disabled={!scheduledDate || scheduleOrder.isPending}
-          className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+          className="btn-ink"
         >
           {scheduleOrder.isPending ? "Scheduling…" : isDraft ? "Schedule" : "Update date"}
         </button>
@@ -102,9 +102,9 @@ function CompletePanel({ order }: { order: MaintenanceOrder }) {
   const control = "rounded-control border border-line bg-surface px-2 py-1.5 text-sm text-ink";
 
   return (
-    <div className="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
-      <h2 className="text-sm font-semibold text-ink">Complete</h2>
-      <p className="mt-1 text-xs text-ink-muted">
+    <div className="mt-6 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+      <h2 className="mono-caps text-ink-muted">Complete</h2>
+      <p className="mt-1 text-[12px] text-ink-muted">
         Records the actual cost on the order (record-only — no journal is posted).
       </p>
       {error && (
@@ -112,7 +112,7 @@ function CompletePanel({ order }: { order: MaintenanceOrder }) {
           {error}
         </p>
       )}
-      <div className="mt-3 flex items-end gap-2">
+      <div className="mt-3.5 flex items-end gap-2">
         <div>
           <label htmlFor="actual-cost" className="mb-1 block text-xs font-medium text-ink-muted">
             Actual cost (optional)
@@ -167,7 +167,7 @@ export function MaintenanceOrderDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   if (order.isPending || !order.data) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-[13px] text-ink-muted">Loading…</p>;
   }
   const data = order.data;
   const currencyCode = currency.data ?? "—";
@@ -200,53 +200,61 @@ export function MaintenanceOrderDetailPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold text-ink">{data.order_number}</h1>
-          <OrderStatusChip status={data.status} />
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/maintenance/orders">Maintenance orders</Link> /{" "}
+          <span className="text-ink">{data.order_number}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.order_number}</h1>
+            <StatusPill status={data.status} />
+          </div>
+          <div className="flex items-center gap-2.5">
+            {!isTerminal && canManage && (
+              <button
+                type="button"
+                onClick={() => void cancel()}
+                disabled={cancelOrder.isPending}
+                className="btn-chip hover:border-danger hover:text-danger"
+              >
+                Cancel
+              </button>
+            )}
+            {data.status === "SCHEDULED" && canManage && (
+              <button
+                type="button"
+                onClick={() => void start()}
+                disabled={startOrder.isPending}
+                className="btn-ink"
+              >
+                {startOrder.isPending ? "Starting…" : "Start work"}
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex gap-2">
-          {!isTerminal && canManage && (
-            <button
-              type="button"
-              onClick={() => void cancel()}
-              disabled={cancelOrder.isPending}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              Cancel
-            </button>
-          )}
-          {data.status === "SCHEDULED" && canManage && (
-            <button
-              type="button"
-              onClick={() => void start()}
-              disabled={startOrder.isPending}
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              {startOrder.isPending ? "Starting…" : "Start work"}
-            </button>
-          )}
-        </div>
-      </div>
+      </header>
 
       {error && (
-        <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
+        <p role="alert" className="mb-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
         </p>
       )}
 
-      <dl className="mt-6 grid grid-cols-3 gap-4 text-sm">
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-ink-muted">Type</dt>
-          <dd className="text-ink">{data.order_type}</dd>
+          <dt className="mono-caps text-ink-muted">Type</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.order_type}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Equipment</dt>
-          <dd className="text-ink">{unit ? `${unit.code} — ${unit.name}` : data.equipment_id}</dd>
+          <dt className="mono-caps text-ink-muted">Equipment</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
+            {unit ? `${unit.code} — ${unit.name}` : data.equipment_id}
+          </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Plan</dt>
-          <dd className="text-ink">
+          <dt className="mono-caps text-ink-muted">Plan</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
             {data.maintenance_plan_id ? (
               <Link
                 to="/maintenance/plans/$planId"
@@ -261,32 +269,34 @@ export function MaintenanceOrderDetailPage() {
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Scheduled</dt>
-          <dd className="text-ink">{formatDate(data.scheduled_date)}</dd>
+          <dt className="mono-caps text-ink-muted">Scheduled</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{formatDate(data.scheduled_date)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Completed</dt>
-          <dd className="text-ink">{data.completed_date ? formatDate(data.completed_date) : "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Completed</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
+            {data.completed_date ? formatDate(data.completed_date) : "—"}
+          </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Estimated cost</dt>
-          <dd className="text-ink tabular-nums">
+          <dt className="mono-caps text-ink-muted">Estimated cost</dt>
+          <dd className="mt-1.5 text-[13px] tabular-nums text-ink">
             {data.estimated_cost ? formatMoney(data.estimated_cost, currencyCode) : "—"}
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Actual cost</dt>
-          <dd className="text-ink tabular-nums">
+          <dt className="mono-caps text-ink-muted">Actual cost</dt>
+          <dd className="mt-1.5 text-[13px] tabular-nums text-ink">
             {data.actual_cost ? formatMoney(data.actual_cost, currencyCode) : "—"}
           </dd>
         </div>
         <div className="col-span-2">
-          <dt className="text-xs text-ink-muted">Description</dt>
-          <dd className="text-ink">{data.description}</dd>
+          <dt className="mono-caps text-ink-muted">Description</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.description}</dd>
         </div>
-        <div className="col-span-3">
-          <dt className="text-xs text-ink-muted">Notes</dt>
-          <dd className="text-ink">{data.notes ?? "—"}</dd>
+        <div className="col-span-2 sm:col-span-4">
+          <dt className="mono-caps text-ink-muted">Notes</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.notes ?? "—"}</dd>
         </div>
       </dl>
 

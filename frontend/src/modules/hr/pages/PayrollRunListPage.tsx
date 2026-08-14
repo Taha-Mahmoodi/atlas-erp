@@ -10,22 +10,9 @@ import { useState } from "react";
 import { formatMoney } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { usePayrollRuns } from "@/modules/hr/hooks";
 import type { PayrollRun, PayrollRunStatus } from "@/modules/hr/types";
-
-const STATUS_TONE: Record<PayrollRunStatus, string> = {
-  DRAFT: "bg-panel text-ink-muted",
-  POSTED: "bg-success-tint text-success",
-  CANCELLED: "bg-panel text-ink-muted",
-};
-
-export function PayrollRunStatusChip({ status }: { status: PayrollRunStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status}
-    </span>
-  );
-}
 
 /** The D-055 non-compliance flag the backend carries — surfaced verbatim on every payroll page. */
 export function PayrollDisclaimer() {
@@ -59,7 +46,7 @@ const COLUMNS: DataGridColumn<PayrollRun>[] = [
     render: (row) => formatMoney(row.total_net, row.currency_code),
     width: "130px",
   },
-  { key: "status", header: "Status", render: (row) => <PayrollRunStatusChip status={row.status} />, width: "100px" },
+  { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "100px" },
 ];
 
 export function PayrollRunListPage() {
@@ -73,17 +60,24 @@ export function PayrollRunListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Payroll Runs</h1>
-        {canManage && (
-          <Link
-            to="/hr/payroll-runs/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
-          >
-            New payroll run
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/hr">HR</Link> / <span className="text-ink">Payroll runs</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Payroll Runs</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/hr/payroll-runs/new"
+                className="btn-ink"
+              >
+                New payroll run
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
       <PayrollDisclaimer />
 
@@ -108,6 +102,8 @@ export function PayrollRunListPage() {
           onRowClick={(row) => void navigate({ to: "/hr/payroll-runs/$runId", params: { runId: row.id } })}
           loading={runs.isPending}
           emptyMessage="No payroll runs yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={runs.hasNextPage}
           onLoadMore={() => void runs.fetchNextPage()}
           loadingMore={runs.isFetchingNextPage}

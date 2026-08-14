@@ -5,7 +5,7 @@
  * no role-update endpoint (permissions change by creating a new role).
  */
 
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -62,14 +62,22 @@ export function RoleFormPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-xl font-semibold text-ink">New role</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/admin/roles" className="hover:text-ink">
+            Roles
+          </Link>{" "}
+          / <span className="text-ink">New role</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">New role</h1>
+      </header>
       {error && (
-        <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
+        <p role="alert" className="mb-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
         </p>
       )}
 
-      <div className="mt-6">
+      <div>
         <label htmlFor="role-name" className="block text-xs font-medium text-ink-muted">
           Role name
         </label>
@@ -83,11 +91,11 @@ export function RoleFormPage() {
         />
       </div>
 
-      <h2 className="mt-6 text-sm font-semibold text-ink">
+      <h2 className="mt-6 mono-caps text-ink-muted">
         Permissions{" "}
-        <span className="font-normal text-ink-muted">({selected.size} selected)</span>
+        <span className="text-ink-muted">({selected.size} selected)</span>
       </h2>
-      {catalog.isPending && <p className="mt-2 text-sm text-ink-muted">Loading the permission catalog…</p>}
+      {catalog.isPending && <p className="mt-2 text-[13px] text-ink-muted">Loading the permission catalog…</p>}
       {catalog.isError && (
         <p role="alert" className="mt-2 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {getErrorMessage(catalog.error, "Unable to load the permission catalog.")}
@@ -95,8 +103,8 @@ export function RoleFormPage() {
       )}
       <div className="mt-2 space-y-4">
         {[...groups.entries()].map(([module, permissions]) => (
-          <fieldset key={module} className="rounded-card border border-line bg-surface p-4 shadow-card">
-            <legend className="px-1 text-xs font-semibold uppercase tracking-[0.04em] text-ink-muted">
+          <fieldset key={module} className="rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+            <legend className="px-1 mono-caps text-ink-muted">
               {module}
             </legend>
             <div className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
@@ -126,7 +134,7 @@ export function RoleFormPage() {
           type="button"
           disabled={createRole.isPending}
           onClick={() => void submit()}
-          className="rounded-control bg-primary px-4 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+          className="btn-ink"
         >
           {createRole.isPending ? "Creating…" : "Create role"}
         </button>

@@ -46,19 +46,26 @@ export function ExchangeRateListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Exchange Rates</h1>
-        {canManage && (
-          <Link
-            to="/finance/exchange-rates/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
-          >
-            New rate
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance">Finance</Link> / <span className="text-ink">Exchange Rates</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Exchange Rates</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/finance/exchange-rates/new"
+                className="btn-ink"
+              >
+                New rate
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <select aria-label="From currency" value={fromCode} onChange={(event) => setFromCode(event.target.value)} className={FILTER_SELECT}>
           <option value="">From: all</option>
           {codes.map((code) => (
@@ -98,7 +105,13 @@ export function ExchangeRateListPage() {
             rows={rows}
             rowKey={(row) => row.id}
             loading={rates.isPending}
-            emptyMessage="No exchange rates match these filters."
+            emptyMessage="No exchange rates yet."
+            isFiltered={Boolean(fromCode || toCode || rateType)}
+            onClearFilters={() => {
+              setFromCode("");
+              setToCode("");
+              setRateType("");
+            }}
             hasMore={rates.hasNextPage}
             onLoadMore={() => void rates.fetchNextPage()}
             loadingMore={rates.isFetchingNextPage}

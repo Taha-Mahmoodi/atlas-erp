@@ -26,13 +26,15 @@ export function AdminHomePage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="text-xl font-semibold text-ink">Admin</h1>
+      <header className="mb-6">
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Admin</h1>
+      </header>
       {!me.isPending && visible.length === 0 && (
-        <p className="mt-6 text-sm text-ink-muted">
+        <p className="text-sm text-ink-muted">
           You do not have any admin permissions. Ask an administrator for access.
         </p>
       )}
-      <section className="mt-6 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
+      <section className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
         {visible.map((section) => (
           <Link
             key={section.to}

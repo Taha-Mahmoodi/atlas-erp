@@ -3,12 +3,13 @@
  * action: the backend exposes no /customer-invoices/{id}/reverse endpoint.
  */
 
-import { useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { ApiError } from "@/lib/apiClient";
 import { formatDate, formatMoney } from "@/lib/format";
 import { useMe } from "@/lib/session";
+import { StatusPill } from "@/components/StatusPill";
 import { useAccountLookup, useCustomerInvoice, usePostCustomerInvoice } from "@/modules/finance/hooks";
 
 export function CustomerInvoiceDetailPage() {
@@ -20,7 +21,7 @@ export function CustomerInvoiceDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   if (invoice.isPending || !invoice.data) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-[13px] text-ink-muted">Loading…</p>;
   }
   const data = invoice.data;
   const canPost = (me.data?.permissions ?? []).includes("finance.ar.manage");
@@ -40,19 +41,27 @@ export function CustomerInvoiceDetailPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{data.invoice_number ?? "Draft invoice"}</h1>
-        {data.status === "DRAFT" && canPost && (
-          <button
-            type="button"
-            onClick={() => void post()}
-            disabled={postInvoice.isPending}
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            {postInvoice.isPending ? "Posting…" : "Post invoice"}
-          </button>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance/customer-invoices">Customer Invoices</Link> /{" "}
+          <span className="text-ink">{data.invoice_number ?? "Draft invoice"}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.invoice_number ?? "Draft invoice"}</h1>
+          <div className="flex items-center gap-2.5">
+            {data.status === "DRAFT" && canPost && (
+              <button
+                type="button"
+                onClick={() => void post()}
+                disabled={postInvoice.isPending}
+                className="btn-ink"
+              >
+                {postInvoice.isPending ? "Posting…" : "Post invoice"}
+              </button>
+            )}
+          </div>
+        </div>
+      </header>
 
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
@@ -60,35 +69,37 @@ export function CustomerInvoiceDetailPage() {
         </p>
       )}
 
-      <dl className="mt-6 grid grid-cols-3 gap-4 text-sm">
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-ink-muted">Customer</dt>
-          <dd className="text-ink">{data.partner_name}</dd>
+          <dt className="mono-caps text-ink-muted">Customer</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.partner_name}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Status</dt>
-          <dd className="text-ink">{data.status}</dd>
+          <dt className="mono-caps text-ink-muted">Status</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
+            <StatusPill status={data.status} />
+          </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Your reference</dt>
-          <dd className="text-ink">{data.external_ref ?? "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Your reference</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.external_ref ?? "—"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Invoice date</dt>
-          <dd className="text-ink">{formatDate(data.invoice_date)}</dd>
+          <dt className="mono-caps text-ink-muted">Invoice date</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{formatDate(data.invoice_date)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Due date</dt>
-          <dd className="text-ink">{formatDate(data.due_date)}</dd>
+          <dt className="mono-caps text-ink-muted">Due date</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{formatDate(data.due_date)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Open amount</dt>
-          <dd className="tabular-nums text-ink">{formatMoney(data.open_amount, data.currency_code)}</dd>
+          <dt className="mono-caps text-ink-muted">Open amount</dt>
+          <dd className="mt-1.5 text-[13px] tabular-nums text-ink">{formatMoney(data.open_amount, data.currency_code)}</dd>
         </div>
         {data.dunning_level > 0 && (
           <div>
-            <dt className="text-xs text-ink-muted">Dunning level</dt>
-            <dd className="text-ink">
+            <dt className="mono-caps text-ink-muted">Dunning level</dt>
+            <dd className="mt-1.5 text-[13px] text-ink">
               {data.dunning_level}
               {data.last_dunned_date ? ` (last: ${formatDate(data.last_dunned_date)})` : ""}
             </dd>
@@ -98,7 +109,7 @@ export function CustomerInvoiceDetailPage() {
 
       <table className="mt-6 w-full border-collapse text-[13px]">
         <thead>
-          <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+          <tr className="border-b border-line text-left mono-caps text-ink-muted">
             <th className="py-2 pr-2">Account</th>
             <th className="py-2 pr-2">Description</th>
             <th className="py-2 pr-2 text-right">Net</th>

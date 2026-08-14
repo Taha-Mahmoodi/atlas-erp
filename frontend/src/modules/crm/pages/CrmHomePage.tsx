@@ -14,11 +14,13 @@ const SECTIONS = [
 export function CrmHomePage() {
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="text-xl font-semibold text-ink">CRM</h1>
-      <p className="mt-1 text-sm text-ink-muted">
-        Won opportunities convert into a real sales customer and quote in one action.
-      </p>
-      <section className="mt-6 grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
+      <header className="mb-6">
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">CRM</h1>
+        <p className="mt-1 text-[13px] text-ink-muted">
+          Won opportunities convert into a real sales customer and quote in one action.
+        </p>
+      </header>
+      <section className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
         {SECTIONS.map((section) => (
           <Link
             key={section.to}

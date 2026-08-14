@@ -87,8 +87,16 @@ export function OnboardingWizardPage() {
   if (me.data && !canOnboard) {
     return (
       <div className="mx-auto max-w-2xl">
-        <h1 className="text-xl font-semibold text-ink">Tenant Onboarding</h1>
-        <p className="mt-4 text-sm text-ink-muted">
+        <header className="mb-6">
+          <p className="text-[12px] text-ink-muted">
+            <Link to="/admin" className="hover:text-ink">
+              Admin
+            </Link>{" "}
+            / <span className="text-ink">Tenant Onboarding</span>
+          </p>
+          <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">Tenant Onboarding</h1>
+        </header>
+        <p className="text-sm text-ink-muted">
           Provisioning tenants requires the <code>onboarding.tenant.create</code> permission.
         </p>
       </div>
@@ -98,20 +106,36 @@ export function OnboardingWizardPage() {
   if (result) {
     return (
       <div className="mx-auto max-w-2xl">
-        <h1 className="text-xl font-semibold text-ink">Tenant provisioned</h1>
-        <div className="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-            <dt className="text-ink-muted">Slug</dt>
-            <dd className="text-ink">{result.slug}</dd>
-            <dt className="text-ink-muted">Template applied</dt>
-            <dd className="text-ink">{result.template_applied}</dd>
-            <dt className="text-ink-muted">Tenant ID</dt>
-            <dd className="text-ink tabular-nums">{result.tenant_id}</dd>
-            <dt className="text-ink-muted">Admin user ID</dt>
-            <dd className="text-ink tabular-nums">{result.admin_user_id}</dd>
+        <header className="mb-6">
+          <p className="text-[12px] text-ink-muted">
+            <Link to="/admin" className="hover:text-ink">
+              Admin
+            </Link>{" "}
+            / <span className="text-ink">Tenant Onboarding</span>
+          </p>
+          <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">Tenant provisioned</h1>
+        </header>
+        <div className="rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
+            <div>
+              <dt className="mono-caps text-ink-muted">Slug</dt>
+              <dd className="mt-1.5 text-[13px] text-ink">{result.slug}</dd>
+            </div>
+            <div>
+              <dt className="mono-caps text-ink-muted">Template applied</dt>
+              <dd className="mt-1.5 text-[13px] text-ink">{result.template_applied}</dd>
+            </div>
+            <div>
+              <dt className="mono-caps text-ink-muted">Tenant ID</dt>
+              <dd className="mt-1.5 text-[13px] tabular-nums text-ink">{result.tenant_id}</dd>
+            </div>
+            <div>
+              <dt className="mono-caps text-ink-muted">Admin user ID</dt>
+              <dd className="mt-1.5 text-[13px] tabular-nums text-ink">{result.admin_user_id}</dd>
+            </div>
           </dl>
-          <h2 className="mt-4 text-sm font-medium text-ink">Instantiated</h2>
-          <ul className="mt-1 text-sm text-ink-muted">
+          <h2 className="mt-6 mb-3.5 mono-caps text-ink-muted">Instantiated</h2>
+          <ul className="text-[13px] text-ink-muted">
             {Object.entries(result.instantiated).map(([kind, count]) => (
               <li key={kind}>
                 {kind}: <span className="tabular-nums text-ink">{count}</span>
@@ -122,7 +146,7 @@ export function OnboardingWizardPage() {
         <p className="mt-4 text-sm text-ink-muted">
           The new tenant's admin can now sign in with the email and password from step 1.
         </p>
-        <Link to="/admin" className="mt-4 inline-block text-sm font-medium text-primary hover:underline">
+        <Link to="/admin" className="mt-4 inline-block text-[12.5px] font-medium text-primary hover:underline">
           Back to Admin
         </Link>
       </div>
@@ -131,23 +155,31 @@ export function OnboardingWizardPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-xl font-semibold text-ink">Tenant Onboarding</h1>
-      <p className="mt-1 text-sm text-ink-muted">Step {step} of 3 — {step === 1 ? "Company info" : step === 2 ? "Industry template" : "Review & create"}</p>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/admin" className="hover:text-ink">
+            Admin
+          </Link>{" "}
+          / <span className="text-ink">Tenant Onboarding</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">Tenant Onboarding</h1>
+        <p className="mt-1 text-[13px] text-ink-muted">Step {step} of 3 — {step === 1 ? "Company info" : step === 2 ? "Industry template" : "Review & create"}</p>
+      </header>
       {error && (
-        <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
+        <p role="alert" className="mb-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
         </p>
       )}
 
       {step === 1 && (
-        <div className="mt-6">
+        <div>
           <CompanyStep values={values} onChange={(name, value) => setValues((prev) => ({ ...prev, [name]: value }))} onNext={() => setStep(2)} />
         </div>
       )}
 
       {step === 2 && (
-        <div className="mt-6">
-          {templates.isPending && <p className="text-sm text-ink-muted">Loading templates…</p>}
+        <div>
+          {templates.isPending && <p className="text-[13px] text-ink-muted">Loading templates…</p>}
           {templates.isError && (
             <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
               {getErrorMessage(templates.error, "Unable to load the template catalog.")}
@@ -177,11 +209,11 @@ export function OnboardingWizardPage() {
               type="button"
               disabled={templateName === null}
               onClick={() => setStep(3)}
-              className="rounded-control bg-primary px-4 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-ink"
             >
               Next: review
             </button>
-            <button type="button" onClick={() => setStep(1)} className="text-sm font-medium text-ink-muted hover:text-ink">
+            <button type="button" onClick={() => setStep(1)} className="text-[12.5px] font-medium text-ink-muted hover:text-ink">
               Back
             </button>
           </div>
@@ -189,20 +221,26 @@ export function OnboardingWizardPage() {
       )}
 
       {step === 3 && (
-        <div className="mt-6">
-          <div className="rounded-card border border-line bg-surface p-4 shadow-card">
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-              <dt className="text-ink-muted">Company</dt>
-              <dd className="text-ink">{String(values.company_name ?? "")}</dd>
-              <dt className="text-ink-muted">Slug</dt>
-              <dd className="text-ink">{String(values.slug ?? "").trim() || "(derived from company name)"}</dd>
-              <dt className="text-ink-muted">Admin email</dt>
-              <dd className="text-ink">{String(values.admin_email ?? "")}</dd>
-              <dt className="text-ink-muted">Template</dt>
-              <dd className="text-ink">{chosen?.display_name ?? templateName}</dd>
-            </dl>
-          </div>
-          <p className="mt-3 text-xs text-ink-muted">
+        <div>
+          <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
+            <div>
+              <dt className="mono-caps text-ink-muted">Company</dt>
+              <dd className="mt-1.5 text-[13px] text-ink">{String(values.company_name ?? "")}</dd>
+            </div>
+            <div>
+              <dt className="mono-caps text-ink-muted">Slug</dt>
+              <dd className="mt-1.5 text-[13px] text-ink">{String(values.slug ?? "").trim() || "(derived from company name)"}</dd>
+            </div>
+            <div>
+              <dt className="mono-caps text-ink-muted">Admin email</dt>
+              <dd className="mt-1.5 text-[13px] text-ink">{String(values.admin_email ?? "")}</dd>
+            </div>
+            <div>
+              <dt className="mono-caps text-ink-muted">Template</dt>
+              <dd className="mt-1.5 text-[13px] text-ink">{chosen?.display_name ?? templateName}</dd>
+            </div>
+          </dl>
+          <p className="mt-3 text-[12px] text-ink-muted">
             Creating the tenant instantiates the template's chart of accounts, tax codes, currencies,
             units of measure and number sequences in one transaction.
           </p>
@@ -211,11 +249,11 @@ export function OnboardingWizardPage() {
               type="button"
               disabled={onboard.isPending}
               onClick={() => void submit()}
-              className="rounded-control bg-primary px-4 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-ink"
             >
               {onboard.isPending ? "Provisioning…" : "Create tenant"}
             </button>
-            <button type="button" onClick={() => setStep(2)} className="text-sm font-medium text-ink-muted hover:text-ink">
+            <button type="button" onClick={() => setStep(2)} className="text-[12.5px] font-medium text-ink-muted hover:text-ink">
               Back
             </button>
           </div>

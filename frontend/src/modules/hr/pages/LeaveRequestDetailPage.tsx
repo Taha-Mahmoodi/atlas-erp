@@ -11,6 +11,7 @@ import { useState } from "react";
 import { getErrorMessage } from "@/lib/apiClient";
 import { formatDateTime, formatQuantity } from "@/lib/format";
 import { useMe } from "@/lib/session";
+import { StatusPill } from "@/components/StatusPill";
 import {
   useApproveLeaveRequest,
   useCancelLeaveRequest,
@@ -20,7 +21,6 @@ import {
   useRejectLeaveRequest,
   useSubmitLeaveRequest,
 } from "@/modules/hr/hooks";
-import { LeaveRequestStatusChip } from "@/modules/hr/pages/LeaveRequestListPage";
 
 const ACTION_BUTTON =
   "rounded-control px-3 py-1.5 text-sm font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45";
@@ -47,7 +47,7 @@ export function LeaveRequestDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   if (request.isPending || !request.data) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-[13px] text-ink-muted">Loading…</p>;
   }
   const data = request.data;
 
@@ -79,60 +79,66 @@ export function LeaveRequestDetailPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{data.request_number}</h1>
-        <div className="flex gap-2">
-          {isDraft && canRequest && (
-            <>
-              <Link
-                to="/hr/leave-requests/$requestId/edit"
-                params={{ requestId: data.id }}
-                className={OUTLINE}
-              >
-                Edit
-              </Link>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/hr/leave-requests">Leave requests</Link> /{" "}
+          <span className="text-ink">{data.request_number}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.request_number}</h1>
+          <div className="flex items-center gap-2.5">
+            {isDraft && canRequest && (
+              <>
+                <Link
+                  to="/hr/leave-requests/$requestId/edit"
+                  params={{ requestId: data.id }}
+                  className={OUTLINE}
+                >
+                  Edit
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => void act(() => submitRequest.mutateAsync(), "Unable to submit the request.")}
+                  disabled={busy}
+                  className={PRIMARY}
+                >
+                  {submitRequest.isPending ? "Submitting…" : "Submit"}
+                </button>
+              </>
+            )}
+            {isSubmitted && canApprove && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void act(() => rejectRequest.mutateAsync(notesPayload), "Unable to reject the request.")}
+                  disabled={busy}
+                  className={DANGER_OUTLINE}
+                >
+                  {rejectRequest.isPending ? "Rejecting…" : "Reject"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void act(() => approveRequest.mutateAsync(notesPayload), "Unable to approve the request.")}
+                  disabled={busy}
+                  className={PRIMARY}
+                >
+                  {approveRequest.isPending ? "Approving…" : "Approve"}
+                </button>
+              </>
+            )}
+            {cancellable && canRequest && (
               <button
                 type="button"
-                onClick={() => void act(() => submitRequest.mutateAsync(), "Unable to submit the request.")}
-                disabled={busy}
-                className={PRIMARY}
-              >
-                {submitRequest.isPending ? "Submitting…" : "Submit"}
-              </button>
-            </>
-          )}
-          {isSubmitted && canApprove && (
-            <>
-              <button
-                type="button"
-                onClick={() => void act(() => rejectRequest.mutateAsync(notesPayload), "Unable to reject the request.")}
+                onClick={() => void act(() => cancelRequest.mutateAsync(), "Unable to cancel the request.")}
                 disabled={busy}
                 className={DANGER_OUTLINE}
               >
-                {rejectRequest.isPending ? "Rejecting…" : "Reject"}
+                {cancelRequest.isPending ? "Cancelling…" : "Cancel"}
               </button>
-              <button
-                type="button"
-                onClick={() => void act(() => approveRequest.mutateAsync(notesPayload), "Unable to approve the request.")}
-                disabled={busy}
-                className={PRIMARY}
-              >
-                {approveRequest.isPending ? "Approving…" : "Approve"}
-              </button>
-            </>
-          )}
-          {cancellable && canRequest && (
-            <button
-              type="button"
-              onClick={() => void act(() => cancelRequest.mutateAsync(), "Unable to cancel the request.")}
-              disabled={busy}
-              className={DANGER_OUTLINE}
-            >
-              {cancelRequest.isPending ? "Cancelling…" : "Cancel"}
-            </button>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      </header>
 
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
@@ -147,40 +153,40 @@ export function LeaveRequestDetailPage() {
         </p>
       )}
 
-      <dl className="mt-6 grid grid-cols-4 gap-4 text-sm">
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-ink-muted">Status</dt>
-          <dd className="text-ink">
-            <LeaveRequestStatusChip status={data.status} />
+          <dt className="mono-caps text-ink-muted">Status</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
+            <StatusPill status={data.status} />
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Employee</dt>
-          <dd className="text-ink">{employeeLabel(data.employee_id)}</dd>
+          <dt className="mono-caps text-ink-muted">Employee</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{employeeLabel(data.employee_id)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Leave type</dt>
-          <dd className="text-ink">{leaveTypeLabel(data.leave_type_id)}</dd>
+          <dt className="mono-caps text-ink-muted">Leave type</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{leaveTypeLabel(data.leave_type_id)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Days</dt>
-          <dd className="text-ink tabular-nums">{formatQuantity(data.days)}</dd>
+          <dt className="mono-caps text-ink-muted">Days</dt>
+          <dd className="mt-1.5 text-[13px] tabular-nums text-ink">{formatQuantity(data.days)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">From</dt>
-          <dd className="text-ink">{data.start_date}</dd>
+          <dt className="mono-caps text-ink-muted">From</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.start_date}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">To</dt>
-          <dd className="text-ink">{data.end_date}</dd>
+          <dt className="mono-caps text-ink-muted">To</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.end_date}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Decided</dt>
-          <dd className="text-ink">{data.decided_at ? formatDateTime(data.decided_at) : "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Decided</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.decided_at ? formatDateTime(data.decided_at) : "—"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Reason</dt>
-          <dd className="text-ink">{data.reason ?? "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Reason</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.reason ?? "—"}</dd>
         </div>
       </dl>
 

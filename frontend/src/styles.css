@@ -1,46 +1,244 @@
 @import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
 @import "tailwindcss";
 
-/* Atlas design tokens (docs/DESIGN.md) — components use ONLY these, never raw palette
-   classes, so a future dark theme is a token swap. OKLCH throughout. */
-@theme {
+/* Atlas design tokens — the "porcelain" direction (runs/atlas-console/DIRECTION.md, Gate A
+   2026-08-14). Components use ONLY these names, never raw palette classes, which is what
+   made this re-skin a token swap rather than a 250-file rewrite. Every pair below is
+   script-verified against WCAG; ratios are quoted from the register's verified table.
+
+   Light and dark are one design in two palettes: the same token names resolve to different
+   values under `.dark`, so no component branches on theme. */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
+
+  --atlas-canvas: #f7f7f8; /* ink 16.57 · ink-muted 4.81 · primary 4.86 */
+  --atlas-surface: #ffffff; /* ink 17.74 · ink-muted 5.15 · primary 5.20 */
+  --atlas-panel: #f2f2f5; /* recessed fill — ink 15.88 · ink-muted 4.61 */
+  --atlas-ink: #17181c;
+  --atlas-ink-muted: #6b6d76;
+  /* porcelain is a deliberate TWO-tier text system: no third tier lighter than ink-muted
+     clears 4.5:1 on surface (best candidate reached 4.40), so faint resolves to the same
+     value rather than shipping an inaccessible tier. */
+  --atlas-ink-faint: #6b6d76;
+  --atlas-line: #e9e9ee; /* decorative only, 1.21 vs surface — never the sole boundary signal */
+
+  --atlas-primary: #3f5bf6; /* white on it 5.20 · on primary-tint 4.58 · focus vs canvas 4.86 */
+  --atlas-primary-strong: #2b43cc; /* hover — white on it 7.56 */
+  --atlas-primary-tint: #edf0fe;
+
+  --atlas-success: #177a48; /* on success-tint 4.80 */
+  --atlas-success-tint: #e7f6ed;
+  --atlas-warn: #94650c; /* on warn-tint 4.54 — the register's one verified adjustment */
+  --atlas-warn-tint: #fbf1de;
+  --atlas-danger: #b23425; /* on danger-tint 5.25 */
+  --atlas-danger-tint: #fbe9e7;
+
+  --atlas-shadow-card: 0 1px 2px rgba(23, 24, 28, 0.04), 0 10px 28px -8px rgba(23, 24, 28, 0.09);
+  --atlas-glass-surface: color-mix(in srgb, var(--atlas-surface) 62%, transparent);
+  --atlas-glass-border: color-mix(in srgb, var(--atlas-surface) 40%, #ffffff88);
+  --atlas-glass-shadow: 0 24px 60px -12px rgba(23, 24, 28, 0.28);
+  --atlas-glass-row: color-mix(in srgb, var(--atlas-surface) 85%, transparent);
+}
+
+.dark {
+  color-scheme: dark;
+
+  --atlas-canvas: #131418; /* ink 15.91 · ink-muted 6.74 · primary 7.95 */
+  --atlas-surface: #1b1c22; /* ink 14.68 · ink-muted 6.23 · primary 7.34 */
+  --atlas-panel: #212229; /* ink 13.69 · ink-muted 5.81 */
+  --atlas-ink: #eeeef2;
+  --atlas-ink-muted: #9a9ca8;
+  --atlas-ink-faint: #9a9ca8;
+  --atlas-line: #2a2c35;
+
+  --atlas-primary: #93a5ff; /* on primary-tint 6.46 · focus vs canvas 7.95 */
+  --atlas-primary-strong: #b0bdff; /* hover reads BRIGHTER on dark — surface on it 9.36 */
+  --atlas-primary-tint: #232637;
+
+  --atlas-success: #7fd6a4; /* on success-tint 8.15 */
+  --atlas-success-tint: #1b2f24;
+  --atlas-warn: #e4b566; /* on warn-tint 7.48 */
+  --atlas-warn-tint: #332a17;
+  --atlas-danger: #eb9486; /* on danger-tint 6.65 */
+  --atlas-danger-tint: #361f1c;
+
+  --atlas-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 28px -8px rgba(0, 0, 0, 0.4);
+  --atlas-glass-surface: color-mix(in srgb, var(--atlas-surface) 62%, transparent);
+  --atlas-glass-border: color-mix(in srgb, #ffffff 14%, transparent);
+  --atlas-glass-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.55);
+  --atlas-glass-row: color-mix(in srgb, var(--atlas-surface) 85%, transparent);
+}
+
+/* `inline` keeps the utilities pointing at the custom properties above instead of copying
+   their values in, which is what lets one class serve both themes. */
+@theme inline {
   --font-sans: "Inter Variable", Inter, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  --color-canvas: oklch(0.98 0.003 260);
-  --color-surface: oklch(1 0 0);
-  --color-panel: oklch(0.955 0.005 260);
-  --color-ink: oklch(0.22 0.02 260);
-  --color-ink-muted: oklch(0.45 0.015 260);
-  --color-ink-faint: oklch(0.6 0.01 260);
-  --color-line: oklch(0.9 0.006 260);
+  --color-canvas: var(--atlas-canvas);
+  --color-surface: var(--atlas-surface);
+  --color-panel: var(--atlas-panel);
+  --color-ink: var(--atlas-ink);
+  --color-ink-muted: var(--atlas-ink-muted);
+  --color-ink-faint: var(--atlas-ink-faint);
+  --color-line: var(--atlas-line);
 
-  --color-primary: oklch(0.45 0.15 260);
-  --color-primary-strong: oklch(0.38 0.15 260);
-  --color-primary-tint: oklch(0.94 0.03 260);
+  --color-primary: var(--atlas-primary);
+  --color-primary-strong: var(--atlas-primary-strong);
+  --color-primary-tint: var(--atlas-primary-tint);
 
-  --color-success: oklch(0.5 0.12 150);
-  --color-success-tint: oklch(0.95 0.03 150);
-  --color-warn: oklch(0.55 0.12 75);
-  --color-warn-tint: oklch(0.96 0.04 85);
-  --color-danger: oklch(0.5 0.18 25);
-  --color-danger-tint: oklch(0.95 0.03 25);
+  --color-success: var(--atlas-success);
+  --color-success-tint: var(--atlas-success-tint);
+  --color-warn: var(--atlas-warn);
+  --color-warn-tint: var(--atlas-warn-tint);
+  --color-danger: var(--atlas-danger);
+  --color-danger-tint: var(--atlas-danger-tint);
 
-  --shadow-card: 0 1px 2px oklch(0 0 0 / 0.05);
-  --radius-control: 6px;
-  --radius-card: 8px;
+  --shadow-card: var(--atlas-shadow-card);
+  --radius-control: 10px;
+  --radius-card: 14px;
 }
 
 body {
   @apply bg-canvas text-ink font-sans antialiased;
 }
 
-/* Uniform focus affordance (DESIGN.md): 2px primary ring, offset 2px. */
+/* Uniform focus affordance: 2px accent ring, 2px offset. Verified against canvas (4.86
+   light / 7.95 dark), surface, primary-tint, and the glass palette's scrim. */
 :focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--atlas-primary);
   outline-offset: 2px;
 }
 
-/* Skeleton shimmer for loading states; collapses to a static tint under reduced motion. */
+/* ── Type roles (register §2) ────────────────────────────────────────────────────────── */
+
+/* Section labels, stat labels, table headers. Mono + caps is porcelain's rhythm device. */
+.mono-caps {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Document codes (ITM-…, BILL-…, PO-…) — fixed-width so they stay scannable in a column. */
+.identifier {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* Keycap chip for shortcut hints. */
+.kbd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 6px;
+  border: 1px solid var(--atlas-line);
+  background: var(--atlas-surface);
+  color: var(--atlas-ink-muted);
+  box-shadow: 0 1px 0 var(--atlas-line);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Buttons (register §3) ───────────────────────────────────────────────────────────── */
+
+/* Primary action: ink fill, inverted label. Deliberately not the accent — the accent is
+   reserved for links, active nav, focus and chips, so the page has exactly one loud object. */
+.btn-ink {
+  @apply inline-flex items-center justify-center gap-2 rounded-control px-4 text-[13px] font-medium
+         transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45;
+  min-height: 38px;
+  background: var(--atlas-ink);
+  color: var(--atlas-surface);
+}
+.btn-ink:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--atlas-ink) 88%, var(--atlas-surface));
+}
+
+/* Secondary action: hairline chip on the surface fill. */
+.btn-chip {
+  @apply inline-flex items-center justify-center gap-2 rounded-control border border-line px-3.5
+         text-[13px] transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45;
+  min-height: 38px;
+  background: var(--atlas-surface);
+  color: var(--atlas-ink);
+}
+.btn-chip:hover:not(:disabled) {
+  background: var(--atlas-panel);
+}
+
+/* Standalone primaries outside a page head (login submit, form save, empty/error CTAs)
+   render at the full 44px target rather than the page head's 38px visual. */
+.btn-tall {
+  min-height: 44px;
+}
+
+/* ── The one glass object (register §3) ──────────────────────────────────────────────── */
+
+/* Glass is confined to floating layers — the command palette and popovers. Nothing
+   structural ever blurs, which is the whole restraint the direction rests on.
+
+   Binding constraint from the Loop 2 prototype: text on glass must be `ink`. Secondary ink
+   measured 3.98:1 over the worst-case underlay and fails, so anything muted inside the panel
+   needs its own opaque backing (the input row and the keycaps have one). */
+.glass-panel {
+  background: var(--atlas-glass-surface);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  border: 1px solid var(--atlas-glass-border);
+  box-shadow: var(--atlas-glass-shadow);
+  border-radius: 16px;
+}
+/* The register draws the highlighted row as 85% card over the glass. That reads on a light
+   substrate and all but disappears on a dark one — and this row is the keyboard selection
+   indicator, so it has to be legible in both. It uses the accent tint instead, the same
+   language the sidebar's active nav row speaks. */
+.glass-row-active {
+  background: var(--atlas-primary-tint);
+  color: var(--atlas-primary);
+  box-shadow: 0 2px 8px rgba(23, 24, 28, 0.08);
+}
+
+@keyframes atlas-glass-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.glass-panel-enter {
+  animation: atlas-glass-in 160ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* The designed reduced-motion state, not a disabled animation: the panel arrives already
+   opaque. Blur is never animated into or out of — it is simply absent here. */
+@media (prefers-reduced-motion: reduce) {
+  .glass-panel {
+    background: var(--atlas-surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-color: var(--atlas-line);
+  }
+  .glass-row-active {
+    background: var(--atlas-panel);
+    box-shadow: none;
+  }
+}
+
+/* ── Loading ─────────────────────────────────────────────────────────────────────────── */
+
 @keyframes atlas-shimmer {
   from {
     background-position: 200% 0;
@@ -52,22 +250,27 @@ body {
 .atlas-skeleton {
   background: linear-gradient(
     90deg,
-    var(--color-panel) 25%,
-    var(--color-line) 50%,
-    var(--color-panel) 75%
+    var(--atlas-panel) 25%,
+    var(--atlas-line) 50%,
+    var(--atlas-panel) 75%
   );
   background-size: 200% 100%;
   animation: atlas-shimmer 1.4s linear infinite;
-  border-radius: 4px;
+  border-radius: 6px;
   color: transparent;
   user-select: none;
 }
+
+/* Designed reduced-motion states, not `animation: none` as an afterthought: the skeleton
+   holds a flat panel block at the same geometry, and the glass palette arrives already
+   opaque instead of blurring in. */
 @media (prefers-reduced-motion: reduce) {
   .atlas-skeleton {
     animation: none;
-    background: var(--color-panel);
+    background: var(--atlas-panel);
   }
   * {
     transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
   }
 }

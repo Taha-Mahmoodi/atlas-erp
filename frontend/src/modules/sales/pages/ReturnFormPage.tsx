@@ -9,7 +9,7 @@
  * and revenue (a credit note) in one transaction.
  */
 
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -94,9 +94,16 @@ export function ReturnFormPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="text-xl font-semibold text-ink">New return</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/sales/returns">Returns</Link> / <span className="text-ink">New return</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">New return</h1>
+        </div>
+      </header>
       {error && (
-        <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
+        <p role="alert" className="mb-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
         </p>
       )}
@@ -179,11 +186,11 @@ export function ReturnFormPage() {
       {salesOrderId && warehouseId && (
         <div className="mt-6">
           {order.isPending ? (
-            <p className="text-sm text-ink-muted">Loading sales order lines…</p>
+            <p className="text-[13px] text-ink-muted">Loading sales order lines…</p>
           ) : (
             <table className="w-full border-collapse text-[13px]">
               <thead>
-                <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+                <tr className="border-b border-line text-left mono-caps text-ink-muted">
                   <th className="py-2 pr-2">Line</th>
                   <th className="py-2 pr-2 text-right">Invoiced</th>
                   <th className="py-2 pr-2 text-right">Returned</th>
@@ -247,7 +254,7 @@ export function ReturnFormPage() {
         type="button"
         onClick={() => void submit()}
         disabled={!canSubmit || createReturn.isPending}
-        className="mt-6 rounded-control bg-primary px-4 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+        className="mt-6 btn-ink"
       >
         {createReturn.isPending ? "Creating…" : "Create draft"}
       </button>

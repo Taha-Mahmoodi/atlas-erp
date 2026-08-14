@@ -5,7 +5,7 @@
  * not this form.
  */
 
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -64,7 +64,17 @@ export function PurchaseOrderFormPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="text-xl font-semibold text-ink">New purchase order</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/procurement/purchase-orders" className="hover:underline">
+            Purchase Orders
+          </Link>{" "}
+          / <span className="text-ink">New purchase order</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">New purchase order</h1>
+        </div>
+      </header>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
@@ -155,7 +165,7 @@ export function PurchaseOrderFormPage() {
         type="button"
         onClick={() => void submit()}
         disabled={!canSubmit || createPurchaseOrder.isPending}
-        className="mt-6 rounded-control bg-primary px-4 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+        className="mt-6 btn-ink"
       >
         {createPurchaseOrder.isPending ? "Creating…" : "Create draft"}
       </button>

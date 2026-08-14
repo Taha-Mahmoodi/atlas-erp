@@ -6,7 +6,7 @@
  * skipped by the generation run).
  */
 
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -158,34 +158,43 @@ export function MaintenancePlanFormPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{isEdit ? "Edit plan" : "New preventive plan"}</h1>
-        {isEdit && plan.data && (
-          <button
-            type="button"
-            onClick={() => void toggleStatus()}
-            disabled={toggling}
-            className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-primary disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            {toggling ? "Saving…" : plan.data.status === "ACTIVE" ? "Deactivate" : "Activate"}
-          </button>
-        )}
-      </div>
-
-      {isEdit && plan.data && (
-        <p className="mt-2 text-xs text-ink-muted">
-          {plan.data.status === "ACTIVE" ? "Active" : "Inactive (skipped by the run)"} · next due{" "}
-          {formatDate(plan.data.next_due_date)}
-          {plan.data.last_generated_date && ` · last generated ${formatDate(plan.data.last_generated_date)}`}
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/maintenance/plans">Preventive plans</Link> /{" "}
+          <span className="text-ink">{isEdit ? "Edit plan" : "New preventive plan"}</span>
         </p>
-      )}
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">
+            {isEdit ? "Edit plan" : "New preventive plan"}
+          </h1>
+          <div className="flex items-center gap-2.5">
+            {isEdit && plan.data && (
+              <button
+                type="button"
+                onClick={() => void toggleStatus()}
+                disabled={toggling}
+                className="btn-chip"
+              >
+                {toggling ? "Saving…" : plan.data.status === "ACTIVE" ? "Deactivate" : "Activate"}
+              </button>
+            )}
+          </div>
+        </div>
+        {isEdit && plan.data && (
+          <p className="mt-1 text-[13px] text-ink-muted">
+            {plan.data.status === "ACTIVE" ? "Active" : "Inactive (skipped by the run)"} · next due{" "}
+            {formatDate(plan.data.next_due_date)}
+            {plan.data.last_generated_date && ` · last generated ${formatDate(plan.data.last_generated_date)}`}
+          </p>
+        )}
+      </header>
 
       {error && (
-        <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
+        <p role="alert" className="mb-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
         </p>
       )}
-      <div className="mt-6">
+      <div>
         <FormBuilder
           fields={fields}
           values={values}

@@ -30,17 +30,27 @@ export function RoleListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Roles</h1>
-        <Link
-          to="/admin/roles/new"
-          className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
-        >
-          New role
-        </Link>
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/admin" className="hover:text-ink">
+            Admin
+          </Link>{" "}
+          / <span className="text-ink">Roles</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Roles</h1>
+          <div className="flex items-center gap-2.5">
+            <Link
+              to="/admin/roles/new"
+              className="btn-ink"
+            >
+              New role
+            </Link>
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4">
+      <div>
         {roles.isError ? (
           <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-sm text-danger">
             {getErrorMessage(roles.error, "Unable to load roles.")}

@@ -48,28 +48,35 @@ export function OrgChartPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Org Chart</h1>
-        <select
-          value={rootEmployeeId}
-          onChange={(event) => setRootEmployeeId(event.target.value)}
-          className="rounded-control border border-line bg-surface px-2 py-1.5 text-sm text-ink"
-          aria-label="Anchor on employee"
-        >
-          <option value="">Whole organization</option>
-          {(employees.data?.items ?? []).map((employee) => (
-            <option key={employee.id} value={employee.id}>
-              {employee.employee_code} — {employee.first_name} {employee.last_name}
-            </option>
-          ))}
-        </select>
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/hr">HR</Link> / <span className="text-ink">Org chart</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Org Chart</h1>
+          <div className="flex items-center gap-2.5">
+            <select
+              value={rootEmployeeId}
+              onChange={(event) => setRootEmployeeId(event.target.value)}
+              className="rounded-control border border-line bg-surface px-2 py-1.5 text-sm text-ink"
+              aria-label="Anchor on employee"
+            >
+              <option value="">Whole organization</option>
+              {(employees.data?.items ?? []).map((employee) => (
+                <option key={employee.id} value={employee.id}>
+                  {employee.employee_code} — {employee.first_name} {employee.last_name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
+      <div className="rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
         {chart.isPending ? (
-          <p className="text-sm text-ink-muted">Loading…</p>
+          <p className="text-[13px] text-ink-muted">Loading…</p>
         ) : (chart.data?.roots.length ?? 0) === 0 ? (
-          <p className="text-sm text-ink-muted">No employees in the reporting tree.</p>
+          <p className="text-[13px] text-ink-muted">No employees in the reporting tree.</p>
         ) : (
           <ul>
             {chart.data?.roots.map((root) => (

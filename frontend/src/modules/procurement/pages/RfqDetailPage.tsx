@@ -10,6 +10,7 @@ import { useState } from "react";
 import { getErrorMessage } from "@/lib/apiClient";
 import { formatQuantity } from "@/lib/format";
 import { useMe } from "@/lib/session";
+import { StatusPill } from "@/components/StatusPill";
 import { useItemLookup, useUomOptions } from "@/modules/inventory/hooks";
 import {
   useCloseRfq,
@@ -40,7 +41,7 @@ export function RfqDetailPage() {
   const [convertedPoId, setConvertedPoId] = useState<string | null>(null);
 
   if (rfq.isPending || !rfq.data) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-[13px] text-ink-muted">Loading…</p>;
   }
   const data = rfq.data;
   const canSend = data.status === "DRAFT";
@@ -105,41 +106,49 @@ export function RfqDetailPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{data.rfq_number}</h1>
-        <div className="flex gap-2">
-          {canClose && canManage && (
-            <button
-              type="button"
-              onClick={() => void close()}
-              disabled={closeRfq.isPending}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              Close
-            </button>
-          )}
-          {canSend && canManage && (
-            <button
-              type="button"
-              onClick={() => void send()}
-              disabled={sendRfq.isPending}
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              {sendRfq.isPending ? "Sending…" : "Send"}
-            </button>
-          )}
-          {canConvert && canCreatePo && (
-            <button
-              type="button"
-              onClick={() => void convert()}
-              disabled={convertToPo.isPending}
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              {convertToPo.isPending ? "Converting…" : "Convert to PO"}
-            </button>
-          )}
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/procurement/rfqs" className="hover:underline">
+            RFQs
+          </Link>{" "}
+          / <span className="text-ink">{data.rfq_number}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.rfq_number}</h1>
+          <div className="flex items-center gap-2.5">
+            {canClose && canManage && (
+              <button
+                type="button"
+                onClick={() => void close()}
+                disabled={closeRfq.isPending}
+                className="btn-chip hover:border-danger hover:text-danger"
+              >
+                Close
+              </button>
+            )}
+            {canSend && canManage && (
+              <button
+                type="button"
+                onClick={() => void send()}
+                disabled={sendRfq.isPending}
+                className="btn-ink"
+              >
+                {sendRfq.isPending ? "Sending…" : "Send"}
+              </button>
+            )}
+            {canConvert && canCreatePo && (
+              <button
+                type="button"
+                onClick={() => void convert()}
+                disabled={convertToPo.isPending}
+                className="btn-ink"
+              >
+                {convertToPo.isPending ? "Converting…" : "Convert to PO"}
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      </header>
 
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
@@ -156,24 +165,26 @@ export function RfqDetailPage() {
         </p>
       )}
 
-      <dl className="mt-6 grid grid-cols-3 gap-4 text-sm">
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-ink-muted">Status</dt>
-          <dd className="text-ink">{data.status}</dd>
+          <dt className="mono-caps text-ink-muted">Status</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
+            <StatusPill status={data.status} />
+          </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Vendor</dt>
-          <dd className="text-ink">{vendorLabel(data.vendor_id)}</dd>
+          <dt className="mono-caps text-ink-muted">Vendor</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{vendorLabel(data.vendor_id)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Valid until</dt>
-          <dd className="text-ink">{data.valid_until ?? "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Valid until</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.valid_until ?? "—"}</dd>
         </div>
       </dl>
 
       <table className="mt-6 w-full border-collapse text-[13px]">
         <thead>
-          <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+          <tr className="border-b border-line text-left mono-caps text-ink-muted">
             <th className="py-2 pr-2">Item</th>
             <th className="py-2 pr-2">Description</th>
             <th className="py-2 pr-2 text-right">Quantity</th>
@@ -211,7 +222,7 @@ export function RfqDetailPage() {
           type="button"
           onClick={() => void saveQuotes()}
           disabled={Object.values(quoteInputs).every((v) => !v) || recordQuote.isPending}
-          className="mt-4 rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+          className="mt-4 btn-ink"
         >
           {recordQuote.isPending ? "Saving…" : "Save quotes"}
         </button>

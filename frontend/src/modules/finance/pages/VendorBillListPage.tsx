@@ -9,24 +9,9 @@ import { useState } from "react";
 import { formatDate, formatMoney } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { useVendorBills } from "@/modules/finance/hooks";
 import type { BillStatus, VendorBill } from "@/modules/finance/types";
-
-const STATUS_TONE: Record<BillStatus, string> = {
-  DRAFT: "bg-warn-tint text-warn",
-  POSTED: "bg-panel text-ink-muted",
-  PARTIALLY_PAID: "bg-warn-tint text-warn",
-  PAID: "bg-success-tint text-success",
-  REVERSED: "bg-panel text-ink-muted",
-};
-
-function StatusChip({ status }: { status: BillStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status.replace("_", " ")}
-    </span>
-  );
-}
 
 const COLUMNS: DataGridColumn<VendorBill>[] = [
   { key: "bill_number", header: "Bill #", render: (row) => row.bill_number ?? "(draft)", width: "150px" },
@@ -46,7 +31,7 @@ const COLUMNS: DataGridColumn<VendorBill>[] = [
     render: (row) => formatMoney(row.open_amount, row.currency_code),
     width: "130px",
   },
-  { key: "status", header: "Status", render: (row) => <StatusChip status={row.status} />, width: "120px" },
+  { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "120px" },
 ];
 
 export function VendorBillListPage() {
@@ -60,19 +45,26 @@ export function VendorBillListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Vendor Bills</h1>
-        {canManage && (
-          <Link
-            to="/finance/vendor-bills/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
-          >
-            New bill
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance">Finance</Link> / <span className="text-ink">Vendor Bills</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Vendor Bills</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/finance/vendor-bills/new"
+                className="btn-ink"
+              >
+                New bill
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4">
+      <div>
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value as BillStatus | "")}
@@ -95,6 +87,8 @@ export function VendorBillListPage() {
           onRowClick={(row) => void navigate({ to: "/finance/vendor-bills/$billId", params: { billId: row.id } })}
           loading={bills.isPending}
           emptyMessage="No vendor bills yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={bills.hasNextPage}
           onLoadMore={() => void bills.fetchNextPage()}
           loadingMore={bills.isFetchingNextPage}

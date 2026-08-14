@@ -9,6 +9,7 @@ import { useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
 import { formatDateTime } from "@/lib/format";
+import { StatusPill } from "@/components/StatusPill";
 import { useAssignRole, useRoleOptions, useUser, useUserRoles } from "@/modules/admin/hooks";
 
 export function UserDetailPage() {
@@ -35,7 +36,7 @@ export function UserDetailPage() {
     }
   };
 
-  if (user.isPending) return <p className="text-sm text-ink-muted">Loading…</p>;
+  if (user.isPending) return <p className="text-[13px] text-ink-muted">Loading…</p>;
   if (user.isError || !user.data) {
     return (
       <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-sm text-danger">
@@ -46,20 +47,34 @@ export function UserDetailPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-xl font-semibold text-ink">{user.data.email}</h1>
-      <div className="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-          <dt className="text-ink-muted">Full name</dt>
-          <dd className="text-ink">{user.data.full_name ?? "—"}</dd>
-          <dt className="text-ink-muted">Status</dt>
-          <dd className="text-ink">{user.data.is_active ? "Active" : "Inactive"}</dd>
-          <dt className="text-ink-muted">Created</dt>
-          <dd className="text-ink">{formatDateTime(user.data.created_at)}</dd>
-        </dl>
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/admin/users" className="hover:text-ink">
+            Users
+          </Link>{" "}
+          / <span className="text-ink">{user.data.email}</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">{user.data.email}</h1>
+      </header>
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
+        <div>
+          <dt className="mono-caps text-ink-muted">Full name</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{user.data.full_name ?? "—"}</dd>
+        </div>
+        <div>
+          <dt className="mono-caps text-ink-muted">Status</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
+            <StatusPill status={user.data.is_active ? "ACTIVE" : "INACTIVE"} />
+          </dd>
+        </div>
+        <div>
+          <dt className="mono-caps text-ink-muted">Created</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{formatDateTime(user.data.created_at)}</dd>
+        </div>
+      </dl>
 
-      <h2 className="mt-8 text-sm font-semibold text-ink">Roles</h2>
-      {roles.isPending && <p className="mt-2 text-sm text-ink-muted">Loading roles…</p>}
+      <h2 className="mt-8 mono-caps text-ink-muted">Roles</h2>
+      {roles.isPending && <p className="mt-2 text-[13px] text-ink-muted">Loading roles…</p>}
       {roles.data && roles.data.length === 0 && (
         <p className="mt-2 text-sm text-ink-muted">No roles assigned yet — this user has no permissions.</p>
       )}
@@ -69,7 +84,7 @@ export function UserDetailPage() {
             <Link
               to="/admin/roles/$roleId"
               params={{ roleId: role.id }}
-              className="text-sm font-medium text-primary hover:underline"
+              className="text-[12.5px] font-medium text-primary hover:underline"
             >
               {role.name}
             </Link>
@@ -104,7 +119,7 @@ export function UserDetailPage() {
           type="button"
           disabled={!roleId || assignRole.isPending}
           onClick={() => void assign()}
-          className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+          className="btn-ink"
         >
           {assignRole.isPending ? "Assigning…" : "Assign"}
         </button>

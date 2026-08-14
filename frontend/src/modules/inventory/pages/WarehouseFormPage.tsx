@@ -6,7 +6,7 @@
  * service convention, not a DB constraint, so this UI doesn't assume/enforce uniqueness either.
  */
 
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -51,8 +51,8 @@ function BinsSection({ warehouseId }: { warehouseId: string }) {
   };
 
   return (
-    <div className="mt-8 rounded-card border border-line bg-surface p-4 shadow-card">
-      <h2 className="text-sm font-semibold text-ink">Bins</h2>
+    <div className="mt-8 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+      <h2 className="mb-3.5 mono-caps text-ink-muted">Bins</h2>
       {error && (
         <p role="alert" className="mt-2 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
@@ -61,7 +61,7 @@ function BinsSection({ warehouseId }: { warehouseId: string }) {
 
       <table className="mt-3 w-full border-collapse text-[13px]">
         <thead>
-          <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+          <tr className="border-b border-line text-left mono-caps text-ink-muted">
             <th className="py-1.5 pr-2">Code</th>
             <th className="py-1.5 pr-2">Name</th>
             <th className="py-1.5 pr-2">Default</th>
@@ -113,7 +113,7 @@ function BinsSection({ warehouseId }: { warehouseId: string }) {
           type="button"
           onClick={() => void add()}
           disabled={!code || !name || createBin.isPending}
-          className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+          className="btn-ink"
         >
           Add
         </button>
@@ -165,7 +165,15 @@ export function WarehouseFormPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-xl font-semibold text-ink">{isEdit ? "Edit warehouse" : "New warehouse"}</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/inventory/warehouses">Warehouses</Link> /{" "}
+          <span className="text-ink">{isEdit ? "Edit warehouse" : "New warehouse"}</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">
+          {isEdit ? "Edit warehouse" : "New warehouse"}
+        </h1>
+      </header>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}

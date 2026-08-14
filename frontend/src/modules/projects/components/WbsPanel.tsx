@@ -14,6 +14,7 @@ import { useFunctionalCurrency } from "@/modules/finance/hooks";
 import { treeOrder } from "@/modules/projects/components/wbsTree";
 import { useCreateWbsElement, useUpdateWbsElement, useWbsElements } from "@/modules/projects/hooks";
 import type { WbsElement, WbsElementCreate, WbsElementUpdate, WbsStatus } from "@/modules/projects/types";
+import { StatusPill } from "@/components/StatusPill";
 
 const EMPTY: FormValues = { status: "OPEN", is_billable: false };
 
@@ -96,15 +97,15 @@ export function WbsPanel({ projectId, canManage }: { projectId: string; canManag
 
   return (
     <section aria-label="WBS elements">
-      <h2 className="text-sm font-semibold text-ink">WBS elements</h2>
-      <p className="mt-0.5 text-xs text-ink-muted">
+      <h2 className="mono-caps text-ink-muted">WBS elements</h2>
+      <p className="mt-0.5 text-[12px] text-ink-muted">
         The costing objects — finance journal lines and HR time entries post to a WBS element.
       </p>
 
       <div className="mt-3 overflow-x-auto rounded-card border border-line bg-surface shadow-card">
         <table className="w-full border-collapse text-[13px]" aria-label="WBS tree">
           <thead>
-            <tr className="border-b border-line bg-panel text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+            <tr className="border-b border-line text-left mono-caps text-ink-muted">
               <th className="px-3 py-2">Code</th>
               <th className="px-3 py-2">Name</th>
               <th className="px-3 py-2">Status</th>
@@ -128,13 +129,7 @@ export function WbsPanel({ projectId, canManage }: { projectId: string; canManag
                 </td>
                 <td className="px-3 py-1.5 text-ink">{node.name}</td>
                 <td className="px-3 py-1.5">
-                  <span
-                    className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${
-                      node.status === "OPEN" ? "bg-success-tint text-success" : "bg-panel text-ink-muted"
-                    }`}
-                  >
-                    {node.status}
-                  </span>
+                  <StatusPill status={node.status} />
                 </td>
                 <td className="px-3 py-1.5 text-ink-muted">{node.is_billable ? "Yes" : "—"}</td>
                 <td className="px-3 py-1.5 text-right tabular-nums">
@@ -145,7 +140,7 @@ export function WbsPanel({ projectId, canManage }: { projectId: string; canManag
                     <button
                       type="button"
                       onClick={() => startEdit(node)}
-                      className="rounded-control px-2 py-0.5 text-xs font-medium text-primary transition-colors duration-150 hover:bg-primary-tint"
+                      className="rounded-control px-2 py-0.5 text-[12.5px] font-medium text-primary transition-colors duration-150 hover:bg-primary-tint"
                     >
                       Edit
                     </button>
@@ -158,16 +153,16 @@ export function WbsPanel({ projectId, canManage }: { projectId: string; canManag
       </div>
 
       {canManage && (
-        <div className="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
+        <div className="mt-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium text-ink">
+            <h3 className="text-[13.5px] font-semibold text-ink">
               {editingId ? "Edit WBS element" : "New WBS element"}
             </h3>
             {editingId && (
               <button
                 type="button"
                 onClick={reset}
-                className="text-xs font-medium text-ink-muted transition-colors duration-150 hover:text-ink"
+                className="text-[12.5px] font-medium text-ink-muted transition-colors duration-150 hover:text-ink"
               >
                 Cancel edit
               </button>

@@ -9,24 +9,10 @@ import { useState } from "react";
 import { formatMoney } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { useFunctionalCurrency } from "@/modules/finance/hooks";
 import { useProjects } from "@/modules/projects/hooks";
 import type { Project, ProjectStatus } from "@/modules/projects/types";
-
-const STATUS_TONE: Record<ProjectStatus, string> = {
-  PLANNING: "bg-panel text-ink-muted",
-  ACTIVE: "bg-success-tint text-success",
-  CLOSED: "bg-panel text-ink-muted",
-  CANCELLED: "bg-danger-tint text-danger",
-};
-
-export function ProjectStatusChip({ status }: { status: ProjectStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status}
-    </span>
-  );
-}
 
 export function ProjectListPage() {
   const navigate = useNavigate();
@@ -51,22 +37,29 @@ export function ProjectListPage() {
       render: (row) =>
         row.budget_amount === null ? "—" : formatMoney(row.budget_amount, currency.data ?? "—"),
     },
-    { key: "status", header: "Status", render: (row) => <ProjectStatusChip status={row.status} />, width: "120px" },
+    { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "120px" },
   ];
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Projects</h1>
-        {canManage && (
-          <Link
-            to="/projects/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
-          >
-            New project
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/projects">Projects</Link> / <span className="text-ink">All projects</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Projects</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/projects/new"
+                className="btn-ink"
+              >
+                New project
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
       <div className="mt-4">
         <select
@@ -89,7 +82,9 @@ export function ProjectListPage() {
           rowKey={(row) => row.id}
           onRowClick={(row) => void navigate({ to: "/projects/$projectId", params: { projectId: row.id } })}
           loading={projects.isPending}
-          emptyMessage={status ? "No projects match this filter." : "No projects yet."}
+          emptyMessage="No projects yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={projects.hasNextPage}
           onLoadMore={() => void projects.fetchNextPage()}
           loadingMore={projects.isFetchingNextPage}

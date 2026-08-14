@@ -4,6 +4,7 @@
  * needed here. net_income = revenue_total - expense_total (positive = profit).
  */
 
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { formatMoney } from "@/lib/format";
@@ -28,9 +29,14 @@ export function ProfitAndLossPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-xl font-semibold text-ink">Profit &amp; Loss</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance">Finance</Link> / <span className="text-ink">Profit &amp; Loss</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">Profit &amp; Loss</h1>
+      </header>
 
-      <div className="mt-4 flex items-center gap-4">
+      <div className="flex items-center gap-4">
         <input
           type="date"
           value={dateFrom}
@@ -47,11 +53,11 @@ export function ProfitAndLossPage() {
       </div>
 
       {pnl.isPending ? (
-        <p className="mt-6 text-sm text-ink-muted">Loading…</p>
+        <p className="mt-6 text-[13px] text-ink-muted">Loading…</p>
       ) : (
         pnl.data && (
-          <div className="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
-            <h2 className="text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">Revenue</h2>
+          <div className="mt-6 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+            <h2 className="mb-3.5 mono-caps text-ink-muted">Revenue</h2>
             <StatementGroupTable
               groups={pnl.data.revenue_groups}
               total={pnl.data.revenue_total}
@@ -59,7 +65,7 @@ export function ProfitAndLossPage() {
               currencyCode={currencyCode}
             />
 
-            <h2 className="mt-6 text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">Expenses</h2>
+            <h2 className="mb-3.5 mt-6 mono-caps text-ink-muted">Expenses</h2>
             <StatementGroupTable
               groups={pnl.data.expense_groups}
               total={pnl.data.expense_total}

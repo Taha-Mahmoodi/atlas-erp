@@ -5,6 +5,8 @@
  * the caller maps document types/statuses to labels and tones.
  */
 
+import { StatusPill, type StatusTone } from "@/components/StatusPill";
+
 export interface DocFlowNode {
   id: string;
   /** Display heading, e.g. "Sales order". */
@@ -31,12 +33,13 @@ export interface DocFlowViewerProps {
   onNodeClick?: (node: DocFlowNode) => void;
 }
 
-const TONE = {
-  neutral: "bg-panel text-ink-muted",
-  success: "bg-success-tint text-success",
-  warn: "bg-warn-tint text-warn",
-  danger: "bg-danger-tint text-danger",
-} as const;
+/** The viewer's caller-facing tone vocabulary, mapped onto the shared pill's (issue #182). */
+const TONE: Record<NonNullable<DocFlowNode["statusTone"]>, StatusTone> = {
+  neutral: "mute",
+  success: "ok",
+  warn: "warn",
+  danger: "bad",
+};
 
 /** Longest-path level per node: roots at 0, every edge pushes its successor deeper. */
 export function computeLevels(nodes: DocFlowNode[], edges: DocFlowEdge[]): Map<string, number> {
@@ -103,13 +106,7 @@ export function DocFlowViewer({ nodes, edges, currentId, onNodeClick }: DocFlowV
                 <>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-medium text-ink-muted">{node.kind}</span>
-                    {node.status && (
-                      <span
-                        className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${TONE[node.statusTone ?? "neutral"]}`}
-                      >
-                        {node.status}
-                      </span>
-                    )}
+                    {node.status && <StatusPill status={node.status} tone={TONE[node.statusTone ?? "neutral"]} />}
                   </div>
                   <div className="mt-0.5 text-sm font-semibold text-ink">{node.number ?? node.id}</div>
                   {node.meta && <div className="mt-0.5 text-xs text-ink-faint">{node.meta}</div>}

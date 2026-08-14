@@ -9,6 +9,7 @@ import { Link } from "@tanstack/react-router";
 import { formatDate, formatMoney } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { useVendorPayments } from "@/modules/finance/hooks";
 import type { VendorPayment } from "@/modules/finance/types";
 
@@ -23,7 +24,7 @@ const COLUMNS: DataGridColumn<VendorPayment>[] = [
     render: (row) => formatMoney(row.amount, row.currency_code),
     width: "130px",
   },
-  { key: "status", header: "Status", render: (row) => row.status, width: "100px" },
+  { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "100px" },
 ];
 
 export function VendorPaymentListPage() {
@@ -34,19 +35,26 @@ export function VendorPaymentListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Vendor Payments</h1>
-        {canPay && (
-          <Link
-            to="/finance/vendor-payments/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
-          >
-            New payment
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance">Finance</Link> / <span className="text-ink">Vendor Payments</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Vendor Payments</h1>
+          <div className="flex items-center gap-2.5">
+            {canPay && (
+              <Link
+                to="/finance/vendor-payments/new"
+                className="btn-ink"
+              >
+                New payment
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4">
+      <div>
         <DataGrid
           columns={COLUMNS}
           rows={rows}

@@ -4,29 +4,15 @@
  * goods receipt whose line is flagged `requires_inspection`, never via the API.
  */
 
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { formatDate, formatQuantity } from "@/lib/format";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { useItemLookup } from "@/modules/inventory/hooks";
 import { useInspectionLots } from "@/modules/quality/hooks";
 import type { InspectionLot, InspectionLotStatus } from "@/modules/quality/types";
-
-const STATUS_TONE: Record<InspectionLotStatus, string> = {
-  OPEN: "bg-primary-tint text-primary",
-  ACCEPTED: "bg-success-tint text-success",
-  REJECTED: "bg-danger-tint text-danger",
-  CANCELLED: "bg-panel text-ink-muted",
-};
-
-function StatusChip({ status }: { status: InspectionLotStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status}
-    </span>
-  );
-}
 
 export function InspectionLotListPage() {
   const navigate = useNavigate();
@@ -69,14 +55,21 @@ export function InspectionLotListPage() {
       render: (row) => row.disposition ?? "—",
       width: "110px",
     },
-    { key: "status", header: "Status", render: (row) => <StatusChip status={row.status} />, width: "110px" },
+    { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "110px" },
   ];
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-ink">Inspection lots</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/quality">Quality</Link> / <span className="text-ink">Inspection lots</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Inspection lots</h1>
+        </div>
+      </header>
 
-      <div className="mt-4">
+      <div>
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value as InspectionLotStatus | "")}
@@ -98,6 +91,8 @@ export function InspectionLotListPage() {
           onRowClick={(row) => void navigate({ to: "/quality/inspection-lots/$lotId", params: { lotId: row.id } })}
           loading={lots.isPending}
           emptyMessage="No inspection lots. Posting a goods receipt with a line flagged for inspection creates one."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={lots.hasNextPage}
           onLoadMore={() => void lots.fetchNextPage()}
           loadingMore={lots.isFetchingNextPage}

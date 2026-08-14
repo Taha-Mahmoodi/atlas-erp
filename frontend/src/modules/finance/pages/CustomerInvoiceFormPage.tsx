@@ -3,7 +3,7 @@
  * No edit path — invoices are create-then-post only (no PATCH endpoint).
  */
 
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { ApiError } from "@/lib/apiClient";
@@ -62,7 +62,13 @@ export function CustomerInvoiceFormPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-xl font-semibold text-ink">New customer invoice</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance/customer-invoices">Customer Invoices</Link> /{" "}
+          <span className="text-ink">New customer invoice</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">New customer invoice</h1>
+      </header>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
@@ -182,7 +188,7 @@ export function CustomerInvoiceFormPage() {
         type="button"
         onClick={() => void submit()}
         disabled={!canSubmit || createInvoice.isPending}
-        className="mt-6 rounded-control bg-primary px-4 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+        className="mt-6 btn-ink"
       >
         {createInvoice.isPending ? "Creating…" : "Create draft"}
       </button>

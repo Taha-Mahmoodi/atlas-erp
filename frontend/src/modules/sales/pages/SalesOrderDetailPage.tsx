@@ -23,6 +23,7 @@ import {
   useSalesOrder,
 } from "@/modules/sales/hooks";
 import type { AtpLineResult } from "@/modules/sales/types";
+import { StatusPill } from "@/components/StatusPill";
 
 export function SalesOrderDetailPage() {
   const { orderId } = useParams({ strict: false });
@@ -44,7 +45,7 @@ export function SalesOrderDetailPage() {
   const [atpResults, setAtpResults] = useState<AtpLineResult[] | null>(null);
 
   if (order.isPending || !order.data) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-[13px] text-ink-muted">Loading…</p>;
   }
   const data = order.data;
   const isDraft = data.status === "DRAFT";
@@ -110,92 +111,99 @@ export function SalesOrderDetailPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{data.order_number}</h1>
-        <div className="flex gap-2">
-          {canEdit && canManage && (
-            <Link
-              to="/sales/orders/$orderId/edit"
-              params={{ orderId: data.id }}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-primary"
-            >
-              Edit
-            </Link>
-          )}
-          {canCancel && canManage && (
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/sales/orders">Sales Orders</Link> / <span className="text-ink">{data.order_number}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.order_number}</h1>
+          <div className="flex items-center gap-2.5">
+            {canEdit && canManage && (
+              <Link
+                to="/sales/orders/$orderId/edit"
+                params={{ orderId: data.id }}
+                className="btn-chip"
+              >
+                Edit
+              </Link>
+            )}
+            {canCancel && canManage && (
+              <button
+                type="button"
+                onClick={() => void cancel()}
+                disabled={cancelOrder.isPending}
+                className="btn-chip hover:border-danger hover:text-danger"
+              >
+                Cancel
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => void cancel()}
-              disabled={cancelOrder.isPending}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-45"
+              onClick={() => void checkAvailability()}
+              disabled={checkAtp.isPending}
+              className="btn-chip"
             >
-              Cancel
+              {checkAtp.isPending ? "Checking…" : "Check availability"}
             </button>
-          )}
-          <button
-            type="button"
-            onClick={() => void checkAvailability()}
-            disabled={checkAtp.isPending}
-            className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-primary disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            {checkAtp.isPending ? "Checking…" : "Check availability"}
-          </button>
-          {canReleaseNow && (
-            <button
-              type="button"
-              onClick={() => void release()}
-              disabled={releaseCredit.isPending}
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              {releaseCredit.isPending ? "Releasing…" : "Release credit hold"}
-            </button>
-          )}
-          {canConfirmNow && (
-            <button
-              type="button"
-              onClick={() => void confirm()}
-              disabled={confirmOrder.isPending}
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              {confirmOrder.isPending ? "Confirming…" : "Confirm"}
-            </button>
-          )}
+            {canReleaseNow && (
+              <button
+                type="button"
+                onClick={() => void release()}
+                disabled={releaseCredit.isPending}
+                className="btn-ink"
+              >
+                {releaseCredit.isPending ? "Releasing…" : "Release credit hold"}
+              </button>
+            )}
+            {canConfirmNow && (
+              <button
+                type="button"
+                onClick={() => void confirm()}
+                disabled={confirmOrder.isPending}
+                className="btn-ink"
+              >
+                {confirmOrder.isPending ? "Confirming…" : "Confirm"}
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      </header>
 
       {error && (
-        <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
+        <p role="alert" className="mb-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
         </p>
       )}
       {isCreditBlocked && (
-        <p className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
+        <p className="mb-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           This order exceeds the customer's credit limit and is on hold. Release the hold to confirm anyway.
         </p>
       )}
 
-      <dl className="mt-6 grid grid-cols-4 gap-4 text-sm">
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-ink-muted">Status</dt>
-          <dd className="text-ink">{data.status}</dd>
+          <dt className="mono-caps text-ink-muted">Status</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
+            <StatusPill status={data.status} />
+          </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Customer</dt>
-          <dd className="text-ink">{customerLabel(data.customer_id)}</dd>
+          <dt className="mono-caps text-ink-muted">Customer</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{customerLabel(data.customer_id)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Credit check</dt>
-          <dd className="text-ink">{data.credit_check_status ?? "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Credit check</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.credit_check_status ?? "—"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Total</dt>
-          <dd className="text-ink">{formatMoney(data.total_amount, data.currency_code)}</dd>
+          <dt className="mono-caps text-ink-muted">Total</dt>
+          <dd className="mt-1.5 text-[13px] text-ink tabular-nums">{formatMoney(data.total_amount, data.currency_code)}</dd>
         </div>
       </dl>
 
       <table className="mt-6 w-full border-collapse text-[13px]">
         <thead>
-          <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+          <tr className="border-b border-line text-left mono-caps text-ink-muted">
             <th className="py-2 pr-2">Item</th>
             <th className="py-2 pr-2 text-right">Quantity</th>
             <th className="py-2 pr-2">UoM</th>
@@ -217,13 +225,14 @@ export function SalesOrderDetailPage() {
                 {atpResults && (
                   <td className="py-1.5 pr-2">
                     {atp ? (
-                      <span
-                        className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${
-                          atp.backordered ? "bg-warn-tint text-warn" : "bg-success-tint text-success"
-                        }`}
-                      >
-                        {atp.backordered ? `Backordered (${formatQuantity(atp.shortfall)} short)` : "Available"}
-                      </span>
+                      <StatusPill
+                        status={atp.backordered ? "PARTIALLY_DELIVERED" : "ACTIVE"}
+                        label={
+                          atp.backordered
+                            ? `Backordered (${formatQuantity(atp.shortfall)} short)`
+                            : "Available"
+                        }
+                      />
                     ) : (
                       "—"
                     )}

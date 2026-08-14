@@ -7,7 +7,7 @@
  * initial compensation in one call (the backend gates create on BOTH keys).
  */
 
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -111,9 +111,9 @@ function CompensationSection({ employee }: { employee: Employee }) {
   };
 
   return (
-    <div className="mt-8 rounded-card border border-line bg-surface p-4 shadow-card">
-      <h2 className="text-sm font-semibold text-ink">Compensation & PII</h2>
-      <p className="mt-1 text-xs text-ink-muted">
+    <div className="mt-8 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+      <h2 className="mb-3.5 mono-caps text-ink-muted">Compensation & PII</h2>
+      <p className="text-[12px] text-ink-muted">
         Written only through the dedicated compensation endpoint (D-009) — the general employee
         update can never touch these fields.
       </p>
@@ -222,7 +222,15 @@ export function EmployeeFormPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-xl font-semibold text-ink">{isEdit ? "Edit employee" : "New employee"}</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/hr/employees">Employees</Link> /{" "}
+          <span className="text-ink">{isEdit ? "Edit employee" : "New employee"}</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">
+          {isEdit ? "Edit employee" : "New employee"}
+        </h1>
+      </header>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}

@@ -7,7 +7,7 @@
  * override picker is a documented "later", not something this workbench needs yet.
  */
 
-import { useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { ApiError } from "@/lib/apiClient";
@@ -21,14 +21,7 @@ import {
   useRejectSuggestion,
   useSuggestMatches,
 } from "@/modules/finance/hooks";
-import type { LineStatus } from "@/modules/finance/types";
-
-const LINE_STATUS_TONE: Record<LineStatus, string> = {
-  UNMATCHED: "bg-panel text-ink-muted",
-  SUGGESTED: "bg-warn-tint text-warn",
-  MATCHED: "bg-success-tint text-success",
-  CLEARED: "bg-success-tint text-success",
-};
+import { StatusPill } from "@/components/StatusPill";
 
 export function BankStatementDetailPage() {
   const { statementId } = useParams({ strict: false });
@@ -44,7 +37,7 @@ export function BankStatementDetailPage() {
   const [actingOnLineId, setActingOnLineId] = useState<string | null>(null);
 
   if (statement.isPending || !statement.data) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-[13px] text-ink-muted">Loading…</p>;
   }
   const data = statement.data;
   const currencyCode = data.currency_code;
@@ -63,19 +56,27 @@ export function BankStatementDetailPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Statement — {formatDate(data.statement_date)}</h1>
-        {canReconcile && (
-          <button
-            type="button"
-            onClick={() => void suggestMatches.mutateAsync()}
-            disabled={suggestMatches.isPending}
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            {suggestMatches.isPending ? "Matching…" : "Suggest matches"}
-          </button>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance/bank-statements">Bank Statements</Link> /{" "}
+          <span className="text-ink">Statement — {formatDate(data.statement_date)}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Statement — {formatDate(data.statement_date)}</h1>
+          <div className="flex items-center gap-2.5">
+            {canReconcile && (
+              <button
+                type="button"
+                onClick={() => void suggestMatches.mutateAsync()}
+                disabled={suggestMatches.isPending}
+                className="btn-ink"
+              >
+                {suggestMatches.isPending ? "Matching…" : "Suggest matches"}
+              </button>
+            )}
+          </div>
+        </div>
+      </header>
 
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
@@ -83,22 +84,24 @@ export function BankStatementDetailPage() {
         </p>
       )}
 
-      <dl className="mt-6 grid grid-cols-4 gap-4 text-sm">
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-ink-muted">Status</dt>
-          <dd className="text-ink">{data.status.replace("_", " ")}</dd>
+          <dt className="mono-caps text-ink-muted">Status</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
+            <StatusPill status={data.status} />
+          </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Opening balance</dt>
-          <dd className="tabular-nums text-ink">{formatMoney(data.opening_balance, currencyCode)}</dd>
+          <dt className="mono-caps text-ink-muted">Opening balance</dt>
+          <dd className="mt-1.5 text-[13px] tabular-nums text-ink">{formatMoney(data.opening_balance, currencyCode)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Closing balance</dt>
-          <dd className="tabular-nums text-ink">{formatMoney(data.closing_balance, currencyCode)}</dd>
+          <dt className="mono-caps text-ink-muted">Closing balance</dt>
+          <dd className="mt-1.5 text-[13px] tabular-nums text-ink">{formatMoney(data.closing_balance, currencyCode)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Progress</dt>
-          <dd className="text-ink">
+          <dt className="mono-caps text-ink-muted">Progress</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
             {data.progress.resolved} / {data.progress.total} resolved
             {data.progress.suggested > 0 ? ` (${data.progress.suggested} suggested)` : ""}
           </dd>
@@ -108,7 +111,7 @@ export function BankStatementDetailPage() {
       <div className="mt-6 overflow-x-auto rounded-card border border-line bg-surface shadow-card">
         <table className="w-full border-collapse text-[13px]">
           <thead>
-            <tr className="border-b border-line bg-panel text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+            <tr className="border-b border-line text-left mono-caps text-ink-muted">
               <th className="px-3 py-2">Date</th>
               <th className="px-3 py-2">Description</th>
               <th className="px-3 py-2">Counterparty</th>
@@ -136,9 +139,7 @@ export function BankStatementDetailPage() {
                       {formatMoney(line.amount, currencyCode)}
                     </td>
                     <td className="px-3 py-1.5">
-                      <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${LINE_STATUS_TONE[line.status]}`}>
-                        {line.status}
-                      </span>
+                      <StatusPill status={line.status} />
                     </td>
                     {canReconcile && (
                       <td className="px-3 py-1.5">
@@ -148,7 +149,7 @@ export function BankStatementDetailPage() {
                               type="button"
                               disabled={acting}
                               onClick={() => void withErrorHandling(line.id, () => confirmMatch.mutateAsync(line.id))}
-                              className="text-xs font-medium text-primary hover:underline disabled:opacity-45"
+                              className="text-[12.5px] font-medium text-primary hover:underline disabled:opacity-45"
                             >
                               Confirm
                             </button>
@@ -156,7 +157,7 @@ export function BankStatementDetailPage() {
                               type="button"
                               disabled={acting}
                               onClick={() => void withErrorHandling(line.id, () => rejectSuggestion.mutateAsync(line.id))}
-                              className="text-xs font-medium text-danger hover:underline disabled:opacity-45"
+                              className="text-[12.5px] font-medium text-danger hover:underline disabled:opacity-45"
                             >
                               Reject
                             </button>
@@ -167,7 +168,7 @@ export function BankStatementDetailPage() {
                             type="button"
                             disabled={acting}
                             onClick={() => void withErrorHandling(line.id, () => clearLine.mutateAsync({ lineId: line.id }))}
-                            className="text-xs font-medium text-primary hover:underline disabled:opacity-45"
+                            className="text-[12.5px] font-medium text-primary hover:underline disabled:opacity-45"
                           >
                             Clear
                           </button>

@@ -19,7 +19,8 @@ import {
   usePayrollRun,
   usePostPayrollRun,
 } from "@/modules/hr/hooks";
-import { PayrollDisclaimer, PayrollRunStatusChip } from "@/modules/hr/pages/PayrollRunListPage";
+import { PayrollDisclaimer } from "@/modules/hr/pages/PayrollRunListPage";
+import { StatusPill } from "@/components/StatusPill";
 
 export function PayrollRunDetailPage() {
   const { runId } = useParams({ strict: false });
@@ -37,7 +38,7 @@ export function PayrollRunDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   if (run.isPending || !run.data) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-[13px] text-ink-muted">Loading…</p>;
   }
   const data = run.data;
   const isDraft = data.status === "DRAFT";
@@ -64,31 +65,37 @@ export function PayrollRunDetailPage() {
 
   return (
     <div className="mx-auto max-w-5xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{data.run_number ?? "Draft payroll run"}</h1>
-        <div className="flex gap-2">
-          {isDraft && canManage && (
-            <button
-              type="button"
-              onClick={() => void act(() => cancelRun.mutateAsync(), "Unable to cancel the run.")}
-              disabled={busy}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              {cancelRun.isPending ? "Cancelling…" : "Cancel"}
-            </button>
-          )}
-          {isDraft && canPost && (
-            <button
-              type="button"
-              onClick={() => void act(() => postRun.mutateAsync({}), "Unable to post the run.")}
-              disabled={busy}
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              {postRun.isPending ? "Posting…" : "Post journal"}
-            </button>
-          )}
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/hr/payroll-runs">Payroll runs</Link> /{" "}
+          <span className="text-ink">{data.run_number ?? "Draft payroll run"}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.run_number ?? "Draft payroll run"}</h1>
+          <div className="flex items-center gap-2.5">
+            {isDraft && canManage && (
+              <button
+                type="button"
+                onClick={() => void act(() => cancelRun.mutateAsync(), "Unable to cancel the run.")}
+                disabled={busy}
+                className="btn-chip hover:border-danger hover:text-danger"
+              >
+                {cancelRun.isPending ? "Cancelling…" : "Cancel"}
+              </button>
+            )}
+            {isDraft && canPost && (
+              <button
+                type="button"
+                onClick={() => void act(() => postRun.mutateAsync({}), "Unable to post the run.")}
+                disabled={busy}
+                className="btn-ink"
+              >
+                {postRun.isPending ? "Posting…" : "Post journal"}
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      </header>
 
       <PayrollDisclaimer />
 
@@ -98,50 +105,50 @@ export function PayrollRunDetailPage() {
         </p>
       )}
 
-      <dl className="mt-6 grid grid-cols-4 gap-4 text-sm">
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-ink-muted">Status</dt>
-          <dd className="text-ink">
-            <PayrollRunStatusChip status={data.status} />
+          <dt className="mono-caps text-ink-muted">Status</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
+            <StatusPill status={data.status} />
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Period</dt>
-          <dd className="text-ink">
+          <dt className="mono-caps text-ink-muted">Period</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
             {data.period_start} → {data.period_end}
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Pay date</dt>
-          <dd className="text-ink">{data.pay_date}</dd>
+          <dt className="mono-caps text-ink-muted">Pay date</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.pay_date}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Withholding rate</dt>
-          <dd className="text-ink tabular-nums">{formatPercent(data.tax_rate_percent)}</dd>
+          <dt className="mono-caps text-ink-muted">Withholding rate</dt>
+          <dd className="mt-1.5 text-[13px] tabular-nums text-ink">{formatPercent(data.tax_rate_percent)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Total gross</dt>
-          <dd className="text-ink tabular-nums">{formatMoney(data.total_gross, data.currency_code)}</dd>
+          <dt className="mono-caps text-ink-muted">Total gross</dt>
+          <dd className="mt-1.5 text-[13px] tabular-nums text-ink">{formatMoney(data.total_gross, data.currency_code)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Total tax</dt>
-          <dd className="text-ink tabular-nums">{formatMoney(data.total_tax, data.currency_code)}</dd>
+          <dt className="mono-caps text-ink-muted">Total tax</dt>
+          <dd className="mt-1.5 text-[13px] tabular-nums text-ink">{formatMoney(data.total_tax, data.currency_code)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Total net</dt>
-          <dd className="text-ink tabular-nums">{formatMoney(data.total_net, data.currency_code)}</dd>
+          <dt className="mono-caps text-ink-muted">Total net</dt>
+          <dd className="mt-1.5 text-[13px] tabular-nums text-ink">{formatMoney(data.total_net, data.currency_code)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Employees</dt>
-          <dd className="text-ink tabular-nums">{data.employee_count}</dd>
+          <dt className="mono-caps text-ink-muted">Employees</dt>
+          <dd className="mt-1.5 text-[13px] tabular-nums text-ink">{data.employee_count}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Posted</dt>
-          <dd className="text-ink">{data.posted_at ? formatDateTime(data.posted_at) : "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Posted</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.posted_at ? formatDateTime(data.posted_at) : "—"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Journal entry</dt>
-          <dd className="text-ink">
+          <dt className="mono-caps text-ink-muted">Journal entry</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
             {data.journal_entry_id ? (
               <Link
                 to="/finance/journal-entries/$entryId"
@@ -166,7 +173,7 @@ export function PayrollRunDetailPage() {
 
       <table className="mt-6 w-full border-collapse text-[13px]">
         <thead>
-          <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+          <tr className="border-b border-line text-left mono-caps text-ink-muted">
             <th className="py-2 pr-2">Employee</th>
             <th className="py-2 pr-2">Cost center</th>
             <th className="py-2 pr-2 text-right">Gross</th>

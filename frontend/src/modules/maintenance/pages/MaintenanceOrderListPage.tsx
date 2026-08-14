@@ -10,28 +10,13 @@ import { useState } from "react";
 import { formatDate } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { useEquipmentLookup, useMaintenanceOrders } from "@/modules/maintenance/hooks";
 import type {
   MaintenanceOrder,
   MaintenanceOrderStatus,
   MaintenanceOrderType,
 } from "@/modules/maintenance/types";
-
-const STATUS_TONE: Record<MaintenanceOrderStatus, string> = {
-  DRAFT: "bg-panel text-ink-muted",
-  SCHEDULED: "bg-primary-tint text-primary",
-  IN_PROGRESS: "bg-warn-tint text-warn",
-  COMPLETED: "bg-success-tint text-success",
-  CANCELLED: "bg-panel text-ink-muted",
-};
-
-export function OrderStatusChip({ status }: { status: MaintenanceOrderStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status.replace("_", " ")}
-    </span>
-  );
-}
 
 export function MaintenanceOrderListPage() {
   const navigate = useNavigate();
@@ -63,26 +48,34 @@ export function MaintenanceOrderListPage() {
       render: (row) => formatDate(row.scheduled_date),
       width: "120px",
     },
-    { key: "status", header: "Status", render: (row) => <OrderStatusChip status={row.status} />, width: "120px" },
+    { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "120px" },
   ];
 
   const filterControl = "rounded-control border border-line bg-surface px-2 py-1.5 text-sm text-ink";
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Maintenance orders</h1>
-        {canManage && (
-          <Link
-            to="/maintenance/orders/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
-          >
-            New corrective order
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/maintenance">Maintenance</Link> /{" "}
+          <span className="text-ink">Maintenance orders</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Maintenance orders</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/maintenance/orders/new"
+                className="btn-ink"
+              >
+                New corrective order
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4 flex gap-2">
+      <div className="flex gap-2">
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value as MaintenanceOrderStatus | "")}
@@ -114,6 +107,11 @@ export function MaintenanceOrderListPage() {
           onRowClick={(row) => void navigate({ to: "/maintenance/orders/$orderId", params: { orderId: row.id } })}
           loading={orders.isPending}
           emptyMessage="No maintenance orders. Create a corrective order, or run a preventive plan."
+          isFiltered={Boolean(status || orderType)}
+          onClearFilters={() => {
+            setStatus("");
+            setOrderType("");
+          }}
           hasMore={orders.hasNextPage}
           onLoadMore={() => void orders.fetchNextPage()}
           loadingMore={orders.isFetchingNextPage}

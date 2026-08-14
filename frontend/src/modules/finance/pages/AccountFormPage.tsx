@@ -5,7 +5,7 @@
  * so the value stays visible for context.
  */
 
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { ApiError } from "@/lib/apiClient";
@@ -155,7 +155,15 @@ export function AccountFormPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-xl font-semibold text-ink">{isEdit ? "Edit account" : "New account"}</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance/accounts">Chart of Accounts</Link> /{" "}
+          <span className="text-ink">{isEdit ? "Edit account" : "New account"}</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">
+          {isEdit ? "Edit account" : "New account"}
+        </h1>
+      </header>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}

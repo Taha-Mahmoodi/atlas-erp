@@ -36,32 +36,37 @@ export function PositionListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Positions</h1>
-        {canManage && (
-          <Link
-            to="/hr/positions/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
-          >
-            New position
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/hr">HR</Link> / <span className="text-ink">Positions</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Positions</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/hr/positions/new"
+                className="btn-ink"
+              >
+                New position
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4">
-        <DataGrid
-          columns={columns}
-          rows={rows}
-          rowKey={(row) => row.id}
-          onRowClick={(row) => void navigate({ to: "/hr/positions/$positionId", params: { positionId: row.id } })}
-          loading={positions.isPending}
-          emptyMessage="No positions yet."
-          hasMore={positions.hasNextPage}
-          onLoadMore={() => void positions.fetchNextPage()}
-          loadingMore={positions.isFetchingNextPage}
-          label="Positions"
-        />
-      </div>
+      <DataGrid
+        columns={columns}
+        rows={rows}
+        rowKey={(row) => row.id}
+        onRowClick={(row) => void navigate({ to: "/hr/positions/$positionId", params: { positionId: row.id } })}
+        loading={positions.isPending}
+        emptyMessage="No positions yet."
+        hasMore={positions.hasNextPage}
+        onLoadMore={() => void positions.fetchNextPage()}
+        loadingMore={positions.isFetchingNextPage}
+        label="Positions"
+      />
     </div>
   );
 }

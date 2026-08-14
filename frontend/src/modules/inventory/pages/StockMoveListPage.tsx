@@ -41,17 +41,24 @@ export function StockMoveListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Stock Moves</h1>
-        {canCreate && (
-          <Link
-            to="/inventory/stock-moves/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
-          >
-            New move
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/inventory">Inventory</Link> / <span className="text-ink">Stock Moves</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Stock Moves</h1>
+          <div className="flex items-center gap-2.5">
+            {canCreate && (
+              <Link
+                to="/inventory/stock-moves/new"
+                className="btn-ink"
+              >
+                New move
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
       <div className="mt-4">
         <select
@@ -75,6 +82,8 @@ export function StockMoveListPage() {
           onRowClick={(row) => void navigate({ to: "/inventory/stock-moves/$moveId", params: { moveId: row.id } })}
           loading={moves.isPending}
           emptyMessage="No stock moves yet."
+          isFiltered={Boolean(moveType)}
+          onClearFilters={() => setMoveType("")}
           hasMore={moves.hasNextPage}
           onLoadMore={() => void moves.fetchNextPage()}
           loadingMore={moves.isFetchingNextPage}

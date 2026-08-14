@@ -4,6 +4,7 @@
  * or quantity deviation on a line is an exception until a tolerance is set here).
  */
 
+import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -44,11 +45,21 @@ export function MatchToleranceFormPage() {
 
   return (
     <div className="mx-auto max-w-xl">
-      <h1 className="text-xl font-semibold text-ink">Match Tolerance</h1>
-      <p className="mt-1 text-sm text-ink-muted">
-        A 3-way match line is within tolerance only if both its price and quantity variance stay
-        at or below these percentages. Without a saved tolerance, any deviation is an exception.
-      </p>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/procurement" className="hover:underline">
+            Procurement
+          </Link>{" "}
+          / <span className="text-ink">Match Tolerance</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Match Tolerance</h1>
+        </div>
+        <p className="mt-1 text-[13px] text-ink-muted">
+          A 3-way match line is within tolerance only if both its price and quantity variance stay
+          at or below these percentages. Without a saved tolerance, any deviation is an exception.
+        </p>
+      </header>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
@@ -91,7 +102,7 @@ export function MatchToleranceFormPage() {
         type="button"
         onClick={() => void submit()}
         disabled={setTolerance.isPending}
-        className="mt-6 rounded-control bg-primary px-4 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+        className="mt-6 btn-ink"
       >
         {setTolerance.isPending ? "Saving…" : "Save"}
       </button>

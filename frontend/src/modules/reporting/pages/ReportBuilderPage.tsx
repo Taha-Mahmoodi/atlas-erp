@@ -5,6 +5,7 @@
  * Define-and-run only — nothing is persisted, matching the backend's ad-hoc-only v1.
  */
 
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
@@ -62,7 +63,7 @@ export function filterValue(draft: FilterDraft): unknown {
 
 const controlClass = "rounded-control border border-line bg-surface px-2 py-1.5 text-sm text-ink";
 const primaryButtonClass =
-  "rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:opacity-50";
+  "btn-ink";
 const secondaryButtonClass =
   "rounded-control border border-line bg-surface px-3 py-1.5 text-sm text-ink transition-colors duration-150 hover:border-primary disabled:opacity-50";
 
@@ -169,13 +170,21 @@ export function ReportBuilderPage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <h1 className="text-xl font-semibold text-ink">Report Builder</h1>
-      <p className="mt-1 text-sm text-ink-muted">
-        Ad-hoc reports over the entities your role can see. Define, run, export — nothing is
-        saved.
-      </p>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/reporting">Reporting</Link> /{" "}
+          <span className="text-ink">Report Builder</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">
+          Report Builder
+        </h1>
+        <p className="mt-1 text-[13px] text-ink-muted">
+          Ad-hoc reports over the entities your role can see. Define, run, export — nothing is
+          saved.
+        </p>
+      </header>
 
-      <div className="mt-4 flex items-center gap-3">
+      <div className="flex items-center gap-3">
         <label htmlFor="report-entity" className="text-sm text-ink-muted">
           Entity
         </label>
@@ -205,11 +214,11 @@ export function ReportBuilderPage() {
       {entity && (
         <div className="mt-4 space-y-4">
           {/* Columns — used for a flat (ungrouped) report */}
-          <section className="rounded-card border border-line bg-surface p-4 shadow-card">
-            <h2 className="text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">
+          <section className="rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+            <h2 className="mb-3.5 mono-caps text-ink-muted">
               Columns {grouped && <span className="font-normal normal-case">(ignored while grouping — the result is group-by + aggregates)</span>}
             </h2>
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
               {entity.columns.map((column) => (
                 <label key={column.name} className="flex items-center gap-1.5 text-sm text-ink">
                   <input
@@ -228,8 +237,8 @@ export function ReportBuilderPage() {
           </section>
 
           {/* Filters */}
-          <section className="rounded-card border border-line bg-surface p-4 shadow-card">
-            <h2 className="text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">
+          <section className="rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+            <h2 className="mb-3.5 mono-caps text-ink-muted">
               Filters
             </h2>
             {filters.map((draft, index) => (
@@ -316,7 +325,7 @@ export function ReportBuilderPage() {
                 <button
                   type="button"
                   onClick={() => setFilters(filters.filter((_, at) => at !== index))}
-                  className="text-sm text-ink-muted hover:text-danger"
+                  className="text-[12.5px] font-medium text-ink-muted hover:text-danger"
                   aria-label="Remove filter"
                 >
                   Remove
@@ -333,11 +342,11 @@ export function ReportBuilderPage() {
           </section>
 
           {/* Group by + aggregations */}
-          <section className="rounded-card border border-line bg-surface p-4 shadow-card">
-            <h2 className="text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">
+          <section className="rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+            <h2 className="mb-3.5 mono-caps text-ink-muted">
               Group by
             </h2>
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
               {entity.columns
                 .filter((column) => column.groupable)
                 .map((column) => (
@@ -353,7 +362,7 @@ export function ReportBuilderPage() {
             </div>
             {grouped && (
               <div className="mt-3">
-                <h3 className="text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">
+                <h3 className="mb-3.5 mono-caps text-ink-muted">
                   Aggregations
                 </h3>
                 {aggregations.map((draft, index) => (
@@ -404,7 +413,7 @@ export function ReportBuilderPage() {
                       onClick={() =>
                         setAggregations(aggregations.filter((_, at) => at !== index))
                       }
-                      className="text-sm text-ink-muted hover:text-danger"
+                      className="text-[12.5px] font-medium text-ink-muted hover:text-danger"
                       aria-label="Remove aggregation"
                     >
                       Remove

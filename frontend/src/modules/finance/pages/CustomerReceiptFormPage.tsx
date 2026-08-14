@@ -73,15 +73,21 @@ export function CustomerReceiptFormPage() {
   if (posted) {
     return (
       <div className="mx-auto max-w-2xl">
-        <h1 className="text-xl font-semibold text-ink">Receipt posted</h1>
-        <div className="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
+        <header className="mb-6">
+          <p className="text-[12px] text-ink-muted">
+            <Link to="/finance/customer-receipts">Customer Receipts</Link> /{" "}
+            <span className="text-ink">Receipt posted</span>
+          </p>
+          <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">Receipt posted</h1>
+        </header>
+        <div className="rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
           <p className="text-sm text-ink">
             <span className="font-medium">{posted.receipt_number}</span> for{" "}
             {formatMoney(posted.amount, posted.currency_code)} from {posted.partner_name}
           </p>
           <table className="mt-3 w-full border-collapse text-[13px]">
             <thead>
-              <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+              <tr className="border-b border-line text-left mono-caps text-ink-muted">
                 <th className="py-1.5 pr-2">Invoice</th>
                 <th className="py-1.5 pr-2 text-right">Allocated</th>
               </tr>
@@ -114,7 +120,13 @@ export function CustomerReceiptFormPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-xl font-semibold text-ink">New customer receipt</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance/customer-receipts">Customer Receipts</Link> /{" "}
+          <span className="text-ink">New customer receipt</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">New customer receipt</h1>
+      </header>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
@@ -202,17 +214,17 @@ export function CustomerReceiptFormPage() {
 
       {partnerId && (
         <div className="mt-6">
-          <h2 className="text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">
+          <h2 className="mono-caps text-ink-muted">
             Open invoices
           </h2>
           {openInvoices.isPending ? (
-            <p className="mt-2 text-sm text-ink-muted">Loading…</p>
+            <p className="mt-2 text-[13px] text-ink-muted">Loading…</p>
           ) : (openInvoices.data ?? []).length === 0 ? (
-            <p className="mt-2 text-sm text-ink-muted">This customer has no open invoices.</p>
+            <p className="mt-2 text-[13px] text-ink-muted">This customer has no open invoices.</p>
           ) : (
             <table className="mt-2 w-full border-collapse text-[13px]">
               <thead>
-                <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+                <tr className="border-b border-line text-left mono-caps text-ink-muted">
                   <th className="py-2 pr-2">Invoice #</th>
                   <th className="py-2 pr-2">Due date</th>
                   <th className="py-2 pr-2 text-right">Open amount</th>
@@ -253,7 +265,7 @@ export function CustomerReceiptFormPage() {
         type="button"
         onClick={() => void submit()}
         disabled={!canSubmit || createReceipt.isPending}
-        className="mt-6 rounded-control bg-primary px-4 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+        className="mt-6 btn-ink"
       >
         {createReceipt.isPending ? "Receiving…" : "Create receipt"}
       </button>

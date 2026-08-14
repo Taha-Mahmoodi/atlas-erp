@@ -12,22 +12,9 @@ import { useState } from "react";
 import { formatMoney } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { useDepartmentOptions, useEmployees } from "@/modules/hr/hooks";
 import type { Employee, EmploymentStatus } from "@/modules/hr/types";
-
-const STATUS_TONE: Record<EmploymentStatus, string> = {
-  ACTIVE: "bg-success-tint text-success",
-  ON_LEAVE: "bg-warn-tint text-warn",
-  TERMINATED: "bg-panel text-ink-muted",
-};
-
-function StatusChip({ status }: { status: EmploymentStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status.replace("_", " ")}
-    </span>
-  );
-}
 
 export function EmployeeListPage() {
   const navigate = useNavigate();
@@ -74,24 +61,31 @@ export function EmployeeListPage() {
             : "•••",
       width: "130px",
     },
-    { key: "status", header: "Status", render: (row) => <StatusChip status={row.status} />, width: "120px" },
+    { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "120px" },
   ];
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Employees</h1>
-        {canCreate && (
-          <Link
-            to="/hr/employees/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
-          >
-            New employee
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/hr">HR</Link> / <span className="text-ink">Employees</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Employees</h1>
+          <div className="flex items-center gap-2.5">
+            {canCreate && (
+              <Link
+                to="/hr/employees/new"
+                className="btn-ink"
+              >
+                New employee
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4 flex gap-2">
+      <div className="flex gap-2">
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value as EmploymentStatus | "")}
@@ -124,6 +118,11 @@ export function EmployeeListPage() {
           onRowClick={(row) => void navigate({ to: "/hr/employees/$employeeId", params: { employeeId: row.id } })}
           loading={employees.isPending}
           emptyMessage="No employees yet."
+          isFiltered={Boolean(status || departmentId)}
+          onClearFilters={() => {
+            setStatus("");
+            setDepartmentId("");
+          }}
           hasMore={employees.hasNextPage}
           onLoadMore={() => void employees.fetchNextPage()}
           loadingMore={employees.isFetchingNextPage}

@@ -8,22 +8,9 @@ import { useState } from "react";
 
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { useEquipmentList } from "@/modules/maintenance/hooks";
 import type { Equipment, EquipmentStatus } from "@/modules/maintenance/types";
-
-const STATUS_TONE: Record<EquipmentStatus, string> = {
-  ACTIVE: "bg-success-tint text-success",
-  INACTIVE: "bg-panel text-ink-muted",
-  RETIRED: "bg-danger-tint text-danger",
-};
-
-function StatusChip({ status }: { status: EquipmentStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status}
-    </span>
-  );
-}
 
 const COLUMNS: DataGridColumn<Equipment>[] = [
   { key: "code", header: "Code", render: (row) => row.code, width: "120px" },
@@ -31,7 +18,7 @@ const COLUMNS: DataGridColumn<Equipment>[] = [
   { key: "location", header: "Location", render: (row) => row.location ?? "—", width: "160px" },
   { key: "manufacturer", header: "Manufacturer", render: (row) => row.manufacturer ?? "—", width: "160px" },
   { key: "serial_number", header: "Serial", render: (row) => row.serial_number ?? "—", width: "140px" },
-  { key: "status", header: "Status", render: (row) => <StatusChip status={row.status} />, width: "110px" },
+  { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "110px" },
 ];
 
 export function EquipmentListPage() {
@@ -45,19 +32,26 @@ export function EquipmentListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Equipment</h1>
-        {canManage && (
-          <Link
-            to="/maintenance/equipment/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
-          >
-            New equipment
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/maintenance">Maintenance</Link> / <span className="text-ink">Equipment</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Equipment</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/maintenance/equipment/new"
+                className="btn-ink"
+              >
+                New equipment
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4">
+      <div>
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value as EquipmentStatus | "")}
@@ -78,6 +72,8 @@ export function EquipmentListPage() {
           onRowClick={(row) => void navigate({ to: "/maintenance/equipment/$equipmentId", params: { equipmentId: row.id } })}
           loading={equipment.isPending}
           emptyMessage="No equipment yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={equipment.hasNextPage}
           onLoadMore={() => void equipment.fetchNextPage()}
           loadingMore={equipment.isFetchingNextPage}

@@ -4,12 +4,13 @@
  * per line is server-maintained by goods-receipt posting (a later slice) — read-only here.
  */
 
-import { useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
 import { formatMoney, formatQuantity } from "@/lib/format";
 import { useMe } from "@/lib/session";
+import { StatusPill } from "@/components/StatusPill";
 import { useItemLookup, useUomOptions } from "@/modules/inventory/hooks";
 import {
   useCancelPurchaseOrder,
@@ -37,7 +38,7 @@ export function PurchaseOrderDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   if (order.isPending || !order.data) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-[13px] text-ink-muted">Loading…</p>;
   }
   const data = order.data;
   const canSend = data.status === "DRAFT" || data.status === "APPROVED";
@@ -87,31 +88,39 @@ export function PurchaseOrderDetailPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{data.po_number}</h1>
-        <div className="flex gap-2">
-          {canCancel && canManage && (
-            <button
-              type="button"
-              onClick={() => void cancel()}
-              disabled={cancelOrder.isPending}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              Cancel
-            </button>
-          )}
-          {canSend && canManage && (
-            <button
-              type="button"
-              onClick={() => void send()}
-              disabled={sendOrder.isPending}
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              {sendOrder.isPending ? "Sending…" : "Send"}
-            </button>
-          )}
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/procurement/purchase-orders" className="hover:underline">
+            Purchase Orders
+          </Link>{" "}
+          / <span className="text-ink">{data.po_number}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.po_number}</h1>
+          <div className="flex items-center gap-2.5">
+            {canCancel && canManage && (
+              <button
+                type="button"
+                onClick={() => void cancel()}
+                disabled={cancelOrder.isPending}
+                className="btn-chip hover:border-danger hover:text-danger"
+              >
+                Cancel
+              </button>
+            )}
+            {canSend && canManage && (
+              <button
+                type="button"
+                onClick={() => void send()}
+                disabled={sendOrder.isPending}
+                className="btn-ink"
+              >
+                {sendOrder.isPending ? "Sending…" : "Send"}
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      </header>
 
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
@@ -119,28 +128,30 @@ export function PurchaseOrderDetailPage() {
         </p>
       )}
 
-      <dl className="mt-6 grid grid-cols-4 gap-4 text-sm">
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-ink-muted">Status</dt>
-          <dd className="text-ink">{data.status.replace("_", " ")}</dd>
+          <dt className="mono-caps text-ink-muted">Status</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
+            <StatusPill status={data.status} />
+          </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Vendor</dt>
-          <dd className="text-ink">{vendorLabel(data.vendor_id)}</dd>
+          <dt className="mono-caps text-ink-muted">Vendor</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{vendorLabel(data.vendor_id)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Expected date</dt>
-          <dd className="text-ink">{data.expected_date ?? "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Expected date</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.expected_date ?? "—"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Total</dt>
-          <dd className="text-ink">{formatMoney(data.total_amount, data.currency_code)}</dd>
+          <dt className="mono-caps text-ink-muted">Total</dt>
+          <dd className="mt-1.5 text-[13px] tabular-nums text-ink">{formatMoney(data.total_amount, data.currency_code)}</dd>
         </div>
       </dl>
 
       {canDecide && canApprove && (
-        <div className="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
-          <h2 className="text-sm font-semibold text-ink">Decision</h2>
+        <div className="mt-6 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+          <h2 className="mb-3.5 mono-caps text-ink-muted">Decision</h2>
           <label htmlFor="comment" className="mb-1 mt-3 block text-xs font-medium text-ink-muted">
             Comment (optional)
           </label>
@@ -173,7 +184,7 @@ export function PurchaseOrderDetailPage() {
 
       <table className="mt-6 w-full border-collapse text-[13px]">
         <thead>
-          <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+          <tr className="border-b border-line text-left mono-caps text-ink-muted">
             <th className="py-2 pr-2">Item</th>
             <th className="py-2 pr-2">Description</th>
             <th className="py-2 pr-2 text-right">Quantity</th>

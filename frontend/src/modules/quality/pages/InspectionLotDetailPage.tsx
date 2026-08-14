@@ -6,12 +6,13 @@
  * stock aside), so an ACCEPT moves nothing — only a REJECT dispositions stock.
  */
 
-import { useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
 import { formatDate, formatQuantity } from "@/lib/format";
 import { useMe } from "@/lib/session";
+import { StatusPill } from "@/components/StatusPill";
 import { useBinLookup, useBinOptions, useItemLookup, useWarehouseLookup } from "@/modules/inventory/hooks";
 import { useCancelInspectionLot, useDecideInspectionLot, useInspectionLot } from "@/modules/quality/hooks";
 import type { InspectionLot } from "@/modules/quality/types";
@@ -51,9 +52,9 @@ function DecisionPanel({ lot }: { lot: InspectionLot }) {
   const control = "w-full rounded-control border border-line bg-surface px-2 py-1.5 text-sm text-ink";
 
   return (
-    <div className="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
-      <h2 className="text-sm font-semibold text-ink">Usage decision</h2>
-      <p className="mt-1 text-xs text-ink-muted">
+    <div className="mt-6 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+      <h2 className="mono-caps mb-3.5 text-ink-muted">Usage decision</h2>
+      <p className="text-[12px] text-ink-muted">
         Accepted plus rejected must equal the lot quantity ({formatQuantity(lot.quantity)}). Accepted
         stock stays where it is; rejected stock is scrapped (written off) or blocked (moved to a
         quarantine bin).
@@ -148,7 +149,7 @@ function DecisionPanel({ lot }: { lot: InspectionLot }) {
           type="button"
           onClick={() => void decide()}
           disabled={!submittable || decideLot.isPending}
-          className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+          className="btn-ink"
         >
           {decideLot.isPending ? "Recording…" : "Record decision"}
         </button>
@@ -171,7 +172,7 @@ export function InspectionLotDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   if (lot.isPending || !lot.data) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-[13px] text-ink-muted">Loading…</p>;
   }
   const data = lot.data;
   const isOpen = data.status === "OPEN";
@@ -191,19 +192,27 @@ export function InspectionLotDetailPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{data.lot_number}</h1>
-        {isOpen && canManage && (
-          <button
-            type="button"
-            onClick={() => void cancel()}
-            disabled={cancelLot.isPending}
-            className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            Cancel lot
-          </button>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/quality/inspection-lots">Inspection lots</Link> /{" "}
+          <span className="text-ink">{data.lot_number}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.lot_number}</h1>
+          <div className="flex items-center gap-2.5">
+            {isOpen && canManage && (
+              <button
+                type="button"
+                onClick={() => void cancel()}
+                disabled={cancelLot.isPending}
+                className="btn-chip hover:border-danger hover:text-danger"
+              >
+                Cancel lot
+              </button>
+            )}
+          </div>
+        </div>
+      </header>
 
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
@@ -211,54 +220,60 @@ export function InspectionLotDetailPage() {
         </p>
       )}
 
-      <dl className="mt-6 grid grid-cols-3 gap-4 text-sm">
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-ink-muted">Status</dt>
-          <dd className="text-ink">{data.status}</dd>
+          <dt className="mono-caps text-ink-muted">Status</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
+            <StatusPill status={data.status} />
+          </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Item</dt>
-          <dd className="text-ink">{item ? `${item.item_code} — ${item.name}` : data.item_id}</dd>
+          <dt className="mono-caps text-ink-muted">Item</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{item ? `${item.item_code} — ${item.name}` : data.item_id}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Quantity</dt>
-          <dd className="text-ink tabular-nums">{formatQuantity(data.quantity)}</dd>
+          <dt className="mono-caps text-ink-muted">Quantity</dt>
+          <dd className="mt-1.5 text-[13px] text-ink tabular-nums">{formatQuantity(data.quantity)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Warehouse</dt>
-          <dd className="text-ink">{warehouse ? `${warehouse.code} — ${warehouse.name}` : data.warehouse_id}</dd>
+          <dt className="mono-caps text-ink-muted">Warehouse</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
+            {warehouse ? `${warehouse.code} — ${warehouse.name}` : data.warehouse_id}
+          </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Bin</dt>
-          <dd className="text-ink">{bin ? `${bin.code} — ${bin.name}` : data.bin_id}</dd>
+          <dt className="mono-caps text-ink-muted">Bin</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{bin ? `${bin.code} — ${bin.name}` : data.bin_id}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Created</dt>
-          <dd className="text-ink">{formatDate(data.created_date)}</dd>
+          <dt className="mono-caps text-ink-muted">Created</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{formatDate(data.created_date)}</dd>
         </div>
         {data.status !== "OPEN" && data.status !== "CANCELLED" && (
           <>
             <div>
-              <dt className="text-xs text-ink-muted">Accepted</dt>
-              <dd className="text-ink tabular-nums">{formatQuantity(data.accepted_quantity)}</dd>
+              <dt className="mono-caps text-ink-muted">Accepted</dt>
+              <dd className="mt-1.5 text-[13px] text-ink tabular-nums">{formatQuantity(data.accepted_quantity)}</dd>
             </div>
             <div>
-              <dt className="text-xs text-ink-muted">Rejected</dt>
-              <dd className="text-ink tabular-nums">{formatQuantity(data.rejected_quantity)}</dd>
+              <dt className="mono-caps text-ink-muted">Rejected</dt>
+              <dd className="mt-1.5 text-[13px] text-ink tabular-nums">{formatQuantity(data.rejected_quantity)}</dd>
             </div>
             <div>
-              <dt className="text-xs text-ink-muted">Disposition</dt>
-              <dd className="text-ink">{data.disposition ?? "—"}</dd>
+              <dt className="mono-caps text-ink-muted">Disposition</dt>
+              <dd className="mt-1.5 text-[13px] text-ink">{data.disposition ?? "—"}</dd>
             </div>
             <div>
-              <dt className="text-xs text-ink-muted">Decided</dt>
-              <dd className="text-ink">{data.decided_date ? formatDate(data.decided_date) : "—"}</dd>
+              <dt className="mono-caps text-ink-muted">Decided</dt>
+              <dd className="mt-1.5 text-[13px] text-ink">
+                {data.decided_date ? formatDate(data.decided_date) : "—"}
+              </dd>
             </div>
           </>
         )}
         <div>
-          <dt className="text-xs text-ink-muted">Notes</dt>
-          <dd className="text-ink">{data.notes ?? "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Notes</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.notes ?? "—"}</dd>
         </div>
       </dl>
 

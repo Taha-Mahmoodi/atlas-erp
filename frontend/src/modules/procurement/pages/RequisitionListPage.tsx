@@ -7,31 +7,15 @@ import { useState } from "react";
 
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { useRequisitions } from "@/modules/procurement/hooks";
 import type { Requisition, RequisitionStatus } from "@/modules/procurement/types";
-
-const STATUS_TONE: Record<RequisitionStatus, string> = {
-  DRAFT: "bg-panel text-ink-muted",
-  SUBMITTED: "bg-warn-tint text-warn",
-  APPROVED: "bg-success-tint text-success",
-  REJECTED: "bg-danger-tint text-danger",
-  CONVERTED: "bg-primary-tint text-primary",
-  CANCELLED: "bg-panel text-ink-muted",
-};
-
-function StatusChip({ status }: { status: RequisitionStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status}
-    </span>
-  );
-}
 
 const COLUMNS: DataGridColumn<Requisition>[] = [
   { key: "requisition_number", header: "Requisition #", render: (row) => row.requisition_number, width: "160px" },
   { key: "needed_by_date", header: "Needed by", render: (row) => row.needed_by_date ?? "—", width: "120px" },
   { key: "notes", header: "Notes", render: (row) => row.notes ?? "—" },
-  { key: "status", header: "Status", render: (row) => <StatusChip status={row.status} />, width: "110px" },
+  { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "110px" },
 ];
 
 export function RequisitionListPage() {
@@ -45,19 +29,29 @@ export function RequisitionListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Requisitions</h1>
-        {canManage && (
-          <Link
-            to="/procurement/requisitions/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
-          >
-            New requisition
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/procurement" className="hover:underline">
+            Procurement
+          </Link>{" "}
+          / <span className="text-ink">Requisitions</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Requisitions</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/procurement/requisitions/new"
+                className="btn-ink"
+              >
+                New requisition
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4">
+      <div>
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value as RequisitionStatus | "")}
@@ -81,6 +75,8 @@ export function RequisitionListPage() {
           onRowClick={(row) => void navigate({ to: "/procurement/requisitions/$requisitionId", params: { requisitionId: row.id } })}
           loading={requisitions.isPending}
           emptyMessage="No requisitions yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={requisitions.hasNextPage}
           onLoadMore={() => void requisitions.fetchNextPage()}
           loadingMore={requisitions.isFetchingNextPage}

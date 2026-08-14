@@ -11,7 +11,7 @@ import { getErrorMessage } from "@/lib/apiClient";
 import { formatDate } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
-import { ActivityStatusChip } from "@/modules/crm/components/ActivityTimeline";
+import { StatusPill } from "@/components/StatusPill";
 import { useActivities, useCancelActivity, useCompleteActivity } from "@/modules/crm/hooks";
 import type { Activity, ActivityStatus } from "@/modules/crm/types";
 
@@ -78,7 +78,7 @@ export function ActivityListPage() {
       key: "status",
       header: "Status",
       width: "120px",
-      render: (row) => <ActivityStatusChip status={row.status} />,
+      render: (row) => <StatusPill status={row.status} />,
     },
     ...(canManage
       ? [
@@ -94,7 +94,7 @@ export function ActivityListPage() {
                     type="button"
                     onClick={() => void act(complete, row, "Unable to complete the activity.")}
                     disabled={complete.isPending}
-                    className="rounded-control px-2 py-0.5 text-xs font-medium text-primary transition-colors duration-150 hover:bg-primary-tint disabled:opacity-45"
+                    className="rounded-control px-2 py-0.5 text-[12.5px] font-medium text-primary transition-colors duration-150 hover:bg-primary-tint disabled:opacity-45"
                   >
                     Complete
                   </button>
@@ -102,7 +102,7 @@ export function ActivityListPage() {
                     type="button"
                     onClick={() => void act(cancel, row, "Unable to cancel the activity.")}
                     disabled={cancel.isPending}
-                    className="rounded-control px-2 py-0.5 text-xs font-medium text-ink-muted transition-colors duration-150 hover:bg-panel hover:text-danger disabled:opacity-45"
+                    className="rounded-control px-2 py-0.5 text-[12.5px] font-medium text-ink-muted transition-colors duration-150 hover:bg-panel hover:text-danger disabled:opacity-45"
                   >
                     Cancel
                   </button>
@@ -115,7 +115,15 @@ export function ActivityListPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-ink">Activities</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/crm" className="hover:underline">
+            CRM
+          </Link>{" "}
+          / <span className="text-ink">Activities</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">Activities</h1>
+      </header>
 
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
@@ -143,6 +151,8 @@ export function ActivityListPage() {
           rowKey={(row) => row.id}
           loading={activities.isPending}
           emptyMessage="No activities yet — log them from a lead or opportunity."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={activities.hasNextPage}
           onLoadMore={() => void activities.fetchNextPage()}
           loadingMore={activities.isFetchingNextPage}

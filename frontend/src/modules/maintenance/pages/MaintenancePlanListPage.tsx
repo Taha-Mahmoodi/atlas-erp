@@ -12,6 +12,7 @@ import { getErrorMessage } from "@/lib/apiClient";
 import { formatDate } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import {
   useEquipmentLookup,
   useMaintenancePlans,
@@ -22,19 +23,6 @@ import type {
   MaintenancePlanStatus,
   RunPreventiveResult,
 } from "@/modules/maintenance/types";
-
-const STATUS_TONE: Record<MaintenancePlanStatus, string> = {
-  ACTIVE: "bg-success-tint text-success",
-  INACTIVE: "bg-panel text-ink-muted",
-};
-
-function StatusChip({ status }: { status: MaintenancePlanStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status}
-    </span>
-  );
-}
 
 function intervalLabel(plan: MaintenancePlan): string {
   const unit = plan.interval_unit.toLowerCase();
@@ -89,42 +77,48 @@ export function MaintenancePlanListPage() {
       render: (row) => (row.last_generated_date ? formatDate(row.last_generated_date) : "—"),
       width: "130px",
     },
-    { key: "status", header: "Status", render: (row) => <StatusChip status={row.status} />, width: "100px" },
+    { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "100px" },
   ];
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Preventive plans</h1>
-        <div className="flex gap-2">
-          {canRun && (
-            <button
-              type="button"
-              onClick={() => void run()}
-              disabled={runPreventive.isPending}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-primary disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              {runPreventive.isPending ? "Running…" : "Run preventive"}
-            </button>
-          )}
-          {canManage && (
-            <Link
-              to="/maintenance/plans/new"
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
-            >
-              New plan
-            </Link>
-          )}
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/maintenance">Maintenance</Link> /{" "}
+          <span className="text-ink">Preventive plans</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Preventive plans</h1>
+          <div className="flex items-center gap-2.5">
+            {canRun && (
+              <button
+                type="button"
+                onClick={() => void run()}
+                disabled={runPreventive.isPending}
+                className="btn-chip"
+              >
+                {runPreventive.isPending ? "Running…" : "Run preventive"}
+              </button>
+            )}
+            {canManage && (
+              <Link
+                to="/maintenance/plans/new"
+                className="btn-ink"
+              >
+                New plan
+              </Link>
+            )}
+          </div>
         </div>
-      </div>
+      </header>
 
       {error && (
-        <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
+        <p role="alert" className="mb-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
         </p>
       )}
       {runResult && (
-        <p className="mt-4 rounded-control bg-success-tint px-3 py-2 text-xs text-success">
+        <p className="mb-4 rounded-control bg-success-tint px-3 py-2 text-xs text-success">
           {runResult.plans_due === 0
             ? `No plans were due as of ${formatDate(runResult.as_of_date)}.`
             : `${runResult.plans_due} plan${runResult.plans_due === 1 ? "" : "s"} due — ${runResult.orders_generated.length} preventive order${runResult.orders_generated.length === 1 ? "" : "s"} generated. `}
@@ -136,7 +130,7 @@ export function MaintenancePlanListPage() {
         </p>
       )}
 
-      <div className="mt-4">
+      <div>
         <select
           value={status}
           onChange={(event) => setStatus(event.target.value as MaintenancePlanStatus | "")}
@@ -156,6 +150,8 @@ export function MaintenancePlanListPage() {
           onRowClick={(row) => void navigate({ to: "/maintenance/plans/$planId", params: { planId: row.id } })}
           loading={plans.isPending}
           emptyMessage="No preventive plans yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={plans.hasNextPage}
           onLoadMore={() => void plans.fetchNextPage()}
           loadingMore={plans.isFetchingNextPage}

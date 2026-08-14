@@ -14,25 +14,12 @@ import {
   useCompleteActivity,
   useCreateActivity,
 } from "@/modules/crm/hooks";
-import type { Activity, ActivityStatus, ActivityType } from "@/modules/crm/types";
+import type { Activity, ActivityType } from "@/modules/crm/types";
+import { StatusPill } from "@/components/StatusPill";
 
 const CONTROL =
   "rounded-control border border-line bg-surface px-2 py-1 text-sm text-ink transition-colors duration-150 hover:border-ink-faint";
 const TYPES: ActivityType[] = ["CALL", "EMAIL", "MEETING", "TASK", "NOTE"];
-const STATUS_TONE: Record<ActivityStatus, string> = {
-  OPEN: "bg-primary-tint text-primary",
-  COMPLETED: "bg-success-tint text-success",
-  CANCELLED: "bg-panel text-ink-muted",
-};
-
-export function ActivityStatusChip({ status }: { status: ActivityStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status}
-    </span>
-  );
-}
-
 export function ActivityTimeline({
   parent,
   canManage,
@@ -79,7 +66,7 @@ export function ActivityTimeline({
 
   return (
     <section aria-label="Activities">
-      <h2 className="text-sm font-semibold text-ink">Activities</h2>
+      <h2 className="mb-3.5 mono-caps text-ink-muted">Activities</h2>
       {error && (
         <p role="alert" className="mt-3 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
@@ -134,7 +121,7 @@ export function ActivityTimeline({
             type="button"
             onClick={() => void add()}
             disabled={!subject.trim() || createActivity.isPending}
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+            className="btn-ink"
           >
             {createActivity.isPending ? "Adding…" : "Add"}
           </button>
@@ -147,7 +134,7 @@ export function ActivityTimeline({
         )}
         {rows.map((activity) => (
           <li key={activity.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-            <span className="w-16 shrink-0 text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+            <span className="w-16 shrink-0 mono-caps text-ink-muted">
               {activity.activity_type}
             </span>
             <span className="flex-1 text-ink">{activity.subject}</span>
@@ -158,14 +145,14 @@ export function ActivityTimeline({
                   ? `Due ${formatDate(activity.due_date)}`
                   : "—"}
             </span>
-            <ActivityStatusChip status={activity.status} />
+            <StatusPill status={activity.status} />
             {canManage && activity.status === "OPEN" && (
               <span className="flex gap-1">
                 <button
                   type="button"
                   onClick={() => void act(complete, activity, "Unable to complete the activity.")}
                   disabled={complete.isPending}
-                  className="rounded-control px-2 py-0.5 text-xs font-medium text-primary transition-colors duration-150 hover:bg-primary-tint disabled:opacity-45"
+                  className="rounded-control px-2 py-0.5 text-[12.5px] font-medium text-primary transition-colors duration-150 hover:bg-primary-tint disabled:opacity-45"
                 >
                   Complete
                 </button>
@@ -173,7 +160,7 @@ export function ActivityTimeline({
                   type="button"
                   onClick={() => void act(cancel, activity, "Unable to cancel the activity.")}
                   disabled={cancel.isPending}
-                  className="rounded-control px-2 py-0.5 text-xs font-medium text-ink-muted transition-colors duration-150 hover:bg-panel hover:text-danger disabled:opacity-45"
+                  className="rounded-control px-2 py-0.5 text-[12.5px] font-medium text-ink-muted transition-colors duration-150 hover:bg-panel hover:text-danger disabled:opacity-45"
                 >
                   Cancel
                 </button>

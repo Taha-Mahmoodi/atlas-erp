@@ -6,12 +6,13 @@
  * from DRAFT.
  */
 
-import { useParams } from "@tanstack/react-router";
+import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
 import { formatQuantity } from "@/lib/format";
 import { useMe } from "@/lib/session";
+import { StatusPill } from "@/components/StatusPill";
 import { useBinLookup, useItemLookup, useWarehouseLookup } from "@/modules/inventory/hooks";
 import { useCancelDelivery, useCustomerOptions, useDelivery, usePostDelivery } from "@/modules/sales/hooks";
 
@@ -32,7 +33,7 @@ export function DeliveryDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   if (delivery.isPending || !delivery.data) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-[13px] text-ink-muted">Loading…</p>;
   }
   const data = delivery.data;
   const isDraft = data.status === "DRAFT";
@@ -74,60 +75,67 @@ export function DeliveryDetailPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{data.delivery_number}</h1>
-        <div className="flex gap-2">
-          {isDraft && canManage && (
-            <button
-              type="button"
-              onClick={() => void cancel()}
-              disabled={cancelDelivery.isPending}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              Cancel
-            </button>
-          )}
-          {isDraft && canPost && (
-            <button
-              type="button"
-              onClick={() => void post()}
-              disabled={postDelivery.isPending}
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              {postDelivery.isPending ? "Posting…" : "Post"}
-            </button>
-          )}
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/sales/deliveries">Deliveries</Link> / <span className="text-ink">{data.delivery_number}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.delivery_number}</h1>
+          <div className="flex items-center gap-2.5">
+            {isDraft && canManage && (
+              <button
+                type="button"
+                onClick={() => void cancel()}
+                disabled={cancelDelivery.isPending}
+                className="btn-chip hover:border-danger hover:text-danger"
+              >
+                Cancel
+              </button>
+            )}
+            {isDraft && canPost && (
+              <button
+                type="button"
+                onClick={() => void post()}
+                disabled={postDelivery.isPending}
+                className="btn-ink"
+              >
+                {postDelivery.isPending ? "Posting…" : "Post"}
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      </header>
 
       {error && (
-        <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
+        <p role="alert" className="mb-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
         </p>
       )}
 
-      <dl className="mt-6 grid grid-cols-4 gap-4 text-sm">
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-ink-muted">Status</dt>
-          <dd className="text-ink">{data.status}</dd>
+          <dt className="mono-caps text-ink-muted">Status</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
+            <StatusPill status={data.status} />
+          </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Customer</dt>
-          <dd className="text-ink">{customerLabel(data.customer_id)}</dd>
+          <dt className="mono-caps text-ink-muted">Customer</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{customerLabel(data.customer_id)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Warehouse</dt>
-          <dd className="text-ink">{warehouseLabel(data.warehouse_id)}</dd>
+          <dt className="mono-caps text-ink-muted">Warehouse</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{warehouseLabel(data.warehouse_id)}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Delivery date</dt>
-          <dd className="text-ink">{data.delivery_date}</dd>
+          <dt className="mono-caps text-ink-muted">Delivery date</dt>
+          <dd className="mt-1.5 text-[13px] text-ink tabular-nums">{data.delivery_date}</dd>
         </div>
       </dl>
 
       <table className="mt-6 w-full border-collapse text-[13px]">
         <thead>
-          <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+          <tr className="border-b border-line text-left mono-caps text-ink-muted">
             <th className="py-2 pr-2">Item</th>
             <th className="py-2 pr-2">Bin</th>
             <th className="py-2 pr-2 text-right">Quantity</th>

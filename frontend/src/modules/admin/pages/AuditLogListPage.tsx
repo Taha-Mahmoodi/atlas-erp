@@ -6,6 +6,7 @@
  * list rows already carry the full diff).
  */
 
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { formatDateTime } from "@/lib/format";
@@ -15,24 +16,7 @@ import { AuditDiffView } from "@/modules/admin/components/AuditDiffView";
 import type { AuditLogFilters } from "@/modules/admin/api";
 import { useAuditLogs } from "@/modules/admin/hooks";
 import type { AuditLog } from "@/modules/admin/types";
-
-const ACTION_TONE: Record<string, string> = {
-  INSERT: "bg-success-tint text-success",
-  UPDATE: "bg-warn-tint text-warn",
-  DELETE: "bg-danger-tint text-danger",
-};
-
-function ActionChip({ action }: { action: string }) {
-  return (
-    <span
-      className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${
-        ACTION_TONE[action] ?? "bg-panel text-ink-muted"
-      }`}
-    >
-      {action}
-    </span>
-  );
-}
+import { StatusPill } from "@/components/StatusPill";
 
 const COLUMNS: DataGridColumn<AuditLog>[] = [
   { key: "created_at", header: "When", render: (row) => formatDateTime(row.created_at), width: "180px" },
@@ -42,7 +26,7 @@ const COLUMNS: DataGridColumn<AuditLog>[] = [
     header: "Entity ID",
     render: (row) => <span className="tabular-nums text-xs">{row.entity_id}</span>,
   },
-  { key: "action", header: "Action", render: (row) => <ActionChip action={row.action} />, width: "100px" },
+  { key: "action", header: "Action", render: (row) => <StatusPill status={row.action} />, width: "100px" },
   {
     key: "actor_user_id",
     header: "Actor",
@@ -53,15 +37,17 @@ const COLUMNS: DataGridColumn<AuditLog>[] = [
 const FILTER_INPUT =
   "rounded-control border border-line bg-surface px-2 py-1.5 text-sm text-ink placeholder:text-ink-muted hover:border-ink-faint";
 
+const EMPTY_DRAFT = {
+  entity_table: "",
+  entity_id: "",
+  actor_user_id: "",
+  action: "",
+  created_from: "",
+  created_to: "",
+};
+
 export function AuditLogListPage() {
-  const [draft, setDraft] = useState({
-    entity_table: "",
-    entity_id: "",
-    actor_user_id: "",
-    action: "",
-    created_from: "",
-    created_to: "",
-  });
+  const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [filters, setFilters] = useState<Omit<AuditLogFilters, "cursor">>({});
   const [selected, setSelected] = useState<AuditLog | null>(null);
 
@@ -80,18 +66,32 @@ export function AuditLogListPage() {
     });
   };
 
+  const clearFilters = () => {
+    setSelected(null);
+    setDraft(EMPTY_DRAFT);
+    setFilters({});
+  };
+
   const set = (name: keyof typeof draft) => (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setDraft((prev) => ({ ...prev, [name]: event.target.value }));
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-ink">Audit Log</h1>
-      <p className="mt-1 text-sm text-ink-muted">
-        Append-only change trail for this tenant — every insert, update, and delete with its before/after diff.
-      </p>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/admin" className="hover:text-ink">
+            Admin
+          </Link>{" "}
+          / <span className="text-ink">Audit Log</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">Audit Log</h1>
+        <p className="mt-1 text-[13px] text-ink-muted">
+          Append-only change trail for this tenant — every insert, update, and delete with its before/after diff.
+        </p>
+      </header>
 
       <form
-        className="mt-4 flex flex-wrap items-end gap-2"
+        className="flex flex-wrap items-end gap-2"
         onSubmit={(event) => {
           event.preventDefault();
           apply();
@@ -134,7 +134,7 @@ export function AuditLogListPage() {
         </label>
         <button
           type="submit"
-          className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
+          className="btn-ink"
         >
           Apply
         </button>
@@ -152,35 +152,45 @@ export function AuditLogListPage() {
             rowKey={(row) => row.id}
             onRowClick={(row) => setSelected((prev) => (prev?.id === row.id ? null : row))}
             loading={logs.isPending}
-            emptyMessage="No audit entries match these filters."
+            emptyMessage="No audit entries yet."
             hasMore={logs.hasNextPage}
             onLoadMore={() => void logs.fetchNextPage()}
             loadingMore={logs.isFetchingNextPage}
             density="compact"
             label="Audit log"
+            isFiltered={Object.keys(filters).length > 0}
+            onClearFilters={clearFilters}
           />
         )}
       </div>
 
       {selected && (
-        <section className="mt-4 rounded-card border border-line bg-surface p-4 shadow-card">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-ink">
-              {selected.entity_table} <span className="font-normal text-ink-muted">· {selected.action}</span>
+        <section className="mt-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+          <div className="mb-3.5 flex items-center justify-between">
+            <h2 className="mono-caps text-ink-muted">
+              {selected.entity_table} · {selected.action}
             </h2>
-            <button type="button" onClick={() => setSelected(null)} className="text-xs font-medium text-ink-muted hover:text-ink">
+            <button type="button" onClick={() => setSelected(null)} className="text-[12.5px] font-medium text-ink-muted hover:text-ink">
               Close
             </button>
           </div>
-          <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-xs sm:grid-cols-4">
-            <dt className="text-ink-muted">Entity ID</dt>
-            <dd className="tabular-nums text-ink">{selected.entity_id}</dd>
-            <dt className="text-ink-muted">Actor</dt>
-            <dd className="tabular-nums text-ink">{selected.actor_user_id ?? "system"}</dd>
-            <dt className="text-ink-muted">Request ID</dt>
-            <dd className="tabular-nums text-ink">{selected.request_id ?? "—"}</dd>
-            <dt className="text-ink-muted">IP</dt>
-            <dd className="tabular-nums text-ink">{selected.request_ip ?? "—"}</dd>
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
+            <div>
+              <dt className="mono-caps text-ink-muted">Entity ID</dt>
+              <dd className="mt-1.5 text-[13px] tabular-nums text-ink">{selected.entity_id}</dd>
+            </div>
+            <div>
+              <dt className="mono-caps text-ink-muted">Actor</dt>
+              <dd className="mt-1.5 text-[13px] tabular-nums text-ink">{selected.actor_user_id ?? "system"}</dd>
+            </div>
+            <div>
+              <dt className="mono-caps text-ink-muted">Request ID</dt>
+              <dd className="mt-1.5 text-[13px] tabular-nums text-ink">{selected.request_id ?? "—"}</dd>
+            </div>
+            <div>
+              <dt className="mono-caps text-ink-muted">IP</dt>
+              <dd className="mt-1.5 text-[13px] tabular-nums text-ink">{selected.request_ip ?? "—"}</dd>
+            </div>
           </dl>
           <div className="mt-3">
             <AuditDiffView diff={selected.diff} />

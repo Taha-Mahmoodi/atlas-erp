@@ -5,6 +5,7 @@
  * showing a zero row.
  */
 
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { formatQuantity } from "@/lib/format";
@@ -39,7 +40,12 @@ export function StockOnHandPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-ink">Stock On-Hand</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/inventory">Inventory</Link> / <span className="text-ink">Stock On-Hand</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">Stock On-Hand</h1>
+      </header>
 
       <div className="mt-4">
         <select
@@ -63,6 +69,8 @@ export function StockOnHandPage() {
           rowKey={(row) => `${row.item_id}:${row.bin_id}:${row.lot_id ?? ""}`}
           loading={onHand.isPending}
           emptyMessage="No stock on hand."
+          isFiltered={Boolean(itemId)}
+          onClearFilters={() => setItemId("")}
           hasMore={onHand.hasNextPage}
           onLoadMore={() => void onHand.fetchNextPage()}
           loadingMore={onHand.isFetchingNextPage}

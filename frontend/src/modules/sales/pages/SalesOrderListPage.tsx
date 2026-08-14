@@ -8,27 +8,9 @@ import { useState } from "react";
 import { formatMoney } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { useCustomerOptions, useSalesOrders } from "@/modules/sales/hooks";
 import type { SalesOrder, SalesOrderStatus } from "@/modules/sales/types";
-
-const STATUS_TONE: Record<SalesOrderStatus, string> = {
-  DRAFT: "bg-panel text-ink-muted",
-  CONFIRMED: "bg-success-tint text-success",
-  CREDIT_BLOCKED: "bg-danger-tint text-danger",
-  PARTIALLY_DELIVERED: "bg-warn-tint text-warn",
-  DELIVERED: "bg-primary-tint text-primary",
-  INVOICED: "bg-primary-tint text-primary",
-  CLOSED: "bg-panel text-ink-muted",
-  CANCELLED: "bg-panel text-ink-muted",
-};
-
-function StatusChip({ status }: { status: SalesOrderStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status}
-    </span>
-  );
-}
 
 export function SalesOrderListPage() {
   const navigate = useNavigate();
@@ -55,22 +37,29 @@ export function SalesOrderListPage() {
       render: (row) => formatMoney(row.total_amount, row.currency_code),
       width: "140px",
     },
-    { key: "status", header: "Status", render: (row) => <StatusChip status={row.status} />, width: "150px" },
+    { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "150px" },
   ];
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Sales Orders</h1>
-        {canManage && (
-          <Link
-            to="/sales/orders/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
-          >
-            New order
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/sales">Sales</Link> / <span className="text-ink">Sales Orders</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Sales Orders</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/sales/orders/new"
+                className="btn-ink"
+              >
+                New order
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
       <div className="mt-4">
         <select
@@ -98,6 +87,8 @@ export function SalesOrderListPage() {
           onRowClick={(row) => void navigate({ to: "/sales/orders/$orderId", params: { orderId: row.id } })}
           loading={orders.isPending}
           emptyMessage="No sales orders yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={orders.hasNextPage}
           onLoadMore={() => void orders.fetchNextPage()}
           loadingMore={orders.isFetchingNextPage}

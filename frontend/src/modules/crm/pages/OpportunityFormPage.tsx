@@ -6,7 +6,7 @@
  * convert.
  */
 
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -125,9 +125,17 @@ export function OpportunityFormPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="text-xl font-semibold text-ink">
-        {isEdit ? "Edit opportunity" : "New opportunity"}
-      </h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/crm/opportunities" className="hover:underline">
+            Pipeline
+          </Link>{" "}
+          / <span className="text-ink">{isEdit ? "Edit opportunity" : "New opportunity"}</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">
+          {isEdit ? "Edit opportunity" : "New opportunity"}
+        </h1>
+      </header>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}

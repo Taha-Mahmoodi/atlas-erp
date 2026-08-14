@@ -4,6 +4,7 @@
  * A pure projection — no actions.
  */
 
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { DashboardKpis } from "@/modules/reporting/components/DashboardKpis";
@@ -19,9 +20,14 @@ export function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <h1 className="text-xl font-semibold text-ink">Dashboard</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/reporting">Reporting</Link> / <span className="text-ink">Dashboard</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">Dashboard</h1>
+      </header>
 
-      <div className="mt-4 flex items-center gap-2">
+      <div className="flex items-center gap-2">
         <label htmlFor="dashboard-as-of" className="text-sm text-ink-muted">
           As of
         </label>

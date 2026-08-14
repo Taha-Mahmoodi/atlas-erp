@@ -12,6 +12,7 @@ import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
 import { useApprovalRules } from "@/modules/procurement/hooks";
 import type { ApprovalRule } from "@/modules/procurement/types";
+import { StatusPill } from "@/components/StatusPill";
 
 const COLUMNS: DataGridColumn<ApprovalRule>[] = [
   { key: "document_type", header: "Document type", render: (row) => row.document_type.replace("_", " "), width: "180px" },
@@ -27,13 +28,7 @@ const COLUMNS: DataGridColumn<ApprovalRule>[] = [
     key: "is_active",
     header: "Status",
     render: (row) => (
-      <span
-        className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${
-          row.is_active ? "bg-success-tint text-success" : "bg-panel text-ink-muted"
-        }`}
-      >
-        {row.is_active ? "Active" : "Inactive"}
-      </span>
+      <StatusPill status={row.is_active ? "ACTIVE" : "INACTIVE"} />
     ),
     width: "100px",
   },
@@ -48,19 +43,29 @@ export function ApprovalRuleListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Approval Rules</h1>
-        {canManage && (
-          <Link
-            to="/procurement/approval-rules/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
-          >
-            New rule
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/procurement" className="hover:underline">
+            Procurement
+          </Link>{" "}
+          / <span className="text-ink">Approval Rules</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Approval Rules</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/procurement/approval-rules/new"
+                className="btn-ink"
+              >
+                New rule
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4">
+      <div>
         <DataGrid
           columns={COLUMNS}
           rows={rows}

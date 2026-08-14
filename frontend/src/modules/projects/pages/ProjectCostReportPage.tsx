@@ -22,7 +22,7 @@ export function ProjectCostReportPage() {
   const code = currency.data ?? "—";
 
   if (report.isPending || !report.data) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-[13px] text-ink-muted">Loading…</p>;
   }
   const data = report.data;
   const rows = treeOrder(
@@ -33,18 +33,28 @@ export function ProjectCostReportPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">
-          Cost report — {data.project_code} {data.project_name}
-        </h1>
-        <Link
-          to="/projects/$projectId"
-          params={{ projectId: data.project_id }}
-          className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-primary"
-        >
-          Back to project
-        </Link>
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/projects/$projectId" params={{ projectId: data.project_id }}>
+            {data.project_code}
+          </Link>{" "}
+          / <span className="text-ink">Cost report</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">
+            Cost report — {data.project_code} {data.project_name}
+          </h1>
+          <div className="flex items-center gap-2.5">
+            <Link
+              to="/projects/$projectId"
+              params={{ projectId: data.project_id }}
+              className="btn-chip"
+            >
+              Back to project
+            </Link>
+          </div>
+        </div>
+      </header>
 
       <div className="mt-4">
         <label htmlFor="as-of" className="mb-1 block text-xs font-medium text-ink-muted">
@@ -66,8 +76,8 @@ export function ProjectCostReportPage() {
           { label: "Hours", value: formatQuantity(data.total_hours), tone: "text-ink" },
           { label: "Variance", value: money(data.total_variance), tone: varianceTone(data.total_variance) },
         ].map((kpi) => (
-          <div key={kpi.label} className="rounded-card border border-line bg-surface p-4 shadow-card">
-            <dt className="text-xs text-ink-muted">{kpi.label}</dt>
+          <div key={kpi.label} className="rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+            <dt className="mono-caps text-ink-muted">{kpi.label}</dt>
             <dd className={`mt-1 text-lg font-semibold tabular-nums ${kpi.tone}`}>{kpi.value}</dd>
           </div>
         ))}
@@ -76,7 +86,7 @@ export function ProjectCostReportPage() {
       <div className="mt-6 overflow-x-auto rounded-card border border-line bg-surface shadow-card">
         <table className="w-full border-collapse text-[13px]" aria-label="Costs by WBS element">
           <thead>
-            <tr className="border-b border-line bg-panel text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+            <tr className="border-b border-line text-left mono-caps text-ink-muted">
               <th className="px-3 py-2">WBS</th>
               <th className="px-3 py-2">Name</th>
               <th className="px-3 py-2 text-right">Budget</th>

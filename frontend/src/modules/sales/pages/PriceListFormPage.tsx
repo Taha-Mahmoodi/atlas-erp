@@ -5,7 +5,7 @@
  * procurement's vendor-approved-items pattern.
  */
 
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -89,9 +89,9 @@ function PriceListItemsSection({ priceListId, currencyCode }: { priceListId: str
   };
 
   return (
-    <div className="mt-8 rounded-card border border-line bg-surface p-4 shadow-card">
-      <h2 className="text-sm font-semibold text-ink">Prices</h2>
-      <p className="mt-1 text-xs text-ink-muted">
+    <div className="mt-8 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+      <h2 className="mb-3.5 mono-caps text-ink-muted">Prices</h2>
+      <p className="mt-1 text-[12px] text-ink-muted">
         One flat price per item; the minimum quantity is the only quantity break this list supports.
       </p>
       {error && (
@@ -102,7 +102,7 @@ function PriceListItemsSection({ priceListId, currencyCode }: { priceListId: str
 
       <table className="mt-3 w-full border-collapse text-[13px]">
         <thead>
-          <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+          <tr className="border-b border-line text-left mono-caps text-ink-muted">
             <th className="py-1.5 pr-2">Item</th>
             <th className="py-1.5 pr-2 text-right">Unit price</th>
             <th className="py-1.5 pr-2 text-right">Min. quantity</th>
@@ -119,7 +119,7 @@ function PriceListItemsSection({ priceListId, currencyCode }: { priceListId: str
                 <button
                   type="button"
                   onClick={() => void remove(line.id)}
-                  className="text-xs font-medium text-danger hover:underline"
+                  className="text-[12.5px] font-medium text-danger hover:underline"
                 >
                   Remove
                 </button>
@@ -178,7 +178,7 @@ function PriceListItemsSection({ priceListId, currencyCode }: { priceListId: str
           type="button"
           onClick={() => void add()}
           disabled={!itemId || !unitPrice || createItem.isPending}
-          className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+          className="btn-ink"
         >
           Add
         </button>
@@ -249,9 +249,19 @@ export function PriceListFormPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-xl font-semibold text-ink">{isEdit ? "Edit price list" : "New price list"}</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/sales/price-lists">Price Lists</Link> /{" "}
+          <span className="text-ink">{isEdit ? "Edit price list" : "New price list"}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">
+            {isEdit ? "Edit price list" : "New price list"}
+          </h1>
+        </div>
+      </header>
       {error && (
-        <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
+        <p role="alert" className="mb-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
         </p>
       )}

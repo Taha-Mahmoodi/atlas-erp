@@ -3,6 +3,7 @@
  * date, plus the rolled-up totals row. A pure projection — no create/edit actions.
  */
 
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { formatMoney } from "@/lib/format";
@@ -23,9 +24,14 @@ export function ArAgingPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-ink">AR Aging</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance">Finance</Link> / <span className="text-ink">AR Aging</span>
+        </p>
+        <h1 className="mt-1.5 text-[22px] font-[650] tracking-[-0.01em] text-ink">AR Aging</h1>
+      </header>
 
-      <div className="mt-4 flex items-center gap-4">
+      <div className="flex items-center gap-4">
         <input
           type="date"
           value={asOf}
@@ -49,7 +55,7 @@ export function ArAgingPage() {
       <div className="mt-4 overflow-x-auto rounded-card border border-line bg-surface shadow-card">
         <table className="w-full border-collapse text-[13px]">
           <thead>
-            <tr className="border-b border-line bg-panel text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+            <tr className="border-b border-line text-left mono-caps text-ink-muted">
               <th className="px-3 py-2">Customer</th>
               <th className="px-3 py-2 text-right">Current</th>
               <th className="px-3 py-2 text-right">1-30</th>

@@ -6,7 +6,7 @@
  * so this is where that gets set up, not a separate route.
  */
 
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
@@ -82,9 +82,9 @@ function ApprovedItemsSection({ vendorId }: { vendorId: string }) {
   };
 
   return (
-    <div className="mt-8 rounded-card border border-line bg-surface p-4 shadow-card">
-      <h2 className="text-sm font-semibold text-ink">Approved items</h2>
-      <p className="mt-1 text-xs text-ink-muted">
+    <div className="mt-8 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card">
+      <h2 className="mb-3.5 mono-caps text-ink-muted">Approved items</h2>
+      <p className="mt-1 text-[12px] text-ink-muted">
         A PO line's item must be an active approved item for its vendor — this is where that's set up.
       </p>
       {error && (
@@ -95,7 +95,7 @@ function ApprovedItemsSection({ vendorId }: { vendorId: string }) {
 
       <table className="mt-3 w-full border-collapse text-[13px]">
         <thead>
-          <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+          <tr className="border-b border-line text-left mono-caps text-ink-muted">
             <th className="py-1.5 pr-2">Item</th>
             <th className="py-1.5 pr-2">Vendor's item code</th>
             <th className="py-1.5 pr-2">Status</th>
@@ -112,7 +112,7 @@ function ApprovedItemsSection({ vendorId }: { vendorId: string }) {
                 <button
                   type="button"
                   onClick={() => void remove(approved.id)}
-                  className="text-xs font-medium text-danger hover:underline"
+                  className="text-[12.5px] font-medium text-danger hover:underline"
                 >
                   Remove
                 </button>
@@ -157,7 +157,7 @@ function ApprovedItemsSection({ vendorId }: { vendorId: string }) {
           type="button"
           onClick={() => void add()}
           disabled={!itemId || createApprovedItem.isPending}
-          className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+          className="btn-ink"
         >
           Add
         </button>
@@ -226,7 +226,17 @@ export function VendorFormPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-xl font-semibold text-ink">{isEdit ? "Edit vendor" : "New vendor"}</h1>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/procurement/vendors" className="hover:underline">
+            Vendors
+          </Link>{" "}
+          / <span className="text-ink">{isEdit ? "Edit vendor" : "New vendor"}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{isEdit ? "Edit vendor" : "New vendor"}</h1>
+        </div>
+      </header>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}

@@ -12,17 +12,8 @@ import { formatDate, formatMoney, formatPercent, formatQuantity } from "@/lib/fo
 import { useMe } from "@/lib/session";
 import { ActivityTimeline } from "@/modules/crm/components/ActivityTimeline";
 import { useConvertOpportunity, useOpportunity } from "@/modules/crm/hooks";
-import type { OpportunityStage } from "@/modules/crm/types";
 import { useItemLookup } from "@/modules/inventory/hooks";
-
-const STAGE_TONE: Record<OpportunityStage, string> = {
-  PROSPECTING: "bg-primary-tint text-primary",
-  QUALIFICATION: "bg-primary-tint text-primary",
-  PROPOSAL: "bg-primary-tint text-primary",
-  NEGOTIATION: "bg-primary-tint text-primary",
-  WON: "bg-success-tint text-success",
-  LOST: "bg-panel text-ink-muted",
-};
+import { StatusPill } from "@/components/StatusPill";
 
 export function OpportunityDetailPage() {
   const { opportunityId } = useParams({ strict: false });
@@ -39,7 +30,7 @@ export function OpportunityDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   if (opportunity.isPending || !opportunity.data) {
-    return <p className="text-sm text-ink-muted">Loading…</p>;
+    return <p className="text-[13px] text-ink-muted">Loading…</p>;
   }
   const data = opportunity.data;
   const isOpen = data.stage !== "WON" && data.stage !== "LOST";
@@ -63,35 +54,41 @@ export function OpportunityDetailPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="flex items-center justify-between">
-        <h1 className="flex items-center gap-3 text-xl font-semibold text-ink">
-          {data.opportunity_number} — {data.name}
-          <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STAGE_TONE[data.stage]}`}>
-            {data.stage}
-          </span>
-        </h1>
-        <div className="flex gap-2">
-          {isOpen && canManage && (
-            <Link
-              to="/crm/opportunities/$opportunityId/edit"
-              params={{ opportunityId: data.id }}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-primary"
-            >
-              Edit
-            </Link>
-          )}
-          {isOpen && canConvert && (
-            <button
-              type="button"
-              onClick={() => void doConvert()}
-              disabled={convert.isPending}
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
-            >
-              {convert.isPending ? "Converting…" : "Convert to customer + quote"}
-            </button>
-          )}
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/crm/opportunities" className="hover:underline">
+            Pipeline
+          </Link>{" "}
+          / <span className="text-ink">{data.opportunity_number}</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="flex items-center gap-3 text-[22px] font-[650] tracking-[-0.01em] text-ink">
+            {data.name}
+            <StatusPill status={data.stage} />
+          </h1>
+          <div className="flex items-center gap-2.5">
+            {isOpen && canManage && (
+              <Link
+                to="/crm/opportunities/$opportunityId/edit"
+                params={{ opportunityId: data.id }}
+                className="btn-chip"
+              >
+                Edit
+              </Link>
+            )}
+            {isOpen && canConvert && (
+              <button
+                type="button"
+                onClick={() => void doConvert()}
+                disabled={convert.isPending}
+                className="btn-ink"
+              >
+                {convert.isPending ? "Converting…" : "Convert to customer + quote"}
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      </header>
 
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
@@ -120,34 +117,36 @@ export function OpportunityDetailPage() {
         </p>
       )}
 
-      <dl className="mt-6 grid grid-cols-4 gap-4 text-sm">
+      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 rounded-card border border-line bg-surface px-[18px] py-4 shadow-card sm:grid-cols-4">
         <div>
-          <dt className="text-xs text-ink-muted">Company</dt>
-          <dd className="text-ink">{data.company_name}</dd>
+          <dt className="mono-caps text-ink-muted">Company</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.company_name}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Contact</dt>
-          <dd className="text-ink">{data.contact_name ?? "—"}</dd>
+          <dt className="mono-caps text-ink-muted">Contact</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">{data.contact_name ?? "—"}</dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Estimated value</dt>
-          <dd className="text-ink tabular-nums">{formatMoney(data.estimated_value, data.currency_code)}</dd>
+          <dt className="mono-caps text-ink-muted">Estimated value</dt>
+          <dd className="mt-1.5 text-[13px] tabular-nums text-ink">
+            {formatMoney(data.estimated_value, data.currency_code)}
+          </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Probability</dt>
-          <dd className="text-ink tabular-nums">
+          <dt className="mono-caps text-ink-muted">Probability</dt>
+          <dd className="mt-1.5 text-[13px] tabular-nums text-ink">
             {data.probability_percent !== null ? formatPercent(data.probability_percent) : "—"}
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Expected close</dt>
-          <dd className="text-ink">
+          <dt className="mono-caps text-ink-muted">Expected close</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
             {data.expected_close_date ? formatDate(data.expected_close_date) : "—"}
           </dd>
         </div>
         <div>
-          <dt className="text-xs text-ink-muted">Source lead</dt>
-          <dd className="text-ink">
+          <dt className="mono-caps text-ink-muted">Source lead</dt>
+          <dd className="mt-1.5 text-[13px] text-ink">
             {data.source_lead_id ? (
               <Link to="/crm/leads/$leadId" params={{ leadId: data.source_lead_id }} className="text-primary underline">
                 View lead
@@ -159,8 +158,8 @@ export function OpportunityDetailPage() {
         </div>
         {data.notes && (
           <div className="col-span-2">
-            <dt className="text-xs text-ink-muted">Notes</dt>
-            <dd className="text-ink">{data.notes}</dd>
+            <dt className="mono-caps text-ink-muted">Notes</dt>
+            <dd className="mt-1.5 text-[13px] text-ink">{data.notes}</dd>
           </div>
         )}
       </dl>
@@ -168,7 +167,7 @@ export function OpportunityDetailPage() {
       {data.lines.length > 0 && (
         <table className="mt-6 w-full border-collapse text-[13px]">
           <thead>
-            <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+            <tr className="border-b border-line text-left mono-caps text-ink-muted">
               <th className="py-2 pr-2">Item</th>
               <th className="py-2 pr-2">Description</th>
               <th className="py-2 pr-2 text-right">Quantity</th>

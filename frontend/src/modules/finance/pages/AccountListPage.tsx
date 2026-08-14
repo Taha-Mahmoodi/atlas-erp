@@ -45,19 +45,26 @@ export function AccountListPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Chart of Accounts</h1>
-        {canManage && (
-          <Link
-            to="/finance/accounts/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
-          >
-            New account
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/finance">Finance</Link> / <span className="text-ink">Chart of Accounts</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Chart of Accounts</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/finance/accounts/new"
+                className="btn-ink"
+              >
+                New account
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
-      <div className="mt-4 flex items-center gap-4">
+      <div className="flex items-center gap-4">
         <select
           value={accountType}
           onChange={(event) => setAccountType(event.target.value as AccountType | "")}
@@ -89,6 +96,11 @@ export function AccountListPage() {
           onRowClick={(row) => void navigate({ to: "/finance/accounts/$accountId", params: { accountId: row.id } })}
           loading={accounts.isPending}
           emptyMessage="No accounts yet — create the first one to start the chart of accounts."
+          isFiltered={Boolean(accountType || activeOnly)}
+          onClearFilters={() => {
+            setAccountType("");
+            setActiveOnly(false);
+          }}
           hasMore={accounts.hasNextPage}
           onLoadMore={() => void accounts.fetchNextPage()}
           loadingMore={accounts.isFetchingNextPage}

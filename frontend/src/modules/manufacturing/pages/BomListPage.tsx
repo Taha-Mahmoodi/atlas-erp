@@ -9,22 +9,9 @@ import { useState } from "react";
 import { useMe } from "@/lib/session";
 import { useItemLookup } from "@/modules/inventory/hooks";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { useBoms } from "@/modules/manufacturing/hooks";
 import type { Bom, BomStatus } from "@/modules/manufacturing/types";
-
-const STATUS_TONE: Record<BomStatus, string> = {
-  DRAFT: "bg-panel text-ink-muted",
-  ACTIVE: "bg-success-tint text-success",
-  INACTIVE: "bg-panel text-ink-muted",
-};
-
-function StatusChip({ status }: { status: BomStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status}
-    </span>
-  );
-}
 
 export function BomListPage() {
   const navigate = useNavigate();
@@ -51,22 +38,30 @@ export function BomListPage() {
       render: (row) => (row.is_default ? "Yes" : "—"),
       width: "90px",
     },
-    { key: "status", header: "Status", render: (row) => <StatusChip status={row.status} />, width: "110px" },
+    { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "110px" },
   ];
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Bills of Material</h1>
-        {canManage && (
-          <Link
-            to="/manufacturing/boms/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
-          >
-            New BOM
-          </Link>
-        )}
-      </div>
+      <header className="mb-6">
+        <p className="text-[12px] text-ink-muted">
+          <Link to="/manufacturing">Manufacturing</Link> /{" "}
+          <span className="text-ink">Bills of Material</span>
+        </p>
+        <div className="mt-1.5 flex items-start justify-between gap-4">
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Bills of Material</h1>
+          <div className="flex items-center gap-2.5">
+            {canManage && (
+              <Link
+                to="/manufacturing/boms/new"
+                className="btn-ink"
+              >
+                New BOM
+              </Link>
+            )}
+          </div>
+        </div>
+      </header>
 
       <div className="mt-4">
         <select
@@ -89,6 +84,8 @@ export function BomListPage() {
           onRowClick={(row) => void navigate({ to: "/manufacturing/boms/$bomId", params: { bomId: row.id } })}
           loading={boms.isPending}
           emptyMessage="No BOMs yet."
+          isFiltered={Boolean(status)}
+          onClearFilters={() => setStatus("")}
           hasMore={boms.hasNextPage}
           onLoadMore={() => void boms.fetchNextPage()}
           loadingMore={boms.isFetchingNextPage}
