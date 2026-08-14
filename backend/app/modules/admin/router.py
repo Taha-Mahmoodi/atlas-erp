@@ -31,7 +31,7 @@ from fastapi import APIRouter, Depends
 
 from app.core.deps import CurrentUserDep, SessionDep
 from app.core.events import run_in_uow
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import NotFoundError, PermissionDeniedError
 from app.core.models import ApiKey
 from app.core.pagination import CursorParams, cursor_params, map_page
 from app.core.rbac import (
@@ -277,6 +277,25 @@ async def create_api_key(
     """Issue a key bound to one of the tenant's users. The full key is in this response and
     nowhere else — only its sha256 is stored. An unknown scope is a 422 (D-009); a user id
     from another tenant is simply not found under the D-007 filter."""
+    if current.is_api_key and (
+        payload.scopes is None or not frozenset(payload.scopes) <= current.permissions
+    ):
+        # No credential may mint one wider than itself (D-070). This is the ONE endpoint
+        # that CHOOSES a credential's permissions, so without this a key scoped to
+        # admin.apikey.manage issues itself a NULL-scoped key on the same user and walks
+        # out with that user's whole set — scopes would confine nothing. Role assignment
+        # cannot do the same: it moves the USER's permissions, and the presenting key's
+        # scopes still narrow the result, which is why D-069's "already reachable through
+        # admin.user.manage" argument does not cover this path. NULL is refused outright
+        # from a key presenter because "inherit the bound user" is by definition not
+        # bounded by the presenter. A human (JWT) principal is unaffected: D-069 records
+        # that admin.apikey.manage is deliberately as strong as the tenant's most
+        # privileged user for its holder, and that is not re-litigated here.
+        raise PermissionDeniedError(
+            code="rbac.scope_escalation",
+            message="An API key cannot issue a key wider than itself",
+            details={"permitted_scopes": sorted(current.permissions)},
+        )
     if await queries.get_user(session, current.tenant_id, payload.user_id) is None:
         raise NotFoundError(message="User not found", code="admin.user_not_found")
     holder: list[tuple[ApiKey, str]] = []

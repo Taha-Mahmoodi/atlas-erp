@@ -22,7 +22,7 @@ from app.core.exceptions import AuthError
 from app.core.models import ApiKey, User
 from app.core.rbac import current_permissions, resolve_permissions
 from app.core.tenancy import current_tenant_id
-from app.modules.admin.service import find_tenant_by_slug
+from app.modules.admin.models import Tenant
 
 # get_session / get_settings are re-exported so routers depend on a single core.deps
 # surface rather than reaching into core.db / core.config directly.
@@ -60,6 +60,12 @@ class CurrentUser:
     tenant_id: uuid.UUID
     permissions: frozenset[str]
     token_version: int
+    # Which credential shape produced this principal (D-069). Every authorization check in
+    # the codebase reads `permissions` and nothing else — this exists for the ONE endpoint
+    # that MINTS a credential, which has to refuse to issue a key wider than the key
+    # presenting the request (modules/admin/router.create_api_key). Defaulted so the JWT
+    # path and every existing construction site are unchanged.
+    is_api_key: bool = False
 
 
 async def get_current_user(
@@ -123,7 +129,7 @@ async def get_current_user(
 
 
 async def _authenticate_api_key(
-    session: AsyncSession, tenant_ref: str, secret_sha256: str
+    session: AsyncSession, tenant_id: uuid.UUID, secret_sha256: str
 ) -> CurrentUser:
     """Resolve a machine API key to the same principal a JWT would produce (spec Q1).
 
@@ -132,32 +138,39 @@ async def _authenticate_api_key(
     under the ordinary D-007 filter and a key presented with someone else's tenant ref
     can only ever find nothing. This is why the machine credential needs no fifth
     sanctioned system_context() bypass (core/tenancy.py).
-    """
-    # Tenants are not TenantMixin, so resolving the ref needs no tenant context — the
-    # same reason login can call this before any principal exists. Reused rather than
-    # reimplemented so there is one slug resolver, not two.
-    tenant = await find_tenant_by_slug(session, tenant_ref)
-    if tenant is None or not tenant.is_active:
-        raise AuthError(message="Invalid API key", code="auth.invalid_token")
-    current_tenant_id.set(tenant.id)
 
-    # ONE joined statement, not a key SELECT followed by a user SELECT: PERFORMANCE §2
-    # budgets ≤3 statements per list request and tests/conftest.py warns that its one
-    # query of slack is a regression margin, not headroom.
+    The ref is the tenant UUID, so setting the ContextVar costs NO query — the same shape
+    as the JWT path, which sets it straight from the token claim. Minting on the slug
+    instead cost one resolve per request, which put every list endpoint that also computes
+    a collection ETag (core/conditional.py) at 4 statements, over PERFORMANCE §2's ≤3.
+    """
+    current_tenant_id.set(tenant_id)
+
+    # ONE joined statement for the whole credential check: the key, its user, and the
+    # tenant's is_active flag. Not a key SELECT followed by a user SELECT, and not a
+    # separate tenant lookup — PERFORMANCE §2 budgets ≤3 statements per list request and
+    # tests/conftest.py warns that its one query of slack is a regression margin, not
+    # headroom. Tenant is not TenantMixin, so joining it adds no tenant predicate; the
+    # D-007 filter still constrains User and ApiKey to the ContextVar's tenant.
     row = (
         await session.execute(
-            select(User, ApiKey)
+            select(User, ApiKey, Tenant.is_active)
             .join(ApiKey, ApiKey.user_id == User.id)
+            .join(Tenant, Tenant.id == ApiKey.tenant_id)
             .where(ApiKey.secret_sha256 == secret_sha256)
         )
     ).one_or_none()
     if row is None:
         raise AuthError(message="Invalid API key", code="auth.invalid_token")
 
-    user, key = row
+    user, key, tenant_is_active = row
     # as_utc because aiosqlite round-trips DateTime(timezone=True) as naive (core/auth).
+    # The tenant check is stricter than the JWT path's (which has none) on purpose: a JWT
+    # dies in 15 minutes, a key can live a year, so deactivating a tenant must stop its
+    # machine credentials on the next request rather than at the next token expiry.
     if (
-        not user.is_active
+        not tenant_is_active
+        or not user.is_active
         or key.revoked_at is not None
         or (key.expires_at is not None and as_utc(key.expires_at) <= now_utc())
     ):
@@ -179,9 +192,17 @@ async def _authenticate_api_key(
         user_id=user.id,
         tenant_id=user.tenant_id,
         permissions=permissions,
-        # The key's own revocation lives in revoked_at; carrying the user's token_version
-        # keeps the "revoke everything" bump a kill-switch for both credential shapes.
+        # Carried so CurrentUser is the same shape on both paths — NOT a kill switch for
+        # this credential, and deliberately so. token_version is D-008's invalidation
+        # counter for STATELESS tokens: a JWT cannot be revoked, so it is versioned. A key
+        # is a row, so it is revoked by revoked_at, and bumping the version would conflate
+        # "log this user out everywhere" with "strand the property's website". The three
+        # switches divide cleanly and all three are honoured above: revoked_at kills ONE
+        # credential, expires_at retires it on schedule, and user.is_active (like
+        # tenant.is_active) kills the whole PRINCIPAL and with it every key bound to it.
+        # Pinned by tests/core/test_api_key_lifecycle.py.
         token_version=user.token_version,
+        is_api_key=True,
     )
 
 

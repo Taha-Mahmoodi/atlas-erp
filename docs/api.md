@@ -29,19 +29,20 @@ A machine client — typically a property's own website calling Atlas as its bac
 - **`user_id`** must be a user in your own tenant (otherwise `404 admin.user_not_found`). The key is bound to that user and can never do more than the user can. **Bind it to a dedicated service user** (`website@yourproperty.example`, no password anyone uses, only the roles the site needs) — see the audit note below.
 - **`scopes`** is optional. Omit it or send `null` and the key inherits its user's permissions unnarrowed. Send a list and the key's effective permissions are that list **intersected** with the user's — a scope the user does not hold grants nothing, and revoking the user's role narrows the key with it. Every entry is checked against the permission catalog; an unknown one is `422 rbac.unknown_permission`. The grantable universe is `GET /api/v1/admin/permissions`.
 - **`expires_at`** is optional; after it passes, the key behaves exactly as if revoked.
+- **Calling this endpoint *with a key* is restricted (D-070).** A key may never issue a key wider than itself: `scopes` becomes required and every entry must be one the calling key already holds. Sending `null` from a key is `403 rbac.scope_escalation` (whose `details.permitted_scopes` lists what you *could* have asked for), because "inherit the bound user" is not bounded by the caller. Logged in as a human, nothing changes — mint whatever the `admin.apikey.manage` permission allows.
 
 ### 2. The secret is shown once
 
-The `201` body is the key's record plus one extra field, `key`, holding the full string — `atk_<your tenant slug>_<secret>`. **This is the only time it exists anywhere.** Only its SHA-256 is stored, so a lost key is re-issued, never recovered.
+The `201` body is the key's record plus one extra field, `key`, holding the full string — `atk_<your tenant id, hex, no dashes>_<secret>`. **This is the only time it exists anywhere.** Only its SHA-256 is stored, so a lost key is re-issued, never recovered.
 
-Everything else stays readable from `GET /api/v1/admin/api-keys` (newest first, cursor-paginated, revoked and expired keys included). It never returns the secret or its digest, and `prefix` is only the non-secret half — `atk_<your tenant slug>`, identical for every key you own. Tell keys apart by `name`, which is why it is required.
+Everything else stays readable from `GET /api/v1/admin/api-keys` (newest first, cursor-paginated, revoked and expired keys included). It never returns the secret or its digest, and `prefix` is only the non-secret half — `atk_<your tenant id>`, identical for every key you own. Tell keys apart by `name`, which is why it is required.
 
 ### 3. Send it
 
 As an ordinary bearer token:
 
 ```
-Authorization: Bearer atk_acme_kJ2f…
+Authorization: Bearer atk_9f1c4b7e2d8a4f0b9c3e5a7d1f2b6c40_kJ2f…
 ```
 
 Nothing else changes: no extra tenant header (the tenant rides in the key itself), no token refresh, no cookie, no CORS change. A malformed, unknown, revoked, expired or wrong-tenant key is a flat `401 auth.invalid_token` — the API never distinguishes between them.
