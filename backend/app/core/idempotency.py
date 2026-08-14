@@ -79,7 +79,18 @@ class IdempotencyKey(TenantMixin, Base):
     id plus a UNIQUE would be redundant indirection. TenantMixin still applies (the row is
     tenant-scoped and the D-007 filter/stamp run on it); tenant_id participates in the PK so the
     composite is already tenant-unique. Not AuditMixin: reservation rows are request-control
-    infrastructure, not business state (auditing them would be noise — documented exclusion)."""
+    infrastructure, not business state (auditing them would be noise — documented exclusion).
+
+    NO PRINCIPAL COLUMN, deliberately: the namespace is the TENANT's, so every principal in a
+    tenant shares it. Since the Phase 18 machine credential (spec Q1) an EXTERNAL client sits in
+    that namespace beside the tenant's staff. Two principals presenting the same key value on the
+    same endpoint therefore meet on one row: same body replays the FIRST principal's stored
+    response verbatim, a different body is 422 key_reuse, and an unfinished one is 409
+    in_progress. Bounded, and measured in tests/core/test_api_key_concurrency.py: the route's
+    require_permission dependency is solved BEFORE this guard, so a replay never crosses the RBAC
+    line — but it does skip serialization, so a masked field (D-009) in an idempotent endpoint's
+    response would cross unmasked. That endpoint does not exist yet and a gate test keeps it that
+    way; adding one means adding a principal column here instead."""
 
     __tablename__ = "core_idempotency_keys"
     __table_args__ = (tenant_fk("adm_tenants"),)

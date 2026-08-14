@@ -26,6 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.models import (
+    ApiKey,
     AuditLog,
     Permission,
     Role,
@@ -183,6 +184,34 @@ async def list_audit_logs(
         limit=limit,
         filters=fingerprint,
     )
+
+
+async def list_api_keys(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    cursor: str | None,
+    limit: int,
+) -> Page[ApiKey]:
+    """The tenant's machine credentials, keyset-paginated newest-first (D-014). Revoked and
+    expired keys stay in the list: an operator auditing what was issued needs to see them.
+    The stored digest is never serialized (the Read schema omits it)."""
+    stmt = select(ApiKey).where(ApiKey.tenant_id == tenant_id)
+    return await paginate(
+        session,
+        stmt,
+        order_by=[OrderKey(ApiKey.created_at, SortDirection.DESC)],
+        pk=ApiKey.id,
+        cursor=cursor,
+        limit=limit,
+    )
+
+
+async def get_api_key(
+    session: AsyncSession, tenant_id: uuid.UUID, key_id: uuid.UUID
+) -> ApiKey | None:
+    stmt = select(ApiKey).where(ApiKey.tenant_id == tenant_id, ApiKey.id == key_id)
+    return (await session.execute(stmt)).scalar_one_or_none()
 
 
 async def list_number_sequences(

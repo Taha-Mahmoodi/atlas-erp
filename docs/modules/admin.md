@@ -53,6 +53,18 @@ transaction. The role→permission and user→role attaches are answered with a 
 grouping keyed on the parent id, so a page of roles (or one user's roles) costs **one** extra query,
 not N.
 
+### Machine credentials (D-069)
+
+| Method + path | Guard | Purpose |
+|---|---|---|
+| `POST /api-keys` | `admin.apikey.manage` | mint a key bound to one of the tenant's users; the 201 body carries the full key **once** (unknown scope → 422 `rbac.unknown_permission`, foreign user → 404 `admin.user_not_found`) |
+| `GET /api-keys` | `admin.apikey.manage` | list the tenant's keys, newest first — never the secret or its digest |
+| `POST /api-keys/{id}/revoke` | `admin.apikey.manage` | revoke; idempotent, effective on the key's next request (404 `admin.api_key_not_found`) |
+
+Only the key's SHA-256 is stored, so a lost key is re-issued, never recovered. Scopes *intersect* the
+bound user's resolved permissions (D-009) — a key can only narrow, never widen. The operator flow,
+rotation procedure and rate limit are in [docs/api.md](../api.md).
+
 ### Audit viewer (read-only)
 
 `GET /audit-logs` — guarded by `admin.audit.read`. Newest-first, keyset-paginated, filterable by
