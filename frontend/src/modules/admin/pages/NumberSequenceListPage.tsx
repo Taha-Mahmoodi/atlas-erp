@@ -28,7 +28,7 @@ export function NumberSequenceListPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-ink">Number Sequences</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Number Sequences</h1>
       <p className="mt-1 text-sm text-ink-muted">
         Read-only: sequences are created by document posting and the industry template; counters are never
         edited so document numbering stays gapless.

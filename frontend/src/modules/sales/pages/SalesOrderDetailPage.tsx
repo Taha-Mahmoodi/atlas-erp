@@ -23,6 +23,7 @@ import {
   useSalesOrder,
 } from "@/modules/sales/hooks";
 import type { AtpLineResult } from "@/modules/sales/types";
+import { StatusPill } from "@/components/StatusPill";
 
 export function SalesOrderDetailPage() {
   const { orderId } = useParams({ strict: false });
@@ -111,13 +112,13 @@ export function SalesOrderDetailPage() {
   return (
     <div className="mx-auto max-w-4xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{data.order_number}</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.order_number}</h1>
         <div className="flex gap-2">
           {canEdit && canManage && (
             <Link
               to="/sales/orders/$orderId/edit"
               params={{ orderId: data.id }}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-primary"
+              className="btn-chip"
             >
               Edit
             </Link>
@@ -127,7 +128,7 @@ export function SalesOrderDetailPage() {
               type="button"
               onClick={() => void cancel()}
               disabled={cancelOrder.isPending}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-chip hover:border-danger hover:text-danger"
             >
               Cancel
             </button>
@@ -136,7 +137,7 @@ export function SalesOrderDetailPage() {
             type="button"
             onClick={() => void checkAvailability()}
             disabled={checkAtp.isPending}
-            className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-primary disabled:cursor-not-allowed disabled:opacity-45"
+            className="btn-chip"
           >
             {checkAtp.isPending ? "Checking…" : "Check availability"}
           </button>
@@ -145,7 +146,7 @@ export function SalesOrderDetailPage() {
               type="button"
               onClick={() => void release()}
               disabled={releaseCredit.isPending}
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-ink"
             >
               {releaseCredit.isPending ? "Releasing…" : "Release credit hold"}
             </button>
@@ -155,7 +156,7 @@ export function SalesOrderDetailPage() {
               type="button"
               onClick={() => void confirm()}
               disabled={confirmOrder.isPending}
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-ink"
             >
               {confirmOrder.isPending ? "Confirming…" : "Confirm"}
             </button>
@@ -217,13 +218,14 @@ export function SalesOrderDetailPage() {
                 {atpResults && (
                   <td className="py-1.5 pr-2">
                     {atp ? (
-                      <span
-                        className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${
-                          atp.backordered ? "bg-warn-tint text-warn" : "bg-success-tint text-success"
-                        }`}
-                      >
-                        {atp.backordered ? `Backordered (${formatQuantity(atp.shortfall)} short)` : "Available"}
-                      </span>
+                      <StatusPill
+                        status={atp.backordered ? "PARTIALLY_DELIVERED" : "ACTIVE"}
+                        label={
+                          atp.backordered
+                            ? `Backordered (${formatQuantity(atp.shortfall)} short)`
+                            : "Available"
+                        }
+                      />
                     ) : (
                       "—"
                     )}

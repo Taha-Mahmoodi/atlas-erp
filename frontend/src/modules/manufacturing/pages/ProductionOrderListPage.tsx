@@ -11,24 +11,9 @@ import { formatQuantity } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { useItemLookup } from "@/modules/inventory/hooks";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { useProductionOrders } from "@/modules/manufacturing/hooks";
 import type { ProductionOrder, ProductionOrderStatus } from "@/modules/manufacturing/types";
-
-const STATUS_TONE: Record<ProductionOrderStatus, string> = {
-  DRAFT: "bg-panel text-ink-muted",
-  RELEASED: "bg-primary-tint text-primary",
-  IN_PROGRESS: "bg-warn-tint text-warn",
-  FINISHED: "bg-success-tint text-success",
-  CANCELLED: "bg-panel text-ink-muted",
-};
-
-export function OrderStatusChip({ status }: { status: ProductionOrderStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status.replace("_", " ")}
-    </span>
-  );
-}
 
 export function ProductionOrderListPage() {
   const navigate = useNavigate();
@@ -68,17 +53,17 @@ export function ProductionOrderListPage() {
       render: (row) => row.planned_start_date ?? "—",
       width: "120px",
     },
-    { key: "status", header: "Status", render: (row) => <OrderStatusChip status={row.status} />, width: "120px" },
+    { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "120px" },
   ];
 
   return (
     <div>
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Production Orders</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Production Orders</h1>
         {canManage && (
           <Link
             to="/manufacturing/production-orders/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
+            className="btn-ink"
           >
             New production order
           </Link>

@@ -41,7 +41,7 @@ export function DunningRunPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-ink">Dunning Run</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Dunning Run</h1>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
@@ -71,7 +71,7 @@ export function DunningRunPage() {
           type="button"
           onClick={() => void run()}
           disabled={runDunning.isPending}
-          className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+          className="btn-ink"
         >
           {runDunning.isPending ? "Running…" : "Run dunning"}
         </button>

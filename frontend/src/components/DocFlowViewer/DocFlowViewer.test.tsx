@@ -48,7 +48,9 @@ describe("DocFlowViewer", () => {
   it("renders nodes with statuses and inbound edge labels", () => {
     render(<DocFlowViewer nodes={nodes} edges={edges} />);
     expect(screen.getByText("PO-001")).toBeInTheDocument();
-    expect(screen.getByText("EXCEPTION")).toBeInTheDocument();
+    // Statuses render through the shared StatusPill now (issue #182), which humanizes the
+    // backend literal rather than shouting it: EXCEPTION → "Exception".
+    expect(screen.getByText("Exception")).toBeInTheDocument();
     expect(screen.getByText(/received_by · from PO-001/)).toBeInTheDocument();
   });
 

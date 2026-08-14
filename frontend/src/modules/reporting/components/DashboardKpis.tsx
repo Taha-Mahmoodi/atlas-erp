@@ -100,8 +100,11 @@ export function DashboardKpis({
 
   if (!loading && tiles.length === 0) return null;
 
+  // 240px minimum, not 200: the register's stat value is 26px, and a full money string
+  // ("USD 237,400.00") overflows a 200px card at that size. Four across on a 1120px content
+  // column, which is the register's own stat row.
   return (
-    <section className="mt-6 grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
+    <section className="mt-6 grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-4">
       {loading
         ? Array.from({ length: 3 }, (_, index) => (
             <KpiCard key={index} label="Loading" value="" loading />

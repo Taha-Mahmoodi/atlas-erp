@@ -45,9 +45,9 @@ export interface FormBuilderProps {
 }
 
 const CONTROL =
-  "w-full rounded-control border border-line bg-surface px-3 py-1.5 text-sm text-ink " +
+  "w-full min-h-[38px] rounded-control border border-line bg-surface px-3 py-2 text-[13px] text-ink " +
   "placeholder:text-ink-muted transition-colors duration-150 " +
-  "hover:border-ink-faint disabled:cursor-not-allowed disabled:opacity-45";
+  "hover:border-ink-muted disabled:cursor-not-allowed disabled:opacity-45";
 const CONTROL_ERROR = "border-danger";
 
 function Control({
@@ -202,11 +202,10 @@ export function FormBuilder({
         })}
       </div>
       <div className="mt-6 flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded-control bg-primary px-4 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
-        >
+        {/* The porcelain primary: ink fill, not the accent. The accent stays reserved for
+            links, active nav, focus and chips, so a screen has exactly one loud object.
+            Standalone primaries render at the full 44px target (register §3). */}
+        <button type="submit" disabled={busy} className="btn-ink btn-tall">
           {busy ? "Saving…" : submitLabel}
         </button>
         {footer}

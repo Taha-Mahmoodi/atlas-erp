@@ -25,7 +25,7 @@ export function BalanceSheetPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-xl font-semibold text-ink">Balance Sheet</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Balance Sheet</h1>
 
       <div className="mt-4 flex items-center gap-4">
         <input

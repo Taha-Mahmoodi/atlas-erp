@@ -9,24 +9,9 @@ import { useState } from "react";
 import { formatQuantity } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { useEmployeeOptions, useLeaveRequests, useLeaveTypeOptions } from "@/modules/hr/hooks";
 import type { LeaveRequest, LeaveRequestStatus } from "@/modules/hr/types";
-
-const STATUS_TONE: Record<LeaveRequestStatus, string> = {
-  DRAFT: "bg-panel text-ink-muted",
-  SUBMITTED: "bg-primary-tint text-primary",
-  APPROVED: "bg-success-tint text-success",
-  REJECTED: "bg-danger-tint text-danger",
-  CANCELLED: "bg-panel text-ink-muted",
-};
-
-export function LeaveRequestStatusChip({ status }: { status: LeaveRequestStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status}
-    </span>
-  );
-}
 
 export function LeaveRequestListPage() {
   const navigate = useNavigate();
@@ -55,17 +40,17 @@ export function LeaveRequestListPage() {
     { key: "start_date", header: "From", render: (row) => row.start_date, width: "110px" },
     { key: "end_date", header: "To", render: (row) => row.end_date, width: "110px" },
     { key: "days", header: "Days", align: "right", render: (row) => formatQuantity(row.days), width: "70px" },
-    { key: "status", header: "Status", render: (row) => <LeaveRequestStatusChip status={row.status} />, width: "110px" },
+    { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "110px" },
   ];
 
   return (
     <div>
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Leave Requests</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Leave Requests</h1>
         {canRequest && (
           <Link
             to="/hr/leave-requests/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
+            className="btn-ink"
           >
             New request
           </Link>

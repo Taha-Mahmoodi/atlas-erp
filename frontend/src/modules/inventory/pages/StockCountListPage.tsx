@@ -9,23 +9,9 @@ import { useState } from "react";
 import { formatDate } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { useStockCounts, useWarehouseLookup } from "@/modules/inventory/hooks";
 import type { CountStatus, StockCount } from "@/modules/inventory/types";
-
-const STATUS_TONE: Record<CountStatus, string> = {
-  DRAFT: "bg-warn-tint text-warn",
-  COUNTING: "bg-warn-tint text-warn",
-  POSTED: "bg-success-tint text-success",
-  CANCELLED: "bg-panel text-ink-muted",
-};
-
-function StatusChip({ status }: { status: CountStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status}
-    </span>
-  );
-}
 
 export function StockCountListPage() {
   const navigate = useNavigate();
@@ -47,17 +33,17 @@ export function StockCountListPage() {
     { key: "count_type", header: "Type", render: (row) => row.count_type, width: "100px" },
     { key: "warehouse_id", header: "Warehouse", render: (row) => warehouseLabel(row.warehouse_id) },
     { key: "count_date", header: "Date", render: (row) => formatDate(row.count_date), width: "120px" },
-    { key: "status", header: "Status", render: (row) => <StatusChip status={row.status} />, width: "110px" },
+    { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "110px" },
   ];
 
   return (
     <div>
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Stock Counts</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Stock Counts</h1>
         {canManage && (
           <Link
             to="/inventory/stock-counts/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
+            className="btn-ink"
           >
             New count
           </Link>

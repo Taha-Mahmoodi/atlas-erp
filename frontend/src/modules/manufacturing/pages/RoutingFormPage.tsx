@@ -192,7 +192,7 @@ function RoutingOperationsSection({ routingId, isDraft }: { routingId: string; i
             type="button"
             onClick={() => void add()}
             disabled={!workCenterId || !runMinutes || createOperation.isPending}
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+            className="btn-ink"
           >
             Add
           </button>
@@ -283,7 +283,7 @@ export function RoutingFormPage() {
   return (
     <div className="mx-auto max-w-2xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{isEdit ? "Edit routing" : "New routing"}</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{isEdit ? "Edit routing" : "New routing"}</h1>
         {isEdit && routing.data && (
           <div className="flex gap-2">
             {isDraft && (
@@ -291,7 +291,7 @@ export function RoutingFormPage() {
                 type="button"
                 onClick={() => void activate()}
                 disabled={activateRouting.isPending}
-                className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+                className="btn-ink"
               >
                 {activateRouting.isPending ? "Activating…" : "Activate"}
               </button>
@@ -301,7 +301,7 @@ export function RoutingFormPage() {
                 type="button"
                 onClick={() => void deactivate()}
                 disabled={deactivateRouting.isPending}
-                className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-45"
+                className="btn-chip hover:border-danger hover:text-danger"
               >
                 Deactivate
               </button>

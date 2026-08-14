@@ -23,8 +23,8 @@ import {
   useScheduleMaintenanceOrder,
   useStartMaintenanceOrder,
 } from "@/modules/maintenance/hooks";
-import { OrderStatusChip } from "@/modules/maintenance/pages/MaintenanceOrderListPage";
 import type { MaintenanceOrder } from "@/modules/maintenance/types";
+import { StatusPill } from "@/components/StatusPill";
 
 function SchedulePanel({ order }: { order: MaintenanceOrder }) {
   const scheduleOrder = useScheduleMaintenanceOrder(order.id);
@@ -66,7 +66,7 @@ function SchedulePanel({ order }: { order: MaintenanceOrder }) {
           type="button"
           onClick={() => void schedule()}
           disabled={!scheduledDate || scheduleOrder.isPending}
-          className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+          className="btn-ink"
         >
           {scheduleOrder.isPending ? "Scheduling…" : isDraft ? "Schedule" : "Update date"}
         </button>
@@ -202,8 +202,8 @@ export function MaintenanceOrderDetailPage() {
     <div className="mx-auto max-w-4xl">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold text-ink">{data.order_number}</h1>
-          <OrderStatusChip status={data.status} />
+          <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.order_number}</h1>
+          <StatusPill status={data.status} />
         </div>
         <div className="flex gap-2">
           {!isTerminal && canManage && (
@@ -211,7 +211,7 @@ export function MaintenanceOrderDetailPage() {
               type="button"
               onClick={() => void cancel()}
               disabled={cancelOrder.isPending}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-chip hover:border-danger hover:text-danger"
             >
               Cancel
             </button>
@@ -221,7 +221,7 @@ export function MaintenanceOrderDetailPage() {
               type="button"
               onClick={() => void start()}
               disabled={startOrder.isPending}
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-ink"
             >
               {startOrder.isPending ? "Starting…" : "Start work"}
             </button>

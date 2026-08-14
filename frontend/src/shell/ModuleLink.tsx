@@ -4,12 +4,46 @@
  * (a dynamic template's generated "/finance" vs the static "/finance" route) is what TanStack
  * Router warns about — this is the one place that ambiguity gets resolved, via a switch over
  * the small `StaticModuleRoute` union rather than a cast, so it stays type-checked.
+ *
+ * `moduleLinkProps` exposes the same switch to callers that navigate imperatively (the ⌘K
+ * palette), so there is still exactly one mapping from module → route in the codebase.
  */
 
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { ModuleEntry } from "@/shell/moduleRegistry";
+
+export function moduleLinkProps(entry: ModuleEntry) {
+  switch (entry.route) {
+    case "finance":
+      return { to: "/finance" } as const;
+    case "inventory":
+      return { to: "/inventory" } as const;
+    case "procurement":
+      return { to: "/procurement" } as const;
+    case "sales":
+      return { to: "/sales" } as const;
+    case "reporting":
+      return { to: "/reporting" } as const;
+    case "admin":
+      return { to: "/admin" } as const;
+    case "manufacturing":
+      return { to: "/manufacturing" } as const;
+    case "quality":
+      return { to: "/quality" } as const;
+    case "maintenance":
+      return { to: "/maintenance" } as const;
+    case "projects":
+      return { to: "/projects" } as const;
+    case "crm":
+      return { to: "/crm" } as const;
+    case "hr":
+      return { to: "/hr" } as const;
+    default:
+      return { to: "/$moduleKey", params: { moduleKey: entry.key } } as const;
+  }
+}
 
 export function ModuleLink({
   entry,
@@ -20,88 +54,9 @@ export function ModuleLink({
   className?: string;
   children: ReactNode;
 }) {
-  switch (entry.route) {
-    case "finance":
-      return (
-        <Link to="/finance" {...(className ? { className } : {})}>
-          {children}
-        </Link>
-      );
-    case "inventory":
-      return (
-        <Link to="/inventory" {...(className ? { className } : {})}>
-          {children}
-        </Link>
-      );
-    case "procurement":
-      return (
-        <Link to="/procurement" {...(className ? { className } : {})}>
-          {children}
-        </Link>
-      );
-    case "sales":
-      return (
-        <Link to="/sales" {...(className ? { className } : {})}>
-          {children}
-        </Link>
-      );
-    case "reporting":
-      return (
-        <Link to="/reporting" {...(className ? { className } : {})}>
-          {children}
-        </Link>
-      );
-    case "admin":
-      return (
-        <Link to="/admin" {...(className ? { className } : {})}>
-          {children}
-        </Link>
-      );
-    case "manufacturing":
-      return (
-        <Link to="/manufacturing" {...(className ? { className } : {})}>
-          {children}
-        </Link>
-      );
-    case "quality":
-      return (
-        <Link to="/quality" {...(className ? { className } : {})}>
-          {children}
-        </Link>
-      );
-    case "maintenance":
-      return (
-        <Link to="/maintenance" {...(className ? { className } : {})}>
-          {children}
-        </Link>
-      );
-    case "projects":
-      return (
-        <Link to="/projects" {...(className ? { className } : {})}>
-          {children}
-        </Link>
-      );
-    case "crm":
-      return (
-        <Link to="/crm" {...(className ? { className } : {})}>
-          {children}
-        </Link>
-      );
-    case "hr":
-      return (
-        <Link to="/hr" {...(className ? { className } : {})}>
-          {children}
-        </Link>
-      );
-    default:
-      return (
-        <Link
-          to="/$moduleKey"
-          params={{ moduleKey: entry.key }}
-          {...(className ? { className } : {})}
-        >
-          {children}
-        </Link>
-      );
-  }
+  return (
+    <Link {...moduleLinkProps(entry)} {...(className ? { className } : {})}>
+      {children}
+    </Link>
+  );
 }

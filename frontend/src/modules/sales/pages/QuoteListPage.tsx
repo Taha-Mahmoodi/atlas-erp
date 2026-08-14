@@ -8,26 +8,9 @@ import { useState } from "react";
 import { formatMoney } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { useCustomerOptions, useQuotes } from "@/modules/sales/hooks";
 import type { Quote, QuoteStatus } from "@/modules/sales/types";
-
-const STATUS_TONE: Record<QuoteStatus, string> = {
-  DRAFT: "bg-panel text-ink-muted",
-  SENT: "bg-primary-tint text-primary",
-  ACCEPTED: "bg-success-tint text-success",
-  REJECTED: "bg-danger-tint text-danger",
-  CONVERTED: "bg-success-tint text-success",
-  CANCELLED: "bg-panel text-ink-muted",
-  EXPIRED: "bg-panel text-ink-muted",
-};
-
-function StatusChip({ status }: { status: QuoteStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status}
-    </span>
-  );
-}
 
 export function QuoteListPage() {
   const navigate = useNavigate();
@@ -55,17 +38,17 @@ export function QuoteListPage() {
       width: "140px",
     },
     { key: "valid_until", header: "Valid until", render: (row) => row.valid_until ?? "—", width: "120px" },
-    { key: "status", header: "Status", render: (row) => <StatusChip status={row.status} />, width: "110px" },
+    { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "110px" },
   ];
 
   return (
     <div>
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Quotes</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Quotes</h1>
         {canManage && (
           <Link
             to="/sales/quotes/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
+            className="btn-ink"
           >
             New quote
           </Link>

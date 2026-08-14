@@ -62,7 +62,7 @@ export function filterValue(draft: FilterDraft): unknown {
 
 const controlClass = "rounded-control border border-line bg-surface px-2 py-1.5 text-sm text-ink";
 const primaryButtonClass =
-  "rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:opacity-50";
+  "btn-ink";
 const secondaryButtonClass =
   "rounded-control border border-line bg-surface px-3 py-1.5 text-sm text-ink transition-colors duration-150 hover:border-primary disabled:opacity-50";
 
@@ -169,7 +169,7 @@ export function ReportBuilderPage() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <h1 className="text-xl font-semibold text-ink">Report Builder</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Report Builder</h1>
       <p className="mt-1 text-sm text-ink-muted">
         Ad-hoc reports over the entities your role can see. Define, run, export — nothing is
         saved.

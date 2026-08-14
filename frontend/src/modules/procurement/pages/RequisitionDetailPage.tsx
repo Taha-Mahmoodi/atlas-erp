@@ -115,13 +115,13 @@ export function RequisitionDetailPage() {
   return (
     <div className="mx-auto max-w-4xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{data.requisition_number}</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.requisition_number}</h1>
         <div className="flex gap-2">
           {isDraft && canManage && (
             <Link
               to="/procurement/requisitions/$requisitionId/edit"
               params={{ requisitionId: data.id }}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-primary"
+              className="btn-chip"
             >
               Edit
             </Link>
@@ -131,7 +131,7 @@ export function RequisitionDetailPage() {
               type="button"
               onClick={() => void cancel()}
               disabled={cancelRequisition.isPending}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-chip hover:border-danger hover:text-danger"
             >
               Cancel
             </button>
@@ -141,7 +141,7 @@ export function RequisitionDetailPage() {
               type="button"
               onClick={() => void submit()}
               disabled={submitRequisition.isPending}
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-ink"
             >
               {submitRequisition.isPending ? "Submitting…" : "Submit"}
             </button>
@@ -193,7 +193,7 @@ export function RequisitionDetailPage() {
                 type="button"
                 onClick={() => void convertRfq()}
                 disabled={!convertVendorId || convertToRfq.isPending}
-                className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-primary disabled:cursor-not-allowed disabled:opacity-45"
+                className="btn-chip"
               >
                 {convertToRfq.isPending ? "Converting…" : "Convert to RFQ"}
               </button>
@@ -203,7 +203,7 @@ export function RequisitionDetailPage() {
                 type="button"
                 onClick={() => void convertPo()}
                 disabled={!convertVendorId || convertToPo.isPending}
-                className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+                className="btn-ink"
               >
                 {convertToPo.isPending ? "Converting…" : "Convert to PO"}
               </button>

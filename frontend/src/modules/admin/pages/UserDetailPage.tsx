@@ -46,7 +46,7 @@ export function UserDetailPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-xl font-semibold text-ink">{user.data.email}</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{user.data.email}</h1>
       <div className="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
         <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
           <dt className="text-ink-muted">Full name</dt>
@@ -104,7 +104,7 @@ export function UserDetailPage() {
           type="button"
           disabled={!roleId || assignRole.isPending}
           onClick={() => void assign()}
-          className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+          className="btn-ink"
         >
           {assignRole.isPending ? "Assigning…" : "Assign"}
         </button>

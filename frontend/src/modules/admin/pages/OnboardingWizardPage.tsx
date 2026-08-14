@@ -87,7 +87,7 @@ export function OnboardingWizardPage() {
   if (me.data && !canOnboard) {
     return (
       <div className="mx-auto max-w-2xl">
-        <h1 className="text-xl font-semibold text-ink">Tenant Onboarding</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Tenant Onboarding</h1>
         <p className="mt-4 text-sm text-ink-muted">
           Provisioning tenants requires the <code>onboarding.tenant.create</code> permission.
         </p>
@@ -98,7 +98,7 @@ export function OnboardingWizardPage() {
   if (result) {
     return (
       <div className="mx-auto max-w-2xl">
-        <h1 className="text-xl font-semibold text-ink">Tenant provisioned</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Tenant provisioned</h1>
         <div className="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
           <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
             <dt className="text-ink-muted">Slug</dt>
@@ -131,7 +131,7 @@ export function OnboardingWizardPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-xl font-semibold text-ink">Tenant Onboarding</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Tenant Onboarding</h1>
       <p className="mt-1 text-sm text-ink-muted">Step {step} of 3 — {step === 1 ? "Company info" : step === 2 ? "Industry template" : "Review & create"}</p>
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
@@ -177,7 +177,7 @@ export function OnboardingWizardPage() {
               type="button"
               disabled={templateName === null}
               onClick={() => setStep(3)}
-              className="rounded-control bg-primary px-4 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-ink"
             >
               Next: review
             </button>
@@ -211,7 +211,7 @@ export function OnboardingWizardPage() {
               type="button"
               disabled={onboard.isPending}
               onClick={() => void submit()}
-              className="rounded-control bg-primary px-4 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-ink"
             >
               {onboard.isPending ? "Provisioning…" : "Create tenant"}
             </button>

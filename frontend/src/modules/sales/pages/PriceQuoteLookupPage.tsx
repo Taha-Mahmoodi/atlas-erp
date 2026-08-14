@@ -34,7 +34,7 @@ export function PriceQuoteLookupPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-xl font-semibold text-ink">Price Quote</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Price Quote</h1>
       <p className="mt-1 text-sm text-ink-muted">
         Look up what a customer would actually pay for an item — resolves against price lists
         without creating any document.

@@ -13,6 +13,7 @@ import { getErrorMessage } from "@/lib/apiClient";
 import { formatMoney, formatQuantity } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { useItemLookup } from "@/modules/inventory/hooks";
+import { StatusPill } from "@/components/StatusPill";
 import {
   useCancelInvoiceMatch,
   useInvoiceMatch,
@@ -83,14 +84,14 @@ export function InvoiceMatchDetailPage() {
   return (
     <div className="mx-auto max-w-4xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{data.match_number}</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.match_number}</h1>
         <div className="flex gap-2">
           {canCancel && canManage && (
             <button
               type="button"
               onClick={() => void cancel()}
               disabled={cancelMatch.isPending}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-chip hover:border-danger hover:text-danger"
             >
               Cancel
             </button>
@@ -100,7 +101,7 @@ export function InvoiceMatchDetailPage() {
               type="button"
               onClick={() => void override()}
               disabled={overrideMatch.isPending}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-primary disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-chip"
             >
               {overrideMatch.isPending ? "Overriding…" : "Override exception"}
             </button>
@@ -110,7 +111,7 @@ export function InvoiceMatchDetailPage() {
               type="button"
               onClick={() => void post()}
               disabled={postMatch.isPending}
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-ink"
             >
               {postMatch.isPending ? "Posting…" : "Post"}
             </button>
@@ -171,13 +172,10 @@ export function InvoiceMatchDetailPage() {
               <td className="py-1.5 pr-2 text-right tabular-nums">{formatMoney(line.price_variance, data.currency_code)}</td>
               <td className="py-1.5 pr-2 text-right tabular-nums">{formatQuantity(line.quantity_variance)}</td>
               <td className="py-1.5 pr-2">
-                <span
-                  className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${
-                    line.within_tolerance ? "bg-success-tint text-success" : "bg-danger-tint text-danger"
-                  }`}
-                >
-                  {line.within_tolerance ? "OK" : "Exception"}
-                </span>
+                <StatusPill
+                  status={line.within_tolerance ? "MATCHED" : "EXCEPTION"}
+                  label={line.within_tolerance ? "Within tolerance" : "Exception"}
+                />
               </td>
             </tr>
           ))}

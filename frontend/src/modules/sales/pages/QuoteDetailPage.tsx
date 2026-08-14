@@ -114,13 +114,13 @@ export function QuoteDetailPage() {
   return (
     <div className="mx-auto max-w-4xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{data.quote_number}</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.quote_number}</h1>
         <div className="flex gap-2">
           {canEdit && canManage && (
             <Link
               to="/sales/quotes/$quoteId/edit"
               params={{ quoteId: data.id }}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-primary"
+              className="btn-chip"
             >
               Edit
             </Link>
@@ -130,7 +130,7 @@ export function QuoteDetailPage() {
               type="button"
               onClick={() => void cancel()}
               disabled={cancelQuote.isPending}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-chip hover:border-danger hover:text-danger"
             >
               Cancel
             </button>
@@ -140,7 +140,7 @@ export function QuoteDetailPage() {
               type="button"
               onClick={() => void reject()}
               disabled={rejectQuote.isPending}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-chip hover:border-danger hover:text-danger"
             >
               Reject
             </button>
@@ -150,7 +150,7 @@ export function QuoteDetailPage() {
               type="button"
               onClick={() => void accept()}
               disabled={acceptQuote.isPending}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-primary disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-chip"
             >
               {acceptQuote.isPending ? "Accepting…" : "Accept"}
             </button>
@@ -160,7 +160,7 @@ export function QuoteDetailPage() {
               type="button"
               onClick={() => void send()}
               disabled={sendQuote.isPending}
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-ink"
             >
               {sendQuote.isPending ? "Sending…" : "Send"}
             </button>
@@ -170,7 +170,7 @@ export function QuoteDetailPage() {
               type="button"
               onClick={() => void convert()}
               disabled={convertToOrder.isPending}
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-ink"
             >
               {convertToOrder.isPending ? "Converting…" : "Convert to order"}
             </button>

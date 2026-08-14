@@ -9,24 +9,10 @@ import { useState } from "react";
 
 import { formatDate, formatQuantity } from "@/lib/format";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { useItemLookup } from "@/modules/inventory/hooks";
 import { useInspectionLots } from "@/modules/quality/hooks";
 import type { InspectionLot, InspectionLotStatus } from "@/modules/quality/types";
-
-const STATUS_TONE: Record<InspectionLotStatus, string> = {
-  OPEN: "bg-primary-tint text-primary",
-  ACCEPTED: "bg-success-tint text-success",
-  REJECTED: "bg-danger-tint text-danger",
-  CANCELLED: "bg-panel text-ink-muted",
-};
-
-function StatusChip({ status }: { status: InspectionLotStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status}
-    </span>
-  );
-}
 
 export function InspectionLotListPage() {
   const navigate = useNavigate();
@@ -69,12 +55,12 @@ export function InspectionLotListPage() {
       render: (row) => row.disposition ?? "—",
       width: "110px",
     },
-    { key: "status", header: "Status", render: (row) => <StatusChip status={row.status} />, width: "110px" },
+    { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "110px" },
   ];
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-ink">Inspection lots</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Inspection lots</h1>
 
       <div className="mt-4">
         <select

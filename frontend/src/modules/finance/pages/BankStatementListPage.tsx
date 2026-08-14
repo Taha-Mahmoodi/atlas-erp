@@ -8,22 +8,9 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { formatDate, formatMoney } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { useAccountLookup, useBankStatements } from "@/modules/finance/hooks";
-import type { BankStatement, StatementStatus } from "@/modules/finance/types";
-
-const STATUS_TONE: Record<StatementStatus, string> = {
-  IMPORTED: "bg-warn-tint text-warn",
-  PARTIALLY_RECONCILED: "bg-warn-tint text-warn",
-  RECONCILED: "bg-success-tint text-success",
-};
-
-function StatusChip({ status }: { status: StatementStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status.replace("_", " ")}
-    </span>
-  );
-}
+import type { BankStatement } from "@/modules/finance/types";
 
 export function BankStatementListPage() {
   const navigate = useNavigate();
@@ -49,17 +36,17 @@ export function BankStatementListPage() {
       width: "150px",
     },
     { key: "line_count", header: "Lines", align: "right", render: (row) => String(row.line_count), width: "80px" },
-    { key: "status", header: "Status", render: (row) => <StatusChip status={row.status} />, width: "160px" },
+    { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "160px" },
   ];
 
   return (
     <div>
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Bank Statements</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Bank Statements</h1>
         {canImport && (
           <Link
             to="/finance/bank-statements/import"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
+            className="btn-ink"
           >
             Import statement
           </Link>

@@ -11,7 +11,7 @@ import { getErrorMessage } from "@/lib/apiClient";
 import { formatDate } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
-import { ActivityStatusChip } from "@/modules/crm/components/ActivityTimeline";
+import { StatusPill } from "@/components/StatusPill";
 import { useActivities, useCancelActivity, useCompleteActivity } from "@/modules/crm/hooks";
 import type { Activity, ActivityStatus } from "@/modules/crm/types";
 
@@ -78,7 +78,7 @@ export function ActivityListPage() {
       key: "status",
       header: "Status",
       width: "120px",
-      render: (row) => <ActivityStatusChip status={row.status} />,
+      render: (row) => <StatusPill status={row.status} />,
     },
     ...(canManage
       ? [
@@ -115,7 +115,7 @@ export function ActivityListPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-ink">Activities</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Activities</h1>
 
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">

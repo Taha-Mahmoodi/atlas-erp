@@ -9,24 +9,9 @@ import { useState } from "react";
 import { formatMoney } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { useLeads } from "@/modules/crm/hooks";
 import type { Lead, LeadStatus } from "@/modules/crm/types";
-
-const STATUS_TONE: Record<LeadStatus, string> = {
-  NEW: "bg-primary-tint text-primary",
-  CONTACTED: "bg-primary-tint text-primary",
-  QUALIFIED: "bg-success-tint text-success",
-  DISQUALIFIED: "bg-panel text-ink-muted",
-  CONVERTED: "bg-success-tint text-success",
-};
-
-export function LeadStatusChip({ status }: { status: LeadStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status}
-    </span>
-  );
-}
 
 const COLUMNS: DataGridColumn<Lead>[] = [
   { key: "lead_number", header: "Lead", render: (row) => row.lead_number, width: "140px" },
@@ -43,7 +28,7 @@ const COLUMNS: DataGridColumn<Lead>[] = [
         ? formatMoney(row.estimated_value, row.currency_code)
         : "—",
   },
-  { key: "status", header: "Status", render: (row) => <LeadStatusChip status={row.status} />, width: "130px" },
+  { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "130px" },
 ];
 
 export function LeadListPage() {
@@ -58,11 +43,11 @@ export function LeadListPage() {
   return (
     <div>
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Leads</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Leads</h1>
         {canManage && (
           <Link
             to="/crm/leads/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
+            className="btn-ink"
           >
             New lead
           </Link>

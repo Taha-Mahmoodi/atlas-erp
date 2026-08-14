@@ -49,7 +49,7 @@ export function OrgChartPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">Org Chart</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Org Chart</h1>
         <select
           value={rootEmployeeId}
           onChange={(event) => setRootEmployeeId(event.target.value)}

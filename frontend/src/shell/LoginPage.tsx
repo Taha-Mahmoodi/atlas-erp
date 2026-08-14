@@ -40,11 +40,20 @@ export function LoginPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-canvas px-4">
-      <div className="w-full max-w-sm rounded-card border border-line bg-surface p-8 shadow-card">
-        <h1 className="text-xl font-semibold text-ink">Atlas ERP</h1>
-        <p className="mt-1 text-sm text-ink-muted">Sign in to continue.</p>
+      <div className="w-full max-w-[400px] rounded-card border border-line bg-surface p-8 shadow-card">
+        <span
+          aria-hidden="true"
+          className="mb-5 flex size-[34px] items-center justify-center rounded-[9px] bg-ink text-sm font-bold text-surface"
+        >
+          A
+        </span>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Atlas</h1>
+        <p className="mt-1 text-[13px] text-ink-muted">Sign in to your workspace.</p>
         {error && (
-          <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
+          <p
+            role="alert"
+            className="mt-5 rounded-control bg-danger-tint px-3 py-2.5 text-[12.5px] text-danger"
+          >
             {error}
           </p>
         )}

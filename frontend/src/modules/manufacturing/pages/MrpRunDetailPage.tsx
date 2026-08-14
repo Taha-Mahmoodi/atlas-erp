@@ -13,6 +13,7 @@ import { formatPercent, formatQuantity } from "@/lib/format";
 import { useMe } from "@/lib/session";
 import { useItemLookup, useWarehouseOptions } from "@/modules/inventory/hooks";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import {
   useCancelPlannedOrder,
   useConvertPlannedOrder,
@@ -21,19 +22,11 @@ import {
   usePlannedOrders,
   useWorkCenterOptions,
 } from "@/modules/manufacturing/hooks";
-import { RunStatusChip } from "@/modules/manufacturing/pages/MrpRunListPage";
 import type {
   PlannedOrder,
   PlannedOrderStatus,
   PlannedOrderType,
 } from "@/modules/manufacturing/types";
-
-const PLANNED_TONE: Record<PlannedOrderStatus, string> = {
-  PLANNED: "bg-panel text-ink-muted",
-  FIRMED: "bg-primary-tint text-primary",
-  CONVERTED: "bg-success-tint text-success",
-  CANCELLED: "bg-panel text-ink-muted",
-};
 
 export function MrpRunDetailPage() {
   const { runId } = useParams({ strict: false });
@@ -101,9 +94,7 @@ export function MrpRunDetailPage() {
       key: "status",
       header: "Status",
       render: (row) => (
-        <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${PLANNED_TONE[row.status]}`}>
-          {row.status}
-        </span>
+        <StatusPill status={row.status} />
       ),
       width: "110px",
     },
@@ -163,8 +154,8 @@ export function MrpRunDetailPage() {
   return (
     <div className="mx-auto max-w-4xl">
       <div className="flex items-center gap-3">
-        <h1 className="text-xl font-semibold text-ink">{data.run_number}</h1>
-        <RunStatusChip status={data.status} />
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.run_number}</h1>
+        <StatusPill status={data.status} />
       </div>
 
       {error && (

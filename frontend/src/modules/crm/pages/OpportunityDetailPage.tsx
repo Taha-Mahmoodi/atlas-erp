@@ -12,17 +12,8 @@ import { formatDate, formatMoney, formatPercent, formatQuantity } from "@/lib/fo
 import { useMe } from "@/lib/session";
 import { ActivityTimeline } from "@/modules/crm/components/ActivityTimeline";
 import { useConvertOpportunity, useOpportunity } from "@/modules/crm/hooks";
-import type { OpportunityStage } from "@/modules/crm/types";
 import { useItemLookup } from "@/modules/inventory/hooks";
-
-const STAGE_TONE: Record<OpportunityStage, string> = {
-  PROSPECTING: "bg-primary-tint text-primary",
-  QUALIFICATION: "bg-primary-tint text-primary",
-  PROPOSAL: "bg-primary-tint text-primary",
-  NEGOTIATION: "bg-primary-tint text-primary",
-  WON: "bg-success-tint text-success",
-  LOST: "bg-panel text-ink-muted",
-};
+import { StatusPill } from "@/components/StatusPill";
 
 export function OpportunityDetailPage() {
   const { opportunityId } = useParams({ strict: false });
@@ -64,18 +55,16 @@ export function OpportunityDetailPage() {
   return (
     <div className="mx-auto max-w-4xl">
       <div className="flex items-center justify-between">
-        <h1 className="flex items-center gap-3 text-xl font-semibold text-ink">
+        <h1 className="flex items-center gap-3 text-[22px] font-[650] tracking-[-0.01em] text-ink">
           {data.opportunity_number} — {data.name}
-          <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STAGE_TONE[data.stage]}`}>
-            {data.stage}
-          </span>
+          <StatusPill status={data.stage} />
         </h1>
         <div className="flex gap-2">
           {isOpen && canManage && (
             <Link
               to="/crm/opportunities/$opportunityId/edit"
               params={{ opportunityId: data.id }}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-primary"
+              className="btn-chip"
             >
               Edit
             </Link>
@@ -85,7 +74,7 @@ export function OpportunityDetailPage() {
               type="button"
               onClick={() => void doConvert()}
               disabled={convert.isPending}
-              className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+              className="btn-ink"
             >
               {convert.isPending ? "Converting…" : "Convert to customer + quote"}
             </button>

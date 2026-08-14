@@ -13,6 +13,7 @@ import { useState } from "react";
 import { getErrorMessage } from "@/lib/apiClient";
 import { formatQuantity } from "@/lib/format";
 import { useMe } from "@/lib/session";
+import { StatusPill } from "@/components/StatusPill";
 import {
   useAddTimeEntry,
   useApproveTimesheet,
@@ -25,7 +26,6 @@ import {
   useTimeEntries,
   useTimesheet,
 } from "@/modules/hr/hooks";
-import { TimesheetStatusChip } from "@/modules/hr/pages/TimesheetListPage";
 
 const ACTION_BUTTON =
   "rounded-control px-3 py-1.5 text-sm font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45";
@@ -191,7 +191,7 @@ export function TimesheetDetailPage() {
   return (
     <div className="mx-auto max-w-5xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{data.timesheet_number}</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.timesheet_number}</h1>
         <div className="flex gap-2">
           {isDraft && canManage && (
             <button
@@ -246,7 +246,7 @@ export function TimesheetDetailPage() {
         <div>
           <dt className="text-xs text-ink-muted">Status</dt>
           <dd className="text-ink">
-            <TimesheetStatusChip status={data.status} />
+            <StatusPill status={data.status} />
           </dd>
         </div>
         <div>

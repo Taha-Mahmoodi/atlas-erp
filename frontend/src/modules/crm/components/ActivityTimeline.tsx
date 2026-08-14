@@ -14,25 +14,12 @@ import {
   useCompleteActivity,
   useCreateActivity,
 } from "@/modules/crm/hooks";
-import type { Activity, ActivityStatus, ActivityType } from "@/modules/crm/types";
+import type { Activity, ActivityType } from "@/modules/crm/types";
+import { StatusPill } from "@/components/StatusPill";
 
 const CONTROL =
   "rounded-control border border-line bg-surface px-2 py-1 text-sm text-ink transition-colors duration-150 hover:border-ink-faint";
 const TYPES: ActivityType[] = ["CALL", "EMAIL", "MEETING", "TASK", "NOTE"];
-const STATUS_TONE: Record<ActivityStatus, string> = {
-  OPEN: "bg-primary-tint text-primary",
-  COMPLETED: "bg-success-tint text-success",
-  CANCELLED: "bg-panel text-ink-muted",
-};
-
-export function ActivityStatusChip({ status }: { status: ActivityStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status}
-    </span>
-  );
-}
-
 export function ActivityTimeline({
   parent,
   canManage,
@@ -134,7 +121,7 @@ export function ActivityTimeline({
             type="button"
             onClick={() => void add()}
             disabled={!subject.trim() || createActivity.isPending}
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong disabled:cursor-not-allowed disabled:opacity-45"
+            className="btn-ink"
           >
             {createActivity.isPending ? "Adding…" : "Add"}
           </button>
@@ -158,7 +145,7 @@ export function ActivityTimeline({
                   ? `Due ${formatDate(activity.due_date)}`
                   : "—"}
             </span>
-            <ActivityStatusChip status={activity.status} />
+            <StatusPill status={activity.status} />
             {canManage && activity.status === "OPEN" && (
               <span className="flex gap-1">
                 <button

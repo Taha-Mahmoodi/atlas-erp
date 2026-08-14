@@ -30,7 +30,7 @@ export function TimeAllocationPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-xl font-semibold text-ink">Time Allocation</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Time Allocation</h1>
       <p className="mt-1 text-sm text-ink-muted">Approved hours grouped by cost center or project.</p>
 
       <div className="mt-4 flex flex-wrap items-end gap-2">

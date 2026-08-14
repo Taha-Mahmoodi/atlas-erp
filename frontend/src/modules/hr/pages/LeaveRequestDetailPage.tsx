@@ -11,6 +11,7 @@ import { useState } from "react";
 import { getErrorMessage } from "@/lib/apiClient";
 import { formatDateTime, formatQuantity } from "@/lib/format";
 import { useMe } from "@/lib/session";
+import { StatusPill } from "@/components/StatusPill";
 import {
   useApproveLeaveRequest,
   useCancelLeaveRequest,
@@ -20,7 +21,6 @@ import {
   useRejectLeaveRequest,
   useSubmitLeaveRequest,
 } from "@/modules/hr/hooks";
-import { LeaveRequestStatusChip } from "@/modules/hr/pages/LeaveRequestListPage";
 
 const ACTION_BUTTON =
   "rounded-control px-3 py-1.5 text-sm font-medium transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-45";
@@ -80,7 +80,7 @@ export function LeaveRequestDetailPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">{data.request_number}</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">{data.request_number}</h1>
         <div className="flex gap-2">
           {isDraft && canRequest && (
             <>
@@ -151,7 +151,7 @@ export function LeaveRequestDetailPage() {
         <div>
           <dt className="text-xs text-ink-muted">Status</dt>
           <dd className="text-ink">
-            <LeaveRequestStatusChip status={data.status} />
+            <StatusPill status={data.status} />
           </dd>
         </div>
         <div>

@@ -9,22 +9,9 @@ import { useState } from "react";
 
 import { useMe } from "@/lib/session";
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
+import { StatusPill } from "@/components/StatusPill";
 import { useMrpRuns } from "@/modules/manufacturing/hooks";
 import type { MrpRun, MrpRunStatus } from "@/modules/manufacturing/types";
-
-const STATUS_TONE: Record<MrpRunStatus, string> = {
-  RUNNING: "bg-warn-tint text-warn",
-  COMPLETED: "bg-success-tint text-success",
-  FAILED: "bg-danger-tint text-danger",
-};
-
-export function RunStatusChip({ status }: { status: MrpRunStatus }) {
-  return (
-    <span className={`rounded-[4px] px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.02em] ${STATUS_TONE[status]}`}>
-      {status}
-    </span>
-  );
-}
 
 const COLUMNS: DataGridColumn<MrpRun>[] = [
   { key: "run_number", header: "Run", render: (row) => row.run_number, width: "140px" },
@@ -50,7 +37,7 @@ const COLUMNS: DataGridColumn<MrpRun>[] = [
     render: (row) => String(row.planned_buy_count),
     width: "80px",
   },
-  { key: "status", header: "Status", render: (row) => <RunStatusChip status={row.status} />, width: "110px" },
+  { key: "status", header: "Status", render: (row) => <StatusPill status={row.status} />, width: "110px" },
 ];
 
 export function MrpRunListPage() {
@@ -65,11 +52,11 @@ export function MrpRunListPage() {
   return (
     <div>
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-ink">MRP Runs</h1>
+        <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">MRP Runs</h1>
         {canRun && (
           <Link
             to="/manufacturing/mrp/runs/new"
-            className="rounded-control bg-primary px-3 py-1.5 text-sm font-medium text-surface transition-colors duration-150 hover:bg-primary-strong"
+            className="btn-ink"
           >
             Run MRP
           </Link>

@@ -23,7 +23,7 @@ export function ArAgingPage() {
 
   return (
     <div>
-      <h1 className="text-xl font-semibold text-ink">AR Aging</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">AR Aging</h1>
 
       <div className="mt-4 flex items-center gap-4">
         <input

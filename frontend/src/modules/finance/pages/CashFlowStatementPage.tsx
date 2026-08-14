@@ -36,7 +36,7 @@ export function CashFlowStatementPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-xl font-semibold text-ink">Cash Flow Statement</h1>
+      <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Cash Flow Statement</h1>
 
       <div className="mt-4 flex items-center gap-4">
         <input

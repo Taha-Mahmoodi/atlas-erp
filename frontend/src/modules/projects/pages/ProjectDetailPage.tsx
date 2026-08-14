@@ -10,8 +10,8 @@ import { useMe } from "@/lib/session";
 import { useFunctionalCurrency } from "@/modules/finance/hooks";
 import { WbsPanel } from "@/modules/projects/components/WbsPanel";
 import { useProject } from "@/modules/projects/hooks";
-import { ProjectStatusChip } from "@/modules/projects/pages/ProjectListPage";
 import { useCustomerOptions } from "@/modules/sales/hooks";
+import { StatusPill } from "@/components/StatusPill";
 
 export function ProjectDetailPage() {
   const { projectId } = useParams({ strict: false });
@@ -34,16 +34,16 @@ export function ProjectDetailPage() {
   return (
     <div className="mx-auto max-w-4xl">
       <div className="flex items-center justify-between">
-        <h1 className="flex items-center gap-3 text-xl font-semibold text-ink">
+        <h1 className="flex items-center gap-3 text-[22px] font-[650] tracking-[-0.01em] text-ink">
           {data.code} — {data.name}
-          <ProjectStatusChip status={data.status} />
+          <StatusPill status={data.status} />
         </h1>
         <div className="flex gap-2">
           {canReadReport && (
             <Link
               to="/projects/$projectId/cost-report"
               params={{ projectId: data.id }}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-primary"
+              className="btn-chip"
             >
               Cost report
             </Link>
@@ -52,7 +52,7 @@ export function ProjectDetailPage() {
             <Link
               to="/projects/$projectId/edit"
               params={{ projectId: data.id }}
-              className="rounded-control border border-line px-3 py-1.5 text-sm font-medium text-ink transition-colors duration-150 hover:border-primary"
+              className="btn-chip"
             >
               Edit
             </Link>

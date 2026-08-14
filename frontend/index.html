@@ -4,6 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Atlas ERP</title>
+    <!-- Applies the stored theme before first paint so a dark-mode user never sees a white
+         flash. Kept inline and dependency-free on purpose: any module import would run after
+         the first frame. Mirrors lib/theme.ts's storage key and resolution rule. -->
+    <script>
+      try {
+        var stored = localStorage.getItem("atlas.theme");
+        var dark =
+          stored === "dark" ||
+          (stored !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.classList.toggle("dark", dark);
+      } catch (e) {
+        /* private mode / storage disabled — fall through to the light default */
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

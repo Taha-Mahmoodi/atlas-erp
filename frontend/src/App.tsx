@@ -7,8 +7,16 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
+import { IconSprite } from "@/components/Icon";
 import { queryClient } from "@/lib/queryClient";
 
 export function App({ children }: { children: ReactNode }) {
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={queryClient}>
+      {/* One <symbol> set for the whole app, mounted above the auth gate so the login screen
+          draws from it too. */}
+      <IconSprite />
+      {children}
+    </QueryClientProvider>
+  );
 }
