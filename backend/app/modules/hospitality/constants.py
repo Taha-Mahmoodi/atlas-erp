@@ -2,9 +2,7 @@
 registered into the core RBAC catalog at import (D-009), and the background-job key the depletion
 handler registers under.
 
-A SINGLE file (STRUCTURE §8.4: split into a constants/ package only at the 400-line cap). Ticket
-statuses, the document type and the numbering prefix land here alongside their model in Task 4;
-declaring them before anything reads them would be the dead config STRUCTURE §8.3 forbids.
+A SINGLE file (STRUCTURE §8.4: split into a constants/ package only at the 400-line cap).
 """
 
 from enum import StrEnum
@@ -55,6 +53,53 @@ class AvailabilitySource(StrEnum):
     MANUAL = "MANUAL"
     AUTO = "AUTO"
 
+
+class OrderTicketStatus(StrEnum):
+    """Lifecycle of an ORDER TICKET — the check for one table (PLAN 19 Task 4).
+
+    The order of declaration IS the lifecycle: ``TICKET_FLOW`` below reads it positionally and a
+    transition is legal only to the NEXT state. Strictly sequential, and the reason is Q4 rather
+    than tidiness — SENT_TO_KITCHEN is the single point where a ticket's ingredients are consumed,
+    so any shortcut past it would be revenue with no depletion at all.
+
+    - **OPEN** — the server seated the table and is taking the order. The ONLY state in which lines
+      may be added: a fired line is already being cooked and already counted for depletion.
+    - **SENT_TO_KITCHEN** — fired. This is the commitment moment: an 86'd dish is refused here, a
+      countdown burns here, and ``RestaurantOrderFired`` is published here so Task 5 can deplete
+      ingredients OFF the request. Not at tender — a dish comped after service has already eaten
+      its ingredients, and a depletion hanging off settle would block the guest's payment (Q4).
+    - **IN_PREP** / **READY** / **SERVED** — the kitchen's own progress, moved by the KDS (a
+      status-filtered query over open ticket lines, not new infrastructure). No stock or money
+      effect; they exist so the floor can see where a check is.
+    - **SETTLED** — tendered. Terminal. Publishes ``RestaurantOrderSettled``, which is what Phase
+      20.6's room-charge bridge will subscribe to. Phase 19 takes no payment itself (Q1's provider
+      interface is Phase 20+).
+
+    v1 has no VOID/CANCELLED: a comp or a walk-out is a money correction the Phase 20 folio owns,
+    and inventing a terminal state here that nothing can reverse would be worse than not having it.
+    """
+
+    OPEN = "OPEN"
+    SENT_TO_KITCHEN = "SENT_TO_KITCHEN"
+    IN_PREP = "IN_PREP"
+    READY = "READY"
+    SERVED = "SERVED"
+    SETTLED = "SETTLED"
+
+
+# The lifecycle as an ordered tuple — the whole transition rule is "index + 1", so there is no
+# transition table to keep in sync with the enum. Declared next to the enum because the ORDER is
+# the contract, not just the membership.
+TICKET_FLOW: tuple[OrderTicketStatus, ...] = tuple(OrderTicketStatus)
+
+# The states a plain kitchen/floor progress update may set. Firing and settling are deliberately
+# NOT here: each carries effects (the 86 check + countdown + the fired event; the settled event)
+# that a generic status PATCH must never be able to skip past.
+TICKET_PROGRESS_STATES: frozenset[OrderTicketStatus] = frozenset(
+    {OrderTicketStatus.IN_PREP, OrderTicketStatus.READY, OrderTicketStatus.SERVED}
+)
+
+
 # --- Permissions (D-009): one key per guarded endpoint action -----------------
 # The menu/ticket split follows the read-vs-manage shape every other module uses, with ONE extra
 # key. ``ticket.settle`` is DISTINCT from ``ticket.manage`` because settlement is the money moment —
@@ -97,3 +142,24 @@ register_permissions(
 # handler; the key lives here because Task 8's DECISIONS entry and the job-status endpoint both name
 # it and a rename must break in one place.
 DEPLETE_TICKET_JOB = "hospitality.deplete_ticket"
+
+# --- Order-ticket document type, numbering + event keys (Task 4, D-012/D-011) ---------------
+# An order ticket IS a posted document in the D-012 sense: it registers in core_documents and
+# claims its gapless number AT CREATION (the sales-order / goods-receipt branch, not finance's
+# number-at-post branch) because a ticket is referenceable — by the kitchen, by the guest, by Phase
+# 20.6's folio — the moment the server opens it.
+#
+# The prefix/padding here are the CODE defaults ``ensure_sequence`` falls back to. They match
+# ``industry-templates/hospitality.yaml``'s ``numbering_formats.hospitality.order_ticket`` on
+# purpose: a tenant that applied the template gets the sequence from the template, a tenant that
+# never did gets an identical one from here, and the two must not disagree about what a ticket
+# number looks like. ``_format_number`` renders {prefix}-{year}-{padded} -> TKT-2026-000001.
+ORDER_TICKET_DOC_TYPE = "hospitality.order_ticket"
+ORDER_TICKET_SEQUENCE_NAME = "hospitality.order_ticket"
+ORDER_TICKET_NUMBER_PREFIX = "TKT"
+ORDER_TICKET_NUMBER_PADDING = 6
+
+# D-011 event keys. Declared here rather than inline in events.py so a subscriber in another module
+# (Phase 20.6's folio bridge) and Task 8's documentation name the same constant.
+ORDER_TICKET_FIRED_EVENT_KEY = "hospitality.order_ticket.fired"
+ORDER_TICKET_SETTLED_EVENT_KEY = "hospitality.order_ticket.settled"

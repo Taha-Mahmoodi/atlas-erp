@@ -17,6 +17,7 @@ D-007 filter applies on top of the explicit predicate — ordinary tenant-scoped
 """
 
 import uuid
+from collections.abc import Iterable
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -53,6 +54,24 @@ async def item_exists(
     ``account_exists_by_id``)."""
     stmt = select(Item.id).where(Item.tenant_id == tenant_id, Item.id == item_id)
     return (await session.execute(stmt)).first() is not None
+
+
+async def existing_item_ids(
+    session: AsyncSession, tenant_id: uuid.UUID, item_ids: Iterable[uuid.UUID]
+) -> set[uuid.UUID]:
+    """Which of ``item_ids`` exist in the tenant — ``item_exists`` for a whole document at once, in
+    ONE query.
+
+    A multi-line document validating its item dimension line by line is an N+1 on a WRITE path,
+    where PERFORMANCE §2's ≤3 rule does not apply and so nothing catches it. The caller diffs the
+    returned set against what it asked for to name the bad ids in one error rather than failing on
+    the first. The id list is bounded by the document's line count, so the ``IN`` clause stays
+    small; an empty input short-circuits without touching the database."""
+    ids = list(dict.fromkeys(item_ids))
+    if not ids:
+        return set()
+    stmt = select(Item.id).where(Item.tenant_id == tenant_id, Item.id.in_(ids))
+    return set((await session.execute(stmt)).scalars().all())
 
 
 async def uom_exists(

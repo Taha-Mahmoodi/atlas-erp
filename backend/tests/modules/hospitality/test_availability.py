@@ -29,35 +29,11 @@ from app.modules.hospitality.constants import AvailabilityState
 from app.modules.hospitality.models import MenuAvailability
 from app.modules.hospitality.service import availability
 from tests.conftest import QueryCounter
-from tests.modules.inventory.factories import (
-    InventorySetup,
-    build_inventory_setup,
-    build_item,
-)
+from tests.modules.inventory.factories import InventorySetup
 
-
-@pytest.fixture
-async def menu_setup(db_session: AsyncSession, tenant_a: uuid.UUID) -> InventorySetup:
-    """EA/BOX units and a category — the minimum a sellable item needs (no GL wiring: availability
-    moves no stock and posts no journal)."""
-    return await build_inventory_setup(db_session, tenant_a)
-
-
-@pytest.fixture
-async def dish_id(
-    db_session: AsyncSession, tenant_a: uuid.UUID, menu_setup: InventorySetup
-) -> uuid.UUID:
-    """One sellable menu item. Returned as a plain id so a later commit expiring the ORM object
-    cannot break the test."""
-    item = await build_item(
-        db_session,
-        tenant_a,
-        item_code="DISH-001",
-        category_id=menu_setup.category_id,
-        base_uom_id=menu_setup.ea_uom_id,
-        name="Caprese",
-    )
-    return item.id
+# ``menu_setup`` / ``dish_id`` moved to tests/modules/hospitality/conftest.py in Task 4, where
+# test_tickets.py shares them (STRUCTURE §6: fixtures used by more than one module live in the
+# package conftest).
 
 
 async def _set(

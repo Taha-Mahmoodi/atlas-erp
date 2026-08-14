@@ -16,11 +16,27 @@ from app.modules.hospitality.service.availability import (
     decrement_remaining,
     set_availability,
 )
+from app.modules.hospitality.service.tickets import (
+    add_lines,
+    advance_ticket,
+    create_ticket,
+    fire_ticket,
+    get_ticket,
+    get_ticket_lines,
+    settle_ticket,
+)
 
 __all__ = [
     "MenuItemAvailability",
+    "add_lines",
+    "advance_ticket",
     "availability_for_items",
     "clear_86",
+    "create_ticket",
     "decrement_remaining",
+    "fire_ticket",
+    "get_ticket",
+    "get_ticket_lines",
     "set_availability",
+    "settle_ticket",
 ]
