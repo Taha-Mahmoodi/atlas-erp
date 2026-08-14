@@ -126,7 +126,7 @@ export function LeaveBalancesPage() {
           ) : (
             <table className="w-full border-collapse text-[13px]">
               <thead>
-                <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+                <tr className="border-b border-line text-left mono-caps text-ink-muted">
                   <th className="py-2 pr-2">Leave type</th>
                   <th className="py-2 pr-2 text-right">Balance (days)</th>
                   <th className="py-2 pr-2 text-right">Accrued to date</th>

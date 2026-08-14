@@ -49,7 +49,7 @@ export function ApAgingPage() {
       <div className="mt-4 overflow-x-auto rounded-card border border-line bg-surface shadow-card">
         <table className="w-full border-collapse text-[13px]">
           <thead>
-            <tr className="border-b border-line bg-panel text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+            <tr className="border-b border-line text-left mono-caps text-ink-muted">
               <th className="px-3 py-2">Vendor</th>
               <th className="px-3 py-2 text-right">Current</th>
               <th className="px-3 py-2 text-right">1-30</th>

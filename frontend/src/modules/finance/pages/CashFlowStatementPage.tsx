@@ -73,7 +73,7 @@ export function CashFlowStatementPage() {
               {cashFlow.data.sections.map((section) => (
                 <tbody key={section.category}>
                   <tr>
-                    <td colSpan={2} className="pt-3 pb-1 text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">
+                    <td colSpan={2} className="pt-3 pb-1 mono-caps text-ink-muted">
                       {SECTION_LABELS[section.category]}
                     </td>
                   </tr>

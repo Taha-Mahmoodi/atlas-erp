@@ -298,7 +298,7 @@ export function ProductionOrderDetailPage() {
       <h2 className="mt-8 text-sm font-semibold text-ink">Components</h2>
       <table className="mt-2 w-full border-collapse text-[13px]">
         <thead>
-          <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+          <tr className="border-b border-line text-left mono-caps text-ink-muted">
             <th className="py-2 pr-2">Line</th>
             <th className="py-2 pr-2">Component</th>
             <th className="py-2 pr-2 text-right">Required</th>
@@ -324,7 +324,7 @@ export function ProductionOrderDetailPage() {
           <h2 className="mt-8 text-sm font-semibold text-ink">Operations</h2>
           <table className="mt-2 w-full border-collapse text-[13px]">
             <thead>
-              <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+              <tr className="border-b border-line text-left mono-caps text-ink-muted">
                 <th className="py-2 pr-2">Op</th>
                 <th className="py-2 pr-2">Work center</th>
                 <th className="py-2 pr-2">Description</th>

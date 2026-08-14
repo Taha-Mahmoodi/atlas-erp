@@ -206,7 +206,7 @@ export function ReportBuilderPage() {
         <div className="mt-4 space-y-4">
           {/* Columns — used for a flat (ungrouped) report */}
           <section className="rounded-card border border-line bg-surface p-4 shadow-card">
-            <h2 className="text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">
+            <h2 className="mono-caps text-ink-muted">
               Columns {grouped && <span className="font-normal normal-case">(ignored while grouping — the result is group-by + aggregates)</span>}
             </h2>
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">
@@ -229,7 +229,7 @@ export function ReportBuilderPage() {
 
           {/* Filters */}
           <section className="rounded-card border border-line bg-surface p-4 shadow-card">
-            <h2 className="text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">
+            <h2 className="mono-caps text-ink-muted">
               Filters
             </h2>
             {filters.map((draft, index) => (
@@ -334,7 +334,7 @@ export function ReportBuilderPage() {
 
           {/* Group by + aggregations */}
           <section className="rounded-card border border-line bg-surface p-4 shadow-card">
-            <h2 className="text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">
+            <h2 className="mono-caps text-ink-muted">
               Group by
             </h2>
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">
@@ -353,7 +353,7 @@ export function ReportBuilderPage() {
             </div>
             {grouped && (
               <div className="mt-3">
-                <h3 className="text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">
+                <h3 className="mono-caps text-ink-muted">
                   Aggregations
                 </h3>
                 {aggregations.map((draft, index) => (

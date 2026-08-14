@@ -82,7 +82,7 @@ export function VendorPaymentFormPage() {
           </p>
           <table className="mt-3 w-full border-collapse text-[13px]">
             <thead>
-              <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+              <tr className="border-b border-line text-left mono-caps text-ink-muted">
                 <th className="py-1.5 pr-2">Bill</th>
                 <th className="py-1.5 pr-2 text-right">Allocated</th>
               </tr>
@@ -203,7 +203,7 @@ export function VendorPaymentFormPage() {
 
       {partnerId && (
         <div className="mt-6">
-          <h2 className="text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">
+          <h2 className="mono-caps text-ink-muted">
             Open bills
           </h2>
           {openBills.isPending ? (
@@ -213,7 +213,7 @@ export function VendorPaymentFormPage() {
           ) : (
             <table className="mt-2 w-full border-collapse text-[13px]">
               <thead>
-                <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+                <tr className="border-b border-line text-left mono-caps text-ink-muted">
                   <th className="py-2 pr-2">Bill #</th>
                   <th className="py-2 pr-2">Due date</th>
                   <th className="py-2 pr-2 text-right">Open amount</th>

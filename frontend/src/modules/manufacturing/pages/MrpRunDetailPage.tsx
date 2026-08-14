@@ -188,7 +188,7 @@ export function MrpRunDetailPage() {
           <h2 className="text-sm font-semibold text-ink">Rough capacity check</h2>
           <table className="mt-2 w-full border-collapse text-[13px]">
             <thead>
-              <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+              <tr className="border-b border-line text-left mono-caps text-ink-muted">
                 <th className="py-1.5 pr-2">Work center</th>
                 <th className="py-1.5 pr-2 text-right">Load (min)</th>
                 <th className="py-1.5 pr-2 text-right">Available (min)</th>

@@ -51,7 +51,7 @@ export function ProfitAndLossPage() {
       ) : (
         pnl.data && (
           <div className="mt-6 rounded-card border border-line bg-surface p-4 shadow-card">
-            <h2 className="text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">Revenue</h2>
+            <h2 className="mono-caps text-ink-muted">Revenue</h2>
             <StatementGroupTable
               groups={pnl.data.revenue_groups}
               total={pnl.data.revenue_total}
@@ -59,7 +59,7 @@ export function ProfitAndLossPage() {
               currencyCode={currencyCode}
             />
 
-            <h2 className="mt-6 text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">Expenses</h2>
+            <h2 className="mt-6 mono-caps text-ink-muted">Expenses</h2>
             <StatementGroupTable
               groups={pnl.data.expense_groups}
               total={pnl.data.expense_total}

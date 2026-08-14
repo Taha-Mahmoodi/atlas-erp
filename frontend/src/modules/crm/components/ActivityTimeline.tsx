@@ -134,7 +134,7 @@ export function ActivityTimeline({
         )}
         {rows.map((activity) => (
           <li key={activity.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-            <span className="w-16 shrink-0 text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+            <span className="w-16 shrink-0 mono-caps text-ink-muted">
               {activity.activity_type}
             </span>
             <span className="flex-1 text-ink">{activity.subject}</span>

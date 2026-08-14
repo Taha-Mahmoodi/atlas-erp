@@ -53,7 +53,7 @@ export function RoleDetailPage() {
       <div className="mt-2 space-y-4">
         {[...groups.entries()].map(([module, keys]) => (
           <section key={module} className="rounded-card border border-line bg-surface p-4 shadow-card">
-            <h3 className="text-xs font-semibold uppercase tracking-[0.04em] text-ink-muted">{module}</h3>
+            <h3 className="mono-caps text-ink-muted">{module}</h3>
             <ul className="mt-2 grid gap-x-6 gap-y-1 sm:grid-cols-2">
               {keys.map((key) => (
                 <li key={key}>

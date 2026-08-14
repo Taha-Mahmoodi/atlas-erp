@@ -195,7 +195,7 @@ export function StockCountDetailPage() {
               </div>
               <table className="mt-3 w-full border-collapse text-[13px]">
                 <thead>
-                  <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+                  <tr className="border-b border-line text-left mono-caps text-ink-muted">
                     <th className="py-1.5 pr-2">Item</th>
                     <th className="py-1.5 pr-2">Bin</th>
                     <th className="py-1.5 pr-2 text-right">System</th>
@@ -230,7 +230,7 @@ export function StockCountDetailPage() {
 
       <table className="mt-6 w-full border-collapse text-[13px]">
         <thead>
-          <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+          <tr className="border-b border-line text-left mono-caps text-ink-muted">
             <th className="py-2 pr-2">Item</th>
             <th className="py-2 pr-2">Bin</th>
             <th className="py-2 pr-2 text-right">System qty</th>

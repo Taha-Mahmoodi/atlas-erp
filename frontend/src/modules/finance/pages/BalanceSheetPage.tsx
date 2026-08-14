@@ -47,7 +47,7 @@ export function BalanceSheetPage() {
         balanceSheet.data && (
           <div className="mt-6 grid grid-cols-2 gap-4">
             <div className="rounded-card border border-line bg-surface p-4 shadow-card">
-              <h2 className="text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">Assets</h2>
+              <h2 className="mono-caps text-ink-muted">Assets</h2>
               <StatementGroupTable
                 groups={balanceSheet.data.asset_groups}
                 total={balanceSheet.data.asset_total}
@@ -57,7 +57,7 @@ export function BalanceSheetPage() {
             </div>
             <div className="space-y-4">
               <div className="rounded-card border border-line bg-surface p-4 shadow-card">
-                <h2 className="text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">Liabilities</h2>
+                <h2 className="mono-caps text-ink-muted">Liabilities</h2>
                 <StatementGroupTable
                   groups={balanceSheet.data.liability_groups}
                   total={balanceSheet.data.liability_total}
@@ -66,7 +66,7 @@ export function BalanceSheetPage() {
                 />
               </div>
               <div className="rounded-card border border-line bg-surface p-4 shadow-card">
-                <h2 className="text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">Equity</h2>
+                <h2 className="mono-caps text-ink-muted">Equity</h2>
                 <StatementGroupTable
                   groups={balanceSheet.data.equity_groups}
                   total={balanceSheet.data.equity_total}

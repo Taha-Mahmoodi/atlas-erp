@@ -75,7 +75,7 @@ export function TimeAllocationPage() {
         ) : (
           <table className="w-full border-collapse text-[13px]">
             <thead>
-              <tr className="border-b border-line text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+              <tr className="border-b border-line text-left mono-caps text-ink-muted">
                 <th className="py-2 pr-2">{by === "project" ? "Project" : "Cost center"}</th>
                 <th className="py-2 pr-2 text-right">Hours</th>
               </tr>
@@ -88,7 +88,7 @@ export function TimeAllocationPage() {
                 </tr>
               ))}
               <tr>
-                <td className="py-1.5 pr-2 text-xs font-semibold uppercase tracking-[0.02em] text-ink-muted">Total</td>
+                <td className="py-1.5 pr-2 mono-caps text-ink-muted">Total</td>
                 <td className="py-1.5 pr-2 text-right font-semibold tabular-nums text-ink">
                   {formatQuantity(totalHours)}
                 </td>

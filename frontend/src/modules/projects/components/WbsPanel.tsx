@@ -105,7 +105,7 @@ export function WbsPanel({ projectId, canManage }: { projectId: string; canManag
       <div className="mt-3 overflow-x-auto rounded-card border border-line bg-surface shadow-card">
         <table className="w-full border-collapse text-[13px]" aria-label="WBS tree">
           <thead>
-            <tr className="border-b border-line bg-panel text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+            <tr className="border-b border-line text-left mono-caps text-ink-muted">
               <th className="px-3 py-2">Code</th>
               <th className="px-3 py-2">Name</th>
               <th className="px-3 py-2">Status</th>

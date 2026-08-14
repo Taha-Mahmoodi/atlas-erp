@@ -81,7 +81,7 @@ export function DunningRunPage() {
         <div className="mt-6 overflow-x-auto rounded-card border border-line bg-surface shadow-card">
           <table className="w-full border-collapse text-[13px]">
             <thead>
-              <tr className="border-b border-line bg-panel text-left text-[11px] font-semibold uppercase tracking-[0.02em] text-ink-muted">
+              <tr className="border-b border-line text-left mono-caps text-ink-muted">
                 <th className="px-3 py-2">Customer</th>
                 <th className="px-3 py-2">Invoice</th>
                 <th className="px-3 py-2 text-right">Open amount</th>

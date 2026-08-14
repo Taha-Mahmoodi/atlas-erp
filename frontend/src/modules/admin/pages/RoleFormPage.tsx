@@ -96,7 +96,7 @@ export function RoleFormPage() {
       <div className="mt-2 space-y-4">
         {[...groups.entries()].map(([module, permissions]) => (
           <fieldset key={module} className="rounded-card border border-line bg-surface p-4 shadow-card">
-            <legend className="px-1 text-xs font-semibold uppercase tracking-[0.04em] text-ink-muted">
+            <legend className="px-1 mono-caps text-ink-muted">
               {module}
             </legend>
             <div className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
