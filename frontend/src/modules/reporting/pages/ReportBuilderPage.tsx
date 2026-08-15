@@ -10,6 +10,7 @@ import { useState } from "react";
 
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
 import { exportReportCsv } from "@/modules/reporting/api";
+import { resultHeaders } from "@/modules/reporting/components/reportHeaders";
 import { useReportEntities, useRunReport } from "@/modules/reporting/hooks";
 import type {
   ReportAggregation,
@@ -17,7 +18,6 @@ import type {
   ReportEntityDescriptor,
   ReportFilter,
   ReportFilterOperator,
-  ReportResult,
   ReportSpec,
 } from "@/modules/reporting/types";
 
@@ -60,17 +60,6 @@ export function filterValue(draft: FilterDraft): unknown {
     return [low ?? "", high ?? ""];
   }
   return draft.value;
-}
-
-/** The grid's header for each result column (#166): the backend's display label, falling back to
- * the wire name when a label is missing (a pre-#166 server, or a stale cached response). The CSV
- * export writes the very same labels server-side, so the two surfaces cannot drift apart.
- * Exported for its unit test only. */
-export function resultHeaders(
-  result?: Pick<ReportResult, "columns" | "column_labels">,
-): string[] {
-  const labels = result?.column_labels ?? [];
-  return (result?.columns ?? []).map((name, index) => labels[index] ?? name);
 }
 
 const controlClass = "rounded-control border border-line bg-surface px-2 py-1.5 text-sm text-ink";

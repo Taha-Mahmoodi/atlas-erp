@@ -107,7 +107,7 @@ export interface ReportResult {
   /**
    * The display header for each column, same order and length (#166). Optional here only so the
    * grid still renders against a pre-#166 server or a stale cached response; the current backend
-   * always sends it. `resultHeaders` in ReportBuilderPage does the pairing.
+   * always sends it. `resultHeaders` in `reporting/components/reportHeaders.ts` does the pairing.
    */
   column_labels?: string[];
   rows: Record<string, unknown>[];

@@ -274,7 +274,13 @@ async def test_result_carries_human_labels_aligned_with_columns(
 ) -> None:
     """#166: a grouped+aggregated run returns ``column_labels`` from the registry, aligned
     index-for-index with the wire ``columns`` — so the grid and the CSV can both show
-    "Status" / "Sum of Total" instead of "status" / "sum_total_amount"."""
+    "Status" / "Sum of Total" instead of "status" / "sum_total_amount".
+
+    ``COUNT(order_number)`` is in here on purpose. The builder lets COUNT target ANY whitelisted
+    column (only SUM/AVG/MIN/MAX need the ``is_aggregatable`` flag) and ``order_number`` carries no
+    such flag, so this row pins both halves of that path at once: the COUNT exemption stays (a
+    regression 400s a shape the UI offers — its aggregation picker lists real columns for `count`,
+    not just "rows (*)") and COUNT-with-a-column keeps its composed label."""
     result = await _run(
         db_session,
         rb_setup.tenant_id,
@@ -283,12 +289,13 @@ async def test_result_carries_human_labels_aligned_with_columns(
             group_by=["status"],
             aggregations=[
                 ReportAggregation(func=Aggregation.COUNT),
+                ReportAggregation(column="order_number", func=Aggregation.COUNT),
                 ReportAggregation(column="total_amount", func=Aggregation.SUM),
             ],
         ),
     )
-    assert result.columns == ["status", "count", "sum_total_amount"]
-    assert result.column_labels == ["Status", "Count", "Sum of Total"]
+    assert result.columns == ["status", "count", "count_order_number", "sum_total_amount"]
+    assert result.column_labels == ["Status", "Count", "Count of Order Number", "Sum of Total"]
 
 
 async def test_flat_result_labels_come_from_the_registry(
