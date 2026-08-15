@@ -156,16 +156,15 @@ export function FormBuilder({
    * collision — those carry server truth (a 422 field error) that outranks "this looks
    * empty". */
   const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
-  const shownErrors = { ...clientErrors, ...errors };
-
-  const change = (name: string, value: string | boolean) => {
-    setClientErrors((previous) => {
-      if (previous[name] === undefined) return previous;
-      const next = { ...previous };
-      delete next[name];
-      return next;
-    });
-    onChange(name, value);
+  /* A client error is only *shown* while its field is still empty, rather than being cleared
+   * on change: the caller may replace `values` wholesale without going through `onChange`
+   * (an edit record landing, WbsPanel switching from add to edit), and a "X is required."
+   * with aria-invalid sitting over a filled control is a lie to a screen reader. */
+  const shownErrors = {
+    ...Object.fromEntries(
+      Object.entries(clientErrors).filter(([name]) => String(values[name] ?? "").trim() === ""),
+    ),
+    ...errors,
   };
 
   const submit = (event: FormEvent) => {
@@ -224,7 +223,7 @@ export function FormBuilder({
                 value={values[field.name] ?? (isCheckbox ? false : "")}
                 error={error}
                 busy={busy}
-                onChange={change}
+                onChange={onChange}
               />
               {isCheckbox && (
                 <label htmlFor={`field-${field.name}`} className="text-sm text-ink">

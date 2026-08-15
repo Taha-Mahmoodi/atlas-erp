@@ -79,15 +79,41 @@ describe("FormBuilder", () => {
     expect(input).toHaveFocus();
   });
 
-  it("clears the required message as soon as the field changes", async () => {
+  it("clears the required message once the value arrives, however it arrives", async () => {
     const onSubmit = vi.fn();
     const user = userEvent.setup();
-    render(<FormBuilder fields={fields} values={{}} onChange={vi.fn()} onSubmit={onSubmit} />);
+    const { rerender } = render(
+      <FormBuilder fields={fields} values={{}} onChange={vi.fn()} onSubmit={onSubmit} />,
+    );
     await user.click(screen.getByRole("button", { name: "Save" }));
     expect(screen.getByRole("alert")).toHaveTextContent("Code is required.");
 
-    await user.type(screen.getByLabelText(/code/i), "A");
+    // The caller may replace `values` wholesale rather than field-by-field through onChange
+    // (an edit record landing, WbsPanel switching from add to edit) — the stale message and
+    // its aria-invalid must not survive that.
+    rerender(
+      <FormBuilder fields={fields} values={{ code: "A" }} onChange={vi.fn()} onSubmit={onSubmit} />,
+    );
 
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/code/i)).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("submits a form with no required fields exactly as before", async () => {
+    const onSubmit = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <FormBuilder
+        fields={fields.filter((field) => !field.required)}
+        values={{}}
+        onChange={vi.fn()}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onSubmit).toHaveBeenCalledOnce();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
