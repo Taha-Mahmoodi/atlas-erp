@@ -84,6 +84,8 @@ async def test_run_returns_json_grid(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["columns"] == ["order_number", "status"]
+    # #166: the display headers travel with the grid, so the client never has to invent them.
+    assert body["column_labels"] == ["Order Number", "Status"]
     assert body["row_count"] == setup.confirmed_count + setup.draft_count
     assert body["truncated"] is False
 
@@ -158,7 +160,8 @@ async def test_export_streams_csv(
     db_session: AsyncSession,
     reporting_user_factory: Callable[..., "AsyncIterator[ReportingPrincipal]"],
 ) -> None:
-    """POST /reports/export returns text/csv with an attachment disposition and the right rows."""
+    """POST /reports/export returns text/csv with an attachment disposition, the DISPLAY-label
+    header line (#166), and the right rows."""
     principal = await reporting_user_factory(keys=_REPORT_KEYS)
     setup = await build_report_builder_setup(db_session, principal.tenant_id)
     await _authed(client, principal)
@@ -170,7 +173,7 @@ async def test_export_streams_csv(
     assert response.headers["content-type"].startswith("text/csv")
     assert "attachment" in response.headers["content-disposition"]
     lines = [line for line in response.text.splitlines() if line.strip()]
-    assert lines[0] == "order_number,status"
+    assert lines[0] == "Order Number,Status"
     assert len(lines) - 1 == setup.confirmed_count + setup.draft_count
 
 

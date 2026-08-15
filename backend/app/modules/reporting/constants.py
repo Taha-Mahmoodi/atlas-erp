@@ -74,6 +74,19 @@ class Aggregation(StrEnum):
     MAX = "max"
 
 
+# The HUMAN word for each aggregate (#166). The builder composes an aggregate's display label as
+# ``f"{AGGREGATION_LABELS[func]} of {column.label}"`` ("Sum of Total") so neither the grid nor the
+# CSV ever shows the wire alias ("sum_total_amount"). Both surfaces read the composed label off the
+# ONE ReportResult, so they cannot drift apart.
+AGGREGATION_LABELS: dict[Aggregation, str] = {
+    Aggregation.COUNT: "Count",
+    Aggregation.SUM: "Sum",
+    Aggregation.AVG: "Average",
+    Aggregation.MIN: "Minimum",
+    Aggregation.MAX: "Maximum",
+}
+
+
 # PERFORMANCE §3: the report builder CAPS result rows at 10k for the JSON grid; anything larger is
 # served by the streaming CSV export. The builder fetches CAP + 1 rows to detect+flag truncation.
 REPORT_ROW_CAP = 10_000
