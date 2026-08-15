@@ -227,21 +227,26 @@ async def test_the_sweep_costs_a_constant_number_of_statements(
     job_factory: async_sessionmaker[AsyncSession],
     query_counter: Callable[[], QueryCounter],
 ) -> None:
-    """PERFORMANCE: the sweep runs on a timer forever. Its cost must be flat in the number of
-    stale rows — a per-job UPDATE would make a bad outage quadratically worse. One bounded scan
-    plus one bulk UPDATE per outcome, whatever the backlog."""
-    for index in range(SWEEP_BUDGET):
-        job_id = await _submit(db_session, tenant_a, f"orphan-{index}")
-        await _age(db_session, job_id, minutes=PENDING_RECLAIM_AFTER.total_seconds() / 60 + 1)
+    """PERFORMANCE: the sweep runs on a timer forever, so its cost must be FLAT in the number of
+    stale rows — a per-job UPDATE would make a bad outage quadratically worse, exactly when the
+    sweep has to stay cheap.
 
-    with query_counter() as counter:
-        await sweep_stale_jobs(job_factory)
-    await wait_for_jobs()
+    Measured at two backlog sizes an order of magnitude apart and asserted EXACTLY, not as a
+    ceiling: Phase 19's query-budget breach hid under a ceiling assertion, and a ceiling here would
+    let a per-job UPDATE reappear as long as the batch stayed small. The three statements are the
+    bounded scan, one bulk reclaim UPDATE, and the retention DELETE."""
 
-    assert counter.count <= 8, (
-        f"the sweep took {counter.count} statements for {SWEEP_BUDGET} orphans; it must be "
-        "flat in the backlog size"
-    )
+    async def sweep_cost(orphans: int) -> int:
+        for index in range(orphans):
+            job_id = await _submit(db_session, tenant_a, f"orphan-{index}")
+            await _age(db_session, job_id, minutes=PENDING_RECLAIM_AFTER.total_seconds() / 60 + 1)
+        with query_counter() as counter:
+            await sweep_stale_jobs(job_factory)
+        await wait_for_jobs()
+        return counter.count
+
+    assert await sweep_cost(5) == 3
+    assert await sweep_cost(SWEEP_BUDGET) == 3
 
 
 def test_the_stale_scan_is_index_served() -> None:
