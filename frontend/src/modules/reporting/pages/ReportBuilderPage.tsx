@@ -67,7 +67,7 @@ export function filterValue(draft: FilterDraft): unknown {
  * export writes the very same labels server-side, so the two surfaces cannot drift apart.
  * Exported for its unit test only. */
 export function resultHeaders(
-  result?: Pick<ReportResult, "columns"> & Partial<Pick<ReportResult, "column_labels">>,
+  result?: Pick<ReportResult, "columns" | "column_labels">,
 ): string[] {
   const labels = result?.column_labels ?? [];
   return (result?.columns ?? []).map((name, index) => labels[index] ?? name);
