@@ -172,11 +172,11 @@ Plan: [`docs/research/hospitality-build-plan.md`](docs/research/hospitality-buil
 
 Spec: hospitality plan Q2 (stored availability, derived suggestion), Q4 (depletion), Q6 (website read path).
 
-- [ ] 19.1 `hospitality.yaml` industry template (6th): Guest/Group Account terminology, Guest Ledger + F&B Revenue COA split, FIFO costing default, BOM sub-engine only
-- [ ] 19.2 `hsp_menu_availability` — stored state (AVAILABLE/LIMITED/EIGHTY_SIXED), countdown auto-86, lazy expiry on read; the derived "at risk" staff list from on-hand only, batch-exploded, never guest-facing
-- [ ] 19.3 `order_ticket` document type: OPEN → SENT_TO_KITCHEN → IN_PREP → READY → SERVED → SETTLED, seat-level lines, KDS as a status-filtered query
-- [ ] 19.4 Per-sale ingredient depletion through the job runner; settlement reusing Sales' invoice/payment primitives; split checks
-- [ ] 19.5 The website-facing read/write API: menu + availability reads with conditional GET, order writes under D-013 idempotency
+- [x] 19.1 `hospitality.yaml` industry template (6th): Guest/Group Account terminology, Guest Ledger + F&B Revenue COA split, FIFO costing default, BOM sub-engine only
+- [x] 19.2 `hsp_menu_availability` — stored state (AVAILABLE/LIMITED/EIGHTY_SIXED), countdown auto-86, lazy expiry on read; the derived "at risk" staff list from on-hand only, batch-exploded, never guest-facing
+- [x] 19.3 `order_ticket` document type: OPEN → SENT_TO_KITCHEN → IN_PREP → READY → SERVED → SETTLED, seat-level lines, KDS as a status-filtered query
+- [x] 19.4 Per-sale ingredient depletion through the job runner — aggregated, chunked and backgrounded at fire (**D-072**, restaurant-module-scoped). Settlement flips the ticket to SETTLED and publishes `RestaurantOrderSettled`; **the invoice/payment settlement and split checks are deferred to Phase 20** with the folio that owns the money (cut recorded in `docs/modules/hospitality.md` §6)
+- [x] 19.5 The website-facing read/write API: menu + availability reads with conditional GET, order writes under D-013 idempotency
 
 ## Phase 20 — Rooms & Folio
 

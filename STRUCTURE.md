@@ -23,7 +23,7 @@ atlas-erp/
 │   └── assets/             # diagrams/screenshots referenced by docs ONLY
 ├── industry-templates/
 │   ├── _schema.yaml        # the template JSON-Schema, single source of truth
-│   └── {manufacturing,retail,professional-services,healthcare,construction}.yaml
+│   └── {manufacturing,retail,professional-services,healthcare,construction,hospitality}.yaml
 ├── backend/
 │   ├── pyproject.toml  alembic.ini  Dockerfile  .dockerignore
 │   ├── alembic/versions/
@@ -53,7 +53,7 @@ One file per cross-cutting concern, flat, no subpackages: `config.py`, `db.py` (
 
 # 3. `backend/app/modules/` — identical anatomy for every module
 
-Module package names (fixed, never abbreviate differently elsewhere): `finance`, `inventory`, `procurement`, `sales`, `manufacturing`, `quality`, `maintenance`, `hr`, `projects`, `crm`, `reporting`, `admin`, `industry`.
+Module package names (fixed, never abbreviate differently elsewhere): `finance`, `inventory`, `procurement`, `sales`, `manufacturing`, `quality`, `maintenance`, `hr`, `projects`, `crm`, `reporting`, `admin`, `industry`, `hospitality`.
 
 Every module has exactly this internal shape — no exceptions, no creativity:
 

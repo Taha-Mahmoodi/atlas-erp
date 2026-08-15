@@ -209,7 +209,7 @@ The registry turns the polymorphic (doc_type, doc_id) problem into ordinary FK i
 ## D-013 — Idempotency keys (reservation, atomic completion via route capture)
 
 **Decision.**
-Table `core_idempotency_keys`: tenant_id, key (client `Idempotency-Key` header, max 200 chars), endpoint (METHOD + route template), request_hash (sha256 of canonical JSON body), status (`'in_progress'`|`'completed'`), response_status int nullable, response_body JSON nullable, created_at, completed_at; PRIMARY KEY (tenant_id, endpoint, key).
+Table `core_idempotency_keys`: tenant_id, key (client `Idempotency-Key` header, max 200 chars), endpoint (METHOD + route template), request_hash (sha256 of the request TARGET — `path?query` — a newline, then the raw body; the target is in the hash because an action route's body is empty and its identity is entirely in its path, **D-071**), status (`'in_progress'`|`'completed'`), response_status int nullable, response_body JSON nullable, created_at, completed_at; PRIMARY KEY (tenant_id, endpoint, key).
 
 **Two-phase flow** with an explicit fix to the draft's broken epilogue (a FastAPI dependency can never see the route's serialized response, and writing 'completed' after commit would break atomicity):
 
@@ -614,7 +614,7 @@ The template-copy pattern is the single decision that makes everything else test
 ## D-026 — Seed-data architecture (deterministic, per-template, three months of linked transactions)
 
 **Decision.**
-`backend/seed.py` is a CLI (argparse: `--templates` defaulting to all five industry templates, `--anchor-date` defaulting to today, `--reset`) that assumes a migrated database (Makefile target chains `alembic upgrade head`).
+`backend/seed.py` is a CLI (argparse: `--templates` defaulting to all five seeded industry profiles, `--anchor-date` defaulting to today, `--reset`) that assumes a migrated database (Makefile target chains `alembic upgrade head`).
 
 **Determinism:** one `random.Random(f'{template}:{anchor_date}')` per tenant — identical output for a given (template, anchor) pair; the anchor is recorded on the tenant so reruns are reproducible for bug reports.
 

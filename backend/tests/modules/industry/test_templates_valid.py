@@ -1,9 +1,9 @@
-"""PLAN 14.1 / D-060: every shipped template validates against _schema.yaml + is parseable, and the
-five are MEANINGFULLY different.
+"""PLAN 14.1 / D-060 (+ PLAN 19.1's sixth template): every shipped template validates against
+_schema.yaml + is parseable, and they are MEANINGFULLY different.
 
 Pure validation/parse tests (no DB): the loader reads each YAML, validates it against the
 JSON-Schema in industry-templates/_schema.yaml, and parses it into IndustryTemplate. The
-distinctness assertions pin the spec's "five meaningfully different templates" claim — different
+distinctness assertions pin the spec's "meaningfully different templates" claim — different
 terminology, modules, COA, custom fields and costing defaults — so a homogenising edit fails here.
 """
 
@@ -141,7 +141,28 @@ def test_professional_services_has_no_inventory_and_billable_rate_field():
     assert "billable_rate" in employee_fields
 
 
-def test_the_five_terminologies_are_distinct():
+def test_hospitality_is_fifo_with_a_guest_ledger_split_and_bom_costing():
+    """Hospitality (PLAN 19.1): FIFO F&B costing, the THREE-control-account guest/city/deposit split
+    the hospitality spec's Q5 argues for, "Guest" terminology, and the property custom fields.
+
+    ``manufacturing`` is deliberately ON: recipes ARE manufacturing BOMs, which is how a menu item
+    costs itself. The module toggle is one boolean and cannot say "BOM engine yes, production
+    orders/MRP no", so the yaml carries that limitation as a comment and this assertion pins the
+    direction — flipping it off would take the recipe engine with it."""
+    template = load_template("hospitality")
+    assert template.terminology["customer"] == "Guest / Group Account"
+    account_names = {a.name for a in template.chart_of_accounts.accounts}
+    assert {"Guest Ledger", "City Ledger", "Advance Deposits"} <= account_names
+    assert {c.default_costing_method for c in template.item_categories} == {"FIFO"}
+    assert template.modules["manufacturing"] is True
+    assert template.modules["hospitality"] is True
+    property_fields = {
+        f.field_key for f in template.custom_fields if f.entity_key == "admin.tenant"
+    }
+    assert {"star_rating", "check_in_time", "check_out_time"} <= property_fields
+
+
+def test_every_shipped_terminology_is_distinct():
     """No two templates ship the identical terminology map — the spec's "meaningfully different"
     requirement at the terminology level."""
     maps = [tuple(sorted(load_template(n).terminology.items())) for n in SHIPPED_TEMPLATES]

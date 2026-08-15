@@ -16,12 +16,25 @@ Every function takes an explicit ``tenant_id`` and runs under the caller's tenan
 D-007 filter applies on top of the explicit predicate — ordinary tenant-scoped reads, not a bypass.
 """
 
+# Postponed annotations so ``Page[Item]`` stays a STRING and never asks Pydantic to build a schema
+# for a SQLAlchemy model at import time (the admin/queries.py precedent).
+from __future__ import annotations
+
 import uuid
+from collections.abc import Iterable
 from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.pagination import (
+    DEFAULT_LIMIT,
+    OrderKey,
+    SortDirection,
+    filter_fingerprint,
+    paginate,
+)
+from app.core.schemas import Page
 from app.modules.inventory.constants import CostingMethod
 from app.modules.inventory.models import (
     Bin,
@@ -45,6 +58,40 @@ async def get_item(
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
+async def list_active_items(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    category_id: uuid.UUID | None = None,
+    cursor: str | None = None,
+    limit: int = DEFAULT_LIMIT,
+) -> Page[Item]:
+    """ACTIVE items, keyset-paginated by ``item_code`` (D-014) — ONE statement whatever the size.
+
+    The cross-module read behind a catalogue a caller renders: hospitality's website menu is the
+    first, and it narrows by ``category_id`` because "which items are on the menu" is a per-property
+    choice that Atlas ships no entity for (a MENU item category is template config, not code).
+
+    ``is_active`` is used here as exactly what it is — a MASTER-DATA filter, "does this item still
+    belong in a catalogue". It is emphatically NOT an availability flag: whether tonight's dish can
+    be sold is stored menu availability (the hospitality 86 board), because ``is_active`` is
+    unenforced (``item_exists`` never reads it) and audited on every write, which makes it wrong on
+    both counts for something a kitchen flips dozens of times a night.
+    """
+    stmt = select(Item).where(Item.tenant_id == tenant_id, Item.is_active.is_(True))
+    if category_id is not None:
+        stmt = stmt.where(Item.category_id == category_id)
+    return await paginate(
+        session,
+        stmt,
+        order_by=[OrderKey(Item.item_code, SortDirection.ASC)],
+        pk=Item.id,
+        cursor=cursor,
+        limit=limit,
+        filters=filter_fingerprint(category_id),
+    )
+
+
 async def item_exists(
     session: AsyncSession, tenant_id: uuid.UUID, item_id: uuid.UUID
 ) -> bool:
@@ -53,6 +100,24 @@ async def item_exists(
     ``account_exists_by_id``)."""
     stmt = select(Item.id).where(Item.tenant_id == tenant_id, Item.id == item_id)
     return (await session.execute(stmt)).first() is not None
+
+
+async def existing_item_ids(
+    session: AsyncSession, tenant_id: uuid.UUID, item_ids: Iterable[uuid.UUID]
+) -> set[uuid.UUID]:
+    """Which of ``item_ids`` exist in the tenant — ``item_exists`` for a whole document at once, in
+    ONE query.
+
+    A multi-line document validating its item dimension line by line is an N+1 on a WRITE path,
+    where PERFORMANCE §2's ≤3 rule does not apply and so nothing catches it. The caller diffs the
+    returned set against what it asked for to name the bad ids in one error rather than failing on
+    the first. The id list is bounded by the document's line count, so the ``IN`` clause stays
+    small; an empty input short-circuits without touching the database."""
+    ids = list(dict.fromkeys(item_ids))
+    if not ids:
+        return set()
+    stmt = select(Item.id).where(Item.tenant_id == tenant_id, Item.id.in_(ids))
+    return set((await session.execute(stmt)).scalars().all())
 
 
 async def uom_exists(
@@ -138,6 +203,44 @@ async def default_bin_for_warehouse(
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
+async def issue_bins_for_items(
+    session: AsyncSession, tenant_id: uuid.UUID, item_ids: Iterable[uuid.UUID]
+) -> dict[uuid.UUID, uuid.UUID]:
+    """The bin to issue each item FROM — ``{item_id: bin_id}`` for a BATCH, in ONE query.
+
+    Picks the bin holding the MOST of the item (ties broken by bin id, so the answer is stable).
+    An item with no stock anywhere is ABSENT from the result rather than mapped to an empty bin:
+    the caller decides whether that is a hard error (a production issue) or a recorded failure (a
+    restaurant ticket's phantom stock-out, Q4). Reads the maintained ``inv_stock_quants``
+    projection (D-036).
+
+    Exists because a consumer with N components would otherwise loop ``on_hand_by_bin`` — an N+1
+    on a WRITE path, which PERFORMANCE §2's list-endpoint rule does not catch. Bin-level splits
+    are NOT resolved: an item with 3 in one bin and 5 in another issues 6 from the second and
+    fails, which a single-storeroom kitchen never sees and a multi-bin warehouse should be naming
+    its bin explicitly for anyway.
+    """
+    ids = list(item_ids)
+    if not ids:
+        return {}
+    stmt = (
+        select(StockQuant.item_id, StockQuant.bin_id, func.sum(StockQuant.on_hand_qty))
+        .where(
+            StockQuant.tenant_id == tenant_id,
+            StockQuant.item_id.in_(ids),
+            StockQuant.on_hand_qty > 0,
+        )
+        .group_by(StockQuant.item_id, StockQuant.bin_id)
+    )
+    rows = sorted(
+        (await session.execute(stmt)).all(), key=lambda row: (-row[2], row[1].bytes)
+    )
+    chosen: dict[uuid.UUID, uuid.UUID] = {}
+    for item_id, bin_id, _quantity in rows:
+        chosen.setdefault(item_id, bin_id)
+    return chosen
+
+
 async def lot_id_for_code(
     session: AsyncSession, tenant_id: uuid.UUID, item_id: uuid.UUID, lot_code: str
 ) -> uuid.UUID | None:
@@ -170,6 +273,31 @@ async def serial_id_for_code(
 # ledger so on-hand is an indexed aggregate over a small current-state table, not a SUM over
 # unbounded move history (PERFORMANCE §1). MoneyType/QuantityType propagation keeps the SUM exact on
 # both engines (D-015); ``func.coalesce(..., 0)`` makes an item with no stock read 0, not None.
+
+
+async def on_hand_for_items(
+    session: AsyncSession, tenant_id: uuid.UUID, item_ids: Iterable[uuid.UUID]
+) -> dict[uuid.UUID, Decimal]:
+    """Total on-hand for a BATCH of items — ONE query, keyed by item_id (PLAN 19 Task 6).
+
+    The batched twin of :func:`total_on_hand`: any caller needing on-hand for more than one item
+    must use this rather than looping the singular one. An item absent from the result has NO stock
+    anywhere; callers read a miss as zero rather than as "unknown".
+
+    ON-HAND ONLY, deliberately — not ``on_hand - committed + on_order``. The hospitality at-risk
+    scan is its first caller precisely because that ATP formula is wrong for a kitchen: an open PO
+    for tomorrow's tomatoes must not make tonight's dish read producible (spec Q2). Sales ATP keeps
+    composing the three figures itself in ``sales/queries/availability.py``.
+    """
+    ids = list(item_ids)
+    if not ids:
+        return {}
+    stmt = (
+        select(StockQuant.item_id, func.coalesce(func.sum(StockQuant.on_hand_qty), 0))
+        .where(StockQuant.tenant_id == tenant_id, StockQuant.item_id.in_(ids))
+        .group_by(StockQuant.item_id)
+    )
+    return {row[0]: Decimal(row[1]) for row in (await session.execute(stmt)).all()}
 
 
 async def total_on_hand(

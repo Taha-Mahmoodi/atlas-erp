@@ -67,6 +67,7 @@ async def collection_etag(
     model: type,
     *extra_filters: sa.ColumnElement[bool],
     request_fingerprint: str = "",
+    extra_components: tuple[sa.ColumnElement[object], ...] = (),
 ) -> str:
     """Compute a WEAK collection validator from ONE cheap aggregate query (D-035).
 
@@ -77,20 +78,33 @@ async def collection_etag(
     slice, not the whole table. ``request_fingerprint`` (cursor+limit+filters of the actual
     request) is folded into the returned tag so a 304 can never serve a different page slice.
 
+    ``extra_components`` are ADDITIONAL aggregate expressions selected in the SAME statement and
+    folded into the tag, for the one collection whose answer can change without any row changing:
+    a validator is only sound while ``(count, max_updated)`` covers every input to the response
+    body, and a collection whose read applies a TIME predicate (hospitality's lazily-expiring 86
+    board) has an input the clock moves and no write touches. Such a collection passes an aggregate
+    that tracks that input — e.g. how many rows have already lapsed — and pays nothing extra for
+    it, because it rides the aggregate select that was already being issued. Every other caller
+    passes none and gets the byte-identical tag it got before this parameter existed.
+
     The returned string is the full weak ETag ready for the ``ETag`` header / ``If-None-Match``
-    comparison: ``W/"<count>-<max_micros>-<tenant8>-<reqfingerprint>"``.
+    comparison: ``W/"<count>-<max_micros>[-<extra>...]-<tenant8>-<reqfingerprint>"``.
     """
-    stmt = sa.select(sa.func.count(model.id), sa.func.max(model.updated_at))
+    stmt = sa.select(sa.func.count(model.id), sa.func.max(model.updated_at), *extra_components)
     for clause in extra_filters:
         stmt = stmt.where(clause)
-    count, max_updated = (await session.execute(stmt)).one()
+    count, max_updated, *extras = (await session.execute(stmt)).one()
 
     # Microsecond epoch keeps the component compact and monotonic; empty collection → "" so the
     # validator is stable for an empty set yet flips the moment the first row lands (count 0->1).
     max_component = (
         "" if max_updated is None else str(int(max_updated.timestamp() * 1_000_000))
     )
-    return f'W/"{count}-{max_component}-{_tenant_component()}-{request_fingerprint}"'
+    extra_component = "".join(f"-{value}" for value in extras)
+    return (
+        f'W/"{count}-{max_component}{extra_component}'
+        f'-{_tenant_component()}-{request_fingerprint}"'
+    )
 
 
 def _normalize_tag(raw: str) -> str:

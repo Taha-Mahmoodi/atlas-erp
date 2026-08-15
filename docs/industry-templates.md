@@ -1,6 +1,6 @@
 # Industry Templates
 
-Atlas ships five **industry templates** (PLAN 14.1 / D-060) — the configuration layer that makes the
+Atlas ships six **industry templates** (PLAN 14.1 / D-060) — the configuration layer that makes the
 platform industry-aware, Atlas's answer to SAP industry solutions. A tenant picks one at onboarding
 and its whole configuration is instantiated in one transaction. This is the **authoring reference**;
 the module/loader internals are in [docs/modules/industry.md](modules/industry.md).
@@ -14,7 +14,8 @@ industry-templates/
 ├── retail.yaml
 ├── professional-services.yaml
 ├── healthcare.yaml
-└── construction.yaml
+├── construction.yaml
+└── hospitality.yaml
 ```
 
 The loader (`backend/app/modules/industry/loader.py`) reads a template, **validates it against
@@ -27,7 +28,7 @@ JSON-pointer path.
 
 | Section | Shape | Applied by |
 |---|---|---|
-| `name` / `display_name` / `description` | the machine key (= file stem, one of the five) + human labels | — |
+| `name` / `display_name` / `description` | the machine key (= file stem, one of the shipped names) + human labels | — |
 | `terminology` | canonical-term → display-label map (closed whitelist of terms) | industry → admin TenantSetting |
 | `chart_of_accounts` | `{groups: [{code, name, parent_code?, sort_order?}], accounts: [{code, name, account_type, group_code?, cash_flow_category?, is_cash_equivalent?, is_postable?}]}` | **finance** handler |
 | `tax_codes` | `[{code, name, rate_percent (string %), jurisdiction?, is_inclusive?}]` | **finance** handler |
@@ -42,9 +43,9 @@ JSON-pointer path.
 Money-bearing values (tax `rate_percent`, approval thresholds, DECIMAL custom-field defaults) are
 **strings** (D-015 no-float), parsed exactly via `Decimal` when the rows are created.
 
-## The five templates — how they differ
+## The templates — how they differ
 
-The spec requires five *meaningfully different* templates. The distinctives (all asserted in
+The spec requires *meaningfully different* templates. The distinctives (all asserted in
 `test_templates_valid.py`):
 
 | Template | Terminology | Modules | Costing default | Defining COA / custom fields |
@@ -54,6 +55,7 @@ The spec requires five *meaningfully different* templates. The distinctives (all
 | **professional-services** | Engagement, Consultant, Client | inventory **off**, manufacturing off, projects **on** | (no inventory) | Unbilled-Receivables/WIP + Consulting Fees; **billable_rate** + utilization fields on the employee, engagement-partner on the project |
 | **healthcare** | **Patient**, Encounter, Claim | manufacturing **off**, CRM off | FIFO | Patient + Insurance Receivables, Contractual Allowances; a required **insurer/payer** field + policy + DOB on the customer |
 | **construction** | **Job** (project + production order), Owner, Subcontractor | manufacturing **off**, projects on, maintenance on | MOVING_AVERAGE | **Retainage Receivable/Payable** + Costs/Billings-in-Excess; a **retainage_percent** field on the customer, contract-number + bond-required on the project |
+| **hospitality** | **Guest / Group Account**, Storeroom, Folio Invoice | hospitality **on**, manufacturing on (BOM sub-engine only — recipes are BOMs; no production orders/MRP), projects off | **FIFO** | **Guest Ledger / City Ledger / Advance Deposits** as three separate control accounts (spec Q5) + Room/Food/Beverage revenue split; star-rating + check-in/out-time fields on the property (tenant) |
 
 No two templates ship the same terminology map, module set, or COA.
 

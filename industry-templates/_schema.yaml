@@ -7,7 +7,7 @@
 # this file is the declarative contract both the loader and a template author read.
 #
 # Sections (all keys snake_case, mirroring the canonical terminology lock in STRUCTURE §7):
-#   name             — stable machine key, one of the five shipped names.
+#   name             — stable machine key, one of the shipped names.
 #   display_name     — human label shown in the onboarding wizard (14.2).
 #   description      — one-line summary of the template's intent.
 #   terminology      — canonical-term -> display-label overrides (customer -> Patient). Keys are a
@@ -54,6 +54,7 @@ properties:
       - professional-services
       - healthcare
       - construction
+      - hospitality
 
   display_name:
     type: string
@@ -183,6 +184,7 @@ properties:
       projects: { type: boolean }
       crm: { type: boolean }
       reporting: { type: boolean }
+      hospitality: { type: boolean }
 
   custom_fields:
     type: array

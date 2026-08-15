@@ -17,6 +17,7 @@ from collections.abc import Callable
 import pytest
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
@@ -232,7 +233,10 @@ def test_0046_round_trips_on_postgres(make_alembic_config: Callable[[str], Confi
         command.upgrade(config, "head")
 
     restored, version = asyncio.run(_probe())
-    assert version == "0046"
+    # NOT the literal "0046": this asserts that upgrading back reaches whatever head is, so a
+    # later migration does not fail a test about 0046's reversibility. Phase 19 added 0047 and
+    # 0048 and broke exactly that way.
+    assert version == ScriptDirectory.from_config(config).get_current_head()
     assert {
         "core_api_keys",
         "pk_core_api_keys",

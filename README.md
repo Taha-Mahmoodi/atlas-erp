@@ -189,7 +189,8 @@ Around these sit the rest of each module: PO/order/delivery/billing **lines**, g
 - **Projects** ([guide](docs/modules/projects.md)) — projects and WBS costing objects with a cost report
 - **CRM** ([guide](docs/modules/crm.md)) — leads → opportunities kanban, activities, and conversion
 - **Reporting** ([guide](docs/modules/reporting.md)) — role-based dashboard KPIs and a generic whitelist-driven, tenant-scoped report builder
-- **Industry templates & onboarding** ([guide](docs/modules/industry.md)) — five industry templates (manufacturing, retail, professional-services, healthcare, construction) applied idempotently, and a one-call tenant onboarding wizard
+- **Hospitality** ([guide](docs/modules/hospitality.md)) — the restaurant half: stored menu availability (86 / countdown / time-box), order tickets fired to the kitchen, ingredient depletion aggregated and run off the sale, and a menu + order API for a property's own website over a machine API key
+- **Industry templates & onboarding** ([guide](docs/modules/industry.md)) — six industry templates (manufacturing, retail, professional-services, healthcare, construction, hospitality) applied idempotently, and a one-call tenant onboarding wizard
 - **Admin** ([guide](docs/modules/admin.md)) — user/role management, permission catalog, audit-log viewer, and per-tenant number-sequence viewer
 
 All of it on the core platform ([guide](docs/modules/core.md)): non-bypassable row-level multi-tenancy, JWT auth (argon2id, rotating refresh sessions), RBAC as data with field masking, in-transaction append-only audit, the domain-event bus, document-flow chains, gapless numbering, idempotency keys, keyset pagination, an in-process background-job runner, and a wall-clock performance budget suite. The web frontend covers every module with role-based home pages and an in-house component library (data grid, form builder, kanban, dashboard cards, document-flow viewer).

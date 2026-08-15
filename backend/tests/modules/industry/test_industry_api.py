@@ -13,20 +13,17 @@ from sqlalchemy import func, select
 
 from app.core.tenancy import system_context
 from app.modules.finance.models import Account
-from app.modules.industry.constants import INDUSTRY_TEMPLATE_READ
+from app.modules.industry.constants import INDUSTRY_TEMPLATE_READ, SHIPPED_TEMPLATES
 
 
-async def test_list_templates_returns_the_five(industry_api):
+async def test_list_templates_returns_every_shipped_template(industry_api):
+    """The catalog the onboarding wizard renders is exactly SHIPPED_TEMPLATES — a template added to
+    the tuple but not shipped as a file (or the reverse) fails here, not at a tenant's first
+    apply."""
     response = await industry_api.client.get("/api/v1/industry/templates")
     assert response.status_code == 200, response.text
     names = {row["name"] for row in response.json()}
-    assert names == {
-        "manufacturing",
-        "retail",
-        "professional-services",
-        "healthcare",
-        "construction",
-    }
+    assert names == set(SHIPPED_TEMPLATES)
 
 
 async def test_get_template_returns_parsed_content(industry_api):

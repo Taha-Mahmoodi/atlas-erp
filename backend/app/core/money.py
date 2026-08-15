@@ -34,8 +34,11 @@ import sqlalchemy as sa
 from sqlalchemy.engine import Dialect
 from sqlalchemy.types import TypeDecorator
 
-# Scales (number of fractional decimal digits each type stores).
-_MONEY_SCALE = 6
+# Scales (number of fractional decimal digits each type stores). ``MONEY_SCALE`` is public because
+# a service that MAINTAINS a header total has to round each line to what the column will store
+# before summing — quantizing the sum instead lets the stored lines and the stored total differ by
+# a micro-unit (PLAN 19: the order-ticket line writer).
+MONEY_SCALE = 6
 _QUANTITY_SCALE = 6
 _RATE_SCALE = 10
 
@@ -98,7 +101,7 @@ class MoneyType(_ScaledDecimalType):
 
     # cache_ok must be set on each concrete TypeDecorator class, not just the base.
     cache_ok = True
-    scale = _MONEY_SCALE
+    scale = MONEY_SCALE
     precision = 18
 
 
@@ -148,6 +151,15 @@ def quantize_money(value: Decimal, places: int = 2) -> Decimal:
     return value.quantize(Decimal(1).scaleb(-places), rounding=ROUND_HALF_UP)
 
 
+def quantize_quantity(value: Decimal) -> Decimal:
+    """Round ``value`` to the D-015 quantity scale (6 dp) HALF_UP — what ``QuantityType`` stores.
+
+    Derived quantities (a BOM explosion's scrap load, a recipe scaled to a ticket's portions) must
+    not carry more precision than the column keeps, or the number a test asserts and the number the
+    database returns differ in the last places."""
+    return value.quantize(Decimal(1).scaleb(-_QUANTITY_SCALE), rounding=ROUND_HALF_UP)
+
+
 def quantize_for_currency(value: Decimal, currency_code: str) -> Decimal:
     """Round ``value`` to ``currency_code``'s minor unit HALF_UP (D-015)."""
     return quantize_money(value, currency_decimals(currency_code))
@@ -195,6 +207,7 @@ def allocate(total: Decimal, weights: list[Decimal], places: int = 2) -> list[De
 
 
 __all__ = [
+    "MONEY_SCALE",
     "MoneyType",
     "QuantityType",
     "RateType",
@@ -202,4 +215,5 @@ __all__ = [
     "currency_decimals",
     "quantize_for_currency",
     "quantize_money",
+    "quantize_quantity",
 ]
