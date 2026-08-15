@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import ColumnElement, case, func, select
+from sqlalchemy import ColumnElement, case, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -100,22 +100,41 @@ def resolve(row: MenuAvailability, now: datetime | None = None) -> MenuItemAvail
     )
 
 
-async def _locked_row(
-    session: AsyncSession, tenant_id: uuid.UUID, item_id: uuid.UUID
-) -> MenuAvailability | None:
-    """The item's override row FOR UPDATE, or None. The row lock serializes two concurrent orders
-    racing the last portion of a countdown on Postgres; SQLite omits it as a no-op (the
-    ``inv_stock_quants`` precedent, ``inventory/service/stock_quants.py``).
+async def _locked_rows(
+    session: AsyncSession, tenant_id: uuid.UUID, item_ids: Iterable[uuid.UUID]
+) -> list[MenuAvailability]:
+    """Whichever of ``item_ids`` have an override row, FOR UPDATE. The row lock serializes two
+    concurrent orders racing the last portion of a countdown on Postgres; SQLite omits it as a
+    no-op (the ``inv_stock_quants`` precedent, ``inventory/service/stock_quants.py``).
+
+    ONE locked read for every writer in this module, singular and batched alike, so the lock-order
+    rule below cannot hold for one write path and not the other.
+
+    A stable lock order. Two tickets sharing two countdown dishes used to take the row locks in
+    their own line order, which is the classic deadlock shape; ordering the read makes the common
+    index-scan plan acquire them in the same sequence for both.
 
     Deliberately does NOT filter on expiry: a lapsed row is still THE row for this item, and a
     write must overwrite it rather than insert a duplicate the unique constraint would reject.
     """
     stmt = (
         select(MenuAvailability)
-        .where(MenuAvailability.tenant_id == tenant_id, MenuAvailability.item_id == item_id)
+        .where(
+            MenuAvailability.tenant_id == tenant_id,
+            MenuAvailability.item_id.in_(list(item_ids)),
+        )
+        .order_by(MenuAvailability.item_id)
         .with_for_update()
     )
-    return (await session.execute(stmt)).scalar_one_or_none()
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def _locked_row(
+    session: AsyncSession, tenant_id: uuid.UUID, item_id: uuid.UUID
+) -> MenuAvailability | None:
+    """The item's override row FOR UPDATE, or None — the one-item spelling of ``_locked_rows``."""
+    rows = await _locked_rows(session, tenant_id, [item_id])
+    return rows[0] if rows else None
 
 
 async def _insert_or_reload(
@@ -205,6 +224,59 @@ async def clear_86(session: AsyncSession, tenant_id: uuid.UUID, item_id: uuid.UU
         await session.delete(row)
 
 
+async def _burn(session: AsyncSession, row: MenuAvailability, remaining: Decimal) -> None:
+    """Write ONE countdown's new value, with the counter the burn was COMPUTED FROM pinned in the
+    WHERE clause. The only write in this module that is not a plain ORM mutation, for one reason.
+
+    A burn is decided from a read and applied afterwards, and ``clear_86`` DELETES the row — the
+    chef finding another tray while the ticket is firing. Mutating the loaded row instead leaves
+    the write to a later autoflush (in ``fire_ticket`` that is the ticket's own transition, three
+    statements downstream), and the ORM's UPDATE for a row somebody deleted in between matches zero
+    rows and raises ``StaleDataError``: an HTTP 500 on the fire, with a table sitting waiting to
+    eat. The row lock does not prevent it wherever ``with_for_update`` is a no-op — SQLite, D-003,
+    where every test and the local demo run — because there the DELETE simply commits inside the
+    window.
+
+    Pinning ``remaining_qty`` makes the write self-checking on EVERY engine instead of trusting a
+    lock only one of them takes: it lands only while the countdown still holds exactly what was
+    counted, and matching nothing means another writer removed or moved the countdown in the
+    window. There is then nothing left to burn — the dish is back on the menu, or its counter is
+    already somebody else's — so the burn is dropped rather than blindly restated over the winner,
+    which is what would tear the row into LIMITED with nothing left: a state the menu reads to a
+    guest as orderable while the counter says there is none. On PostgreSQL the row lock makes the
+    zero-match branch unreachable (the deleter blocks on it until this transaction commits, which
+    a probe pins directly); the guard is what gives SQLite the same two outcomes instead of a 500.
+
+    ``updated_at`` still moves: ``TimestampMixin``'s Python ``onupdate`` fires for a Core UPDATE
+    exactly as it does for a flush (models.py #34), so ``collection_etag`` still invalidates the
+    website's cached menu when a countdown auto-86s a dish.
+    """
+    values: dict[str, object] = {"remaining_qty": remaining}
+    if remaining <= 0:
+        # The time box came with the COUNTDOWN ("twenty portions, until 22:00"); it says nothing
+        # about the 86 that replaces it. Left in place it lapses at 22:00 and ``resolve`` hands the
+        # website AVAILABLE for a dish with nothing behind it — and nothing sweeps expired rows, so
+        # it stays wrongly sellable until a human notices.
+        values |= {
+            "state": AvailabilityState.EIGHTY_SIXED.value,
+            "source": AvailabilitySource.AUTO.value,
+            "available_until": None,
+        }
+    await session.execute(
+        update(MenuAvailability)
+        .where(
+            MenuAvailability.id == row.id,
+            MenuAvailability.remaining_qty == row.remaining_qty,
+        )
+        .values(**values)
+        # The statement is still ORM-enabled, so D-007's do_orm_execute listener injects the tenant
+        # predicate exactly as it does for the locked read. ``evaluate`` keeps the loaded row in
+        # step with what was written without the extra SELECT ``fetch`` costs on SQLite; the
+        # criteria are equality tests on loaded columns, which is what ``evaluate`` handles.
+        .execution_options(synchronize_session="evaluate")
+    )
+
+
 async def decrement_remaining(
     session: AsyncSession, tenant_id: uuid.UUID, item_id: uuid.UUID, quantity: Decimal
 ) -> None:
@@ -245,22 +317,10 @@ async def decrement_remaining_many(
     """
     if not quantities:
         return
-    stmt = (
-        select(MenuAvailability)
-        .where(
-            MenuAvailability.tenant_id == tenant_id,
-            MenuAvailability.item_id.in_(list(quantities)),
-        )
-        # A stable lock order. Two tickets sharing two countdown dishes used to take the row locks
-        # in their own line order, which is the classic deadlock shape; ordering the read makes the
-        # common index-scan plan acquire them in the same sequence for both.
-        .order_by(MenuAvailability.item_id)
-        .with_for_update()
-    )
     now = utcnow()
     burns: list[tuple[MenuAvailability, Decimal]] = []
     exhausted: list[str] = []
-    for row in (await session.execute(stmt)).scalars().all():
+    for row in await _locked_rows(session, tenant_id, list(quantities)):
         if row.remaining_qty is None or _is_expired(row, now):
             continue
         remaining = Decimal(row.remaining_qty) - quantities[row.item_id]
@@ -275,15 +335,7 @@ async def decrement_remaining_many(
             details={"item_ids": sorted(exhausted)},
         )
     for row, remaining in burns:
-        row.remaining_qty = remaining
-        if remaining <= 0:
-            row.state = AvailabilityState.EIGHTY_SIXED.value
-            row.source = AvailabilitySource.AUTO.value
-            # The time box came with the COUNTDOWN ("twenty portions, until 22:00"); it says
-            # nothing about the 86 that replaces it. Left in place it lapses at 22:00 and
-            # ``resolve`` hands the website AVAILABLE for a dish with nothing behind it — and
-            # nothing sweeps expired rows, so it stays wrongly sellable until a human notices.
-            row.available_until = None
+        await _burn(session, row, remaining)
 
 
 async def availability_for_items(

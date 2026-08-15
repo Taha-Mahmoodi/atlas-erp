@@ -97,6 +97,49 @@ async def interleaved(*targets: str, parties: int = 2) -> AsyncIterator[None]:
             setattr(availability, target, real)
 
 
+# How long a frozen burn waits for a DELETE to land in its window before giving up on it. SQLite
+# lets one through in single-digit milliseconds; PostgreSQL holds it out on the row lock for the
+# whole wait. That difference is the point — the test tolerates both rather than asserting either.
+DELETE_WINDOW = 1.0
+
+
+@contextlib.asynccontextmanager
+async def frozen_after_the_locked_read() -> AsyncIterator[tuple[asyncio.Event, asyncio.Event]]:
+    """Freeze the FIRST locked read taken in the block — the countdown burn's — after its SELECT
+    has returned and before ``decrement_remaining_many`` writes anything, and yield
+    ``(reached, release)``: the event that fires when the burn is sitting in its window, and the
+    one that lets it go.
+
+    A burn is decided from a read and applied afterwards, and that gap is where the other writer's
+    DELETE has to land for the row to tear. An ungated ``gather`` hits it about once in sixty runs
+    — a flake, not a regression test — so the window is held open explicitly. It gates a read the
+    burn cannot avoid, not a hook added for the test.
+
+    Later readers pass straight through: the un-86 takes the SAME locked read on its way to the
+    DELETE and must not freeze behind the burn it is racing.
+    """
+    real = availability._locked_rows
+    reached = asyncio.Event()
+    release = asyncio.Event()
+    frozen = False
+
+    async def _frozen(session: AsyncSession, *args: object, **kwargs: object) -> object:
+        nonlocal frozen
+        rows = await real(session, *args, **kwargs)  # type: ignore[arg-type]
+        if not frozen:
+            frozen = True
+            reached.set()
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(release.wait(), timeout=DELETE_WINDOW)
+        return rows
+
+    availability._locked_rows = _frozen  # type: ignore[assignment]
+    try:
+        yield reached, release
+    finally:
+        availability._locked_rows = real  # type: ignore[assignment]
+
+
 @pytest.fixture
 def sessions(db_engine: AsyncEngine) -> Callable[[], AsyncSession]:
     """A factory for INDEPENDENT sessions on the per-test engine — one per concurrent actor, the
@@ -378,7 +421,6 @@ async def test_two_concurrent_reads_of_a_just_lapsed_86_agree(
     assert after is not None and after.updated_at == stamp
 
 
-@pytest.mark.pg
 async def test_clearing_an_86_while_a_countdown_drains_leaves_a_coherent_answer(
     sessions: Callable[[], AsyncSession],
     db_session: AsyncSession,
@@ -389,19 +431,17 @@ async def test_clearing_an_86_while_a_countdown_drains_leaves_a_coherent_answer(
 
     Either order is a defensible outcome — the dish is back on, or it sold out — but the two
     writers must not tear the row into a state the menu cannot express: LIMITED with nothing left
-    reads to a guest as "orderable" while the counter says there is none.
+    reads to a guest as "orderable" while the counter says there is none. And neither may 500: the
+    guest is at a table, waiting to eat, and the server's terminal has nothing to say to a 500.
 
-    MARKED ``pg`` because the coherence asserted here is PROVIDED BY the row lock, and
-    ``with_for_update()`` is a documented no-op on SQLite (``_locked_row``, the ``inv_stock_quants``
-    precedent). On Postgres ``clear_86`` blocks on the burn's lock and the delete lands after it,
-    so the row is never torn. On SQLite the two interleave freely and the burn's UPDATE can find
-    its row already deleted, raising StaleDataError — an engine artefact of the test harness, not a
-    defect in the code under test, and it surfaced as a CI failure that passed locally purely on
-    scheduling luck.
-
-    The sibling concurrent-FIRES test is deliberately NOT marked: two UPDATEs serialize under
-    SQLite's database-level write lock, so its assertion still means something there. Only the
-    delete-versus-update shape needs the real engine.
+    The DELETE is driven into the exact window it has to hit — after the burn's locked read has
+    returned, before the burn's write lands. What happens next is the engine's answer and both
+    answers are accepted here: PostgreSQL holds the DELETE out on the row lock until the fire
+    commits, while SQLite (``with_for_update`` is a no-op there, D-003) lets it through and the
+    burn finds its row gone. The burn is written to survive BOTH — it pins the counter it read in
+    its own WHERE clause, so a vanished row drops the burn instead of restating it over a row that
+    is no longer there. Left unguarded, the ORM's UPDATE matches zero rows and raises
+    ``StaleDataError`` straight through the fire, which is where this test came from.
     """
     await _set(
         db_session,
@@ -412,19 +452,26 @@ async def test_clearing_an_86_while_a_countdown_drains_leaves_a_coherent_answer(
     )
     ticket_id = await _open_ticket(db_session, tenant_a, dish_id, "1")
 
-    async def fire() -> str:
-        async with sessions() as session:
-            return await _fire(session, tenant_a, ticket_id)
+    async with frozen_after_the_locked_read() as (reached, release):
 
-    async def un_86() -> str:
-        async with sessions() as session:
-            with tenant_context(tenant_a):
-                await availability.clear_86(session, tenant_a, dish_id)
-                await session.commit()
-            return "cleared"
+        async def fire() -> str:
+            async with sessions() as session:
+                return await _fire(session, tenant_a, ticket_id)
 
-    await _gather(fire(), un_86())
+        async def un_86() -> str:
+            await asyncio.wait_for(reached.wait(), timeout=GATE_TIMEOUT)
+            async with sessions() as session:
+                try:
+                    with tenant_context(tenant_a):
+                        await availability.clear_86(session, tenant_a, dish_id)
+                        await session.commit()
+                    return "cleared"
+                finally:
+                    release.set()
 
+        results = await _gather(fire(), un_86())
+
+    assert set(results) <= {"fired", "refused:hospitality.item_unavailable", "cleared"}, results
     resolved = await _read(db_session, tenant_a, dish_id)
     assert resolved.state in (AvailabilityState.AVAILABLE, AvailabilityState.EIGHTY_SIXED)
     assert resolved.state != AvailabilityState.LIMITED or resolved.remaining_qty > 0
