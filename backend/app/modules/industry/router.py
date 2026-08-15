@@ -67,7 +67,7 @@ class ApplyResult(BaseModel):
     dependencies=[Depends(require_permission(INDUSTRY_TEMPLATE_READ))],
 )
 async def list_templates() -> list[TemplateSummary]:
-    """The five shipped templates as summaries (D-060). Pure read off the bundled YAML."""
+    """The shipped templates as summaries (D-060). Pure read off the bundled YAML."""
     return [
         TemplateSummary(
             name=template.name,

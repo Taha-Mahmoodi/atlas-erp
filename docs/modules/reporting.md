@@ -51,6 +51,7 @@ manufacturing are all **older** and import nothing from reporting → **one-dire
 | `open_purchase_orders` | `CountValueKpi` | `procurement/queries.open_purchase_orders` | count + Σ value of APPROVED / SENT / PARTIALLY_RECEIVED POs |
 | `otd_percent` | `OtdKpi` | `sales/queries.on_time_delivery` | simple delivery-vs-requested OTD (see below) |
 | `wip_value` | `MoneyKpi` | `finance/queries.wip_balance` | the WIP-clearing account balance — the authoritative open-WIP figure (D-048) |
+| `failed_jobs` | `FailedJobsKpi` | `core/jobs.Job` (no module `queries`) | count of jobs that ended FAILED in the last `FAILED_JOB_WINDOW_DAYS` (7). The ONE KPI whose source is **core** rather than a module: jobs are cross-cutting platform infrastructure owned by no business module, so there is nothing to read downward from. Gated on `admin.audit.read`, not a new key — same audience, strictly more powerful key, and a new key would leave existing Administrator roles unable to see the card. Drill-down is the existing `GET /api/v1/jobs?status=FAILED`. Added by **D-078** to pay D-072's FAILED-job-visibility clause |
 
 ### Sanctioned cross-module query additions
 
@@ -204,6 +205,18 @@ session; it never calls their services and writes nothing). finance / inventory 
   200 stream begins, so a malformed report fails as a normal 400 envelope rather than mid-body.
 - `GET /reporting/reports/entities` → the whitelist catalog, **filtered to the entities the caller's
   role permits** (each gated by its source read permission), so a UI builds a role-correct picker.
+
+## Human headers on both surfaces (#166)
+
+A result carries two aligned lists: `columns` — the **wire** names, which are also the keys of every
+row dict — and `column_labels`, the **display** header for each, in the same order. A plain column's
+label is the registry's `ReportColumn.label` (`order_number` → "Order Number"); an aggregate's is
+composed as `"{Sum|Count|Average|Minimum|Maximum} of {column label}"` (`sum_total_amount` → "Sum of
+Total"), unless the caller supplied an `alias`, in which case the alias they chose **is** the label.
+
+Both surfaces read that one list: the results grid renders it as its headers, and the streaming CSV
+writes it as its header line. Keeping them on a single source is the fix's point — issue #166 was
+the grid and the export agreeing with each other on the *wrong* thing.
 
 ## Role-based gating of the report builder (D-059 / D-009)
 

@@ -96,6 +96,31 @@ def _build_app(engine: AsyncEngine, tenant_id: uuid.UUID, *, fail: bool = False)
         await run_in_uow(session, work)
         return holder["read"]
 
+    touch_guard = Idempotent("test.setting.touch")
+
+    @app.post("/api/v1/_test/settings/{name}/touch", response_model=_SettingRead, status_code=201)
+    async def touch_setting(
+        name: str,
+        _tenant: Annotated[None, Depends(_set_tenant)],
+        session: Annotated[AsyncSession, Depends(get_session)],
+        idem: Annotated[IdempotencyContext, Depends(touch_guard)],
+    ) -> _SettingRead:
+        # An ACTION route, the shape half the guarded endpoints in Atlas have: the resource is
+        # named in the PATH and the body is empty. See the target-in-the-hash test below.
+        holder: dict[str, _SettingRead] = {}
+
+        async def work() -> None:
+            with tenant_context(tenant_id):
+                setting = TenantSetting(key=name, value={})
+                session.add(setting)
+                await session.flush()
+                holder["read"] = await idem.capture(
+                    _SettingRead(id=setting.id, key=name), status_code=201
+                )
+
+        await run_in_uow(session, work)
+        return holder["read"]
+
     return app
 
 
@@ -281,6 +306,40 @@ async def test_same_key_under_two_tenants_is_independent(
     assert (await _load_key(db_session, tenant_b, "shared")) is not None
     assert await _count_settings(db_session, tenant_a) == 1
     assert await _count_settings(db_session, tenant_b) == 1
+
+
+async def test_a_key_spent_on_one_resource_cannot_answer_for_another(
+    db_engine: AsyncEngine, db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    """The half of D-013's replay contract an ACTION route breaks if only the body is hashed.
+
+    ``POST /{id}/fire``, ``/{id}/post``, ``/{id}/send`` carry NO body, so every resource on the
+    route hashes b'' identically: a key spent on one document would REPLAY that document's stored
+    response for a DIFFERENT one — a 2xx for work that never ran, and the one case the
+    different-body 422 cannot see, because there is no body to differ. The guard therefore hashes
+    the request TARGET together with the body, which turns the collision back into the ordinary
+    key-reuse refusal a client retries under a fresh key.
+    """
+    app = _build_app(db_engine, tenant_a)
+    async with await _client(app) as client:
+        first = await client.post(
+            "/api/v1/_test/settings/alpha/touch", headers={"Idempotency-Key": "k"}
+        )
+        second = await client.post(
+            "/api/v1/_test/settings/beta/touch", headers={"Idempotency-Key": "k"}
+        )
+        replay = await client.post(
+            "/api/v1/_test/settings/alpha/touch", headers={"Idempotency-Key": "k"}
+        )
+
+    assert first.status_code == 201, first.text
+    assert first.json()["key"] == "alpha"
+    assert second.status_code == 422, second.text
+    assert second.json()["error"]["code"] == "idempotency.key_reuse"
+    # The genuine retry — same key, same target — still replays verbatim and runs nothing twice.
+    assert replay.status_code == 201, replay.text
+    assert replay.json() == first.json()
+    assert await _count_settings(db_session, tenant_a) == 1
 
 
 def test_status_constants_match_decision() -> None:

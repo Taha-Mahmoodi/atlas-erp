@@ -34,7 +34,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 
 from app.core.exceptions import AtlasError
-from app.modules.reporting.constants import REPORT_ROW_CAP, Aggregation, FilterOperator
+from app.modules.reporting.constants import (
+    AGGREGATION_LABELS,
+    REPORT_ROW_CAP,
+    Aggregation,
+    FilterOperator,
+)
 from app.modules.reporting.report_registry import (
     ReportableEntity,
     ReportColumn,
@@ -135,40 +140,52 @@ def _filter_clause(column: ReportColumn, flt: ReportFilter) -> sa.ColumnElement[
 
 def _aggregate_expr(
     entity: ReportableEntity, agg: ReportAggregation
-) -> tuple[str, sa.ColumnElement[Any]]:
-    """Build ONE aggregate expression + its result alias (D-059). COUNT may omit a column
-    (COUNT(*)) or count any whitelisted column; SUM/AVG/MIN/MAX need an aggregatable column."""
+) -> tuple[str, str, sa.ColumnElement[Any]]:
+    """Build ONE aggregate expression + its result alias + its DISPLAY label (D-059, #166). COUNT
+    may omit a column (COUNT(*)) or count any whitelisted column; SUM/AVG/MIN/MAX need an
+    aggregatable column.
+
+    THE LABEL RULE (#166). A caller-supplied ``alias`` IS the label — they named the result column
+    deliberately, so the builder does not second-guess it. Otherwise the label is composed from the
+    registry: ``"Sum of Total"``, never the wire alias ``"sum_total_amount"``."""
     # ApiModel uses ``use_enum_values=True`` so ``agg.func`` arrives as the StrEnum's str value;
     # normalize back to the enum member for exact comparison + a clean alias.
     func = Aggregation(agg.func)
-    if func is Aggregation.COUNT:
-        if agg.column is None:
-            alias = agg.alias or "count"
-            return alias, sa.func.count().label(alias)
-        column = _resolve_column(entity, agg.column)
-        alias = agg.alias or f"count_{agg.column}"
-        return alias, sa.func.count(column.attr).label(alias)
+    if func is Aggregation.COUNT and agg.column is None:
+        alias = agg.alias or "count"
+        return alias, agg.alias or AGGREGATION_LABELS[func], sa.func.count().label(alias)
     if agg.column is None:
         raise _bad(f"Aggregation {func.value} requires a column")
     column = _resolve_column(entity, agg.column)
-    if not column.is_aggregatable:
+    # COUNT may target ANY whitelisted column; only the numeric aggregates need the flag.
+    if func is not Aggregation.COUNT and not column.is_aggregatable:
         raise _bad(f"Column '{agg.column}' is not aggregatable")
     funcs = {
+        Aggregation.COUNT: sa.func.count,
         Aggregation.SUM: sa.func.sum,
         Aggregation.AVG: sa.func.avg,
         Aggregation.MIN: sa.func.min,
         Aggregation.MAX: sa.func.max,
     }
     alias = agg.alias or f"{func.value}_{agg.column}"
-    return alias, funcs[func](column.attr).label(alias)
+    label = agg.alias or f"{AGGREGATION_LABELS[func]} of {column.label}"
+    return alias, label, funcs[func](column.attr).label(alias)
 
 
-def _selected(spec: ReportSpec, entity: ReportableEntity) -> tuple[list[str], list[Any]]:
-    """The ordered (result-column-name, selectable) pairs for the spec (D-059).
+def _selected(
+    spec: ReportSpec, entity: ReportableEntity
+) -> tuple[list[str], list[str], list[Any]]:
+    """The ordered (result-column-name, display-label, selectable) triples for the spec (D-059).
 
     Grouped: the group-by columns (each whitelisted + ``groupable``) followed by the aggregates.
-    Flat: the requested ``columns`` (each whitelisted + non-empty)."""
+    Flat: the requested ``columns`` (each whitelisted + non-empty).
+
+    Every name gets a LABEL here (#166) — the registry's ``ReportColumn.label`` for a plain column,
+    the composed ``"Sum of Total"`` for an aggregate. Labels are built in the SAME loop as the names
+    so the two lists are aligned index-for-index by construction, not by a second pass that could
+    fall out of step; both the JSON grid and the CSV export then read this one list."""
     names: list[str] = []
+    labels: list[str] = []
     selectables: list[Any] = []
     if spec.group_by:
         for name in spec.group_by:
@@ -176,22 +193,25 @@ def _selected(spec: ReportSpec, entity: ReportableEntity) -> tuple[list[str], li
             if not column.groupable:
                 raise _bad(f"Column '{name}' is not groupable")
             names.append(name)
+            labels.append(column.label)
             selectables.append(column.attr.label(name))
         if not spec.aggregations:
             raise _bad("A grouped report requires at least one aggregation")
         for agg in spec.aggregations:
-            alias, expr = _aggregate_expr(entity, agg)
+            alias, label, expr = _aggregate_expr(entity, agg)
             names.append(alias)
+            labels.append(label)
             selectables.append(expr)
-        return names, selectables
+        return names, labels, selectables
     if spec.aggregations:
         raise _bad("Aggregations require a group_by")
     requested = spec.columns or list(entity.columns)
     for name in requested:
         column = _resolve_column(entity, name)
         names.append(name)
+        labels.append(column.label)
         selectables.append(column.attr.label(name))
-    return names, selectables
+    return names, labels, selectables
 
 
 def _order_columns(entity: ReportableEntity, spec: ReportSpec) -> list[InstrumentedAttribute[Any]]:
@@ -207,10 +227,13 @@ def _order_columns(entity: ReportableEntity, spec: ReportSpec) -> list[Instrumen
     return order
 
 
-def _build_select(spec: ReportSpec, entity: ReportableEntity) -> tuple[list[str], sa.Select[Any]]:
+def _build_select(
+    spec: ReportSpec, entity: ReportableEntity
+) -> tuple[list[str], list[str], sa.Select[Any]]:
     """Validate the spec + assemble the ORM select (no execution). Returns (result column names,
-    statement). Tenancy is NOT added here — ``do_orm_execute`` injects it at execution (D-007)."""
-    names, selectables = _selected(spec, entity)
+    their display labels, statement). Tenancy is NOT added here — ``do_orm_execute`` injects it at
+    execution (D-007)."""
+    names, labels, selectables = _selected(spec, entity)
     stmt = sa.select(*selectables)
     for flt in spec.filters:
         column = _resolve_column(entity, flt.column)
@@ -220,7 +243,7 @@ def _build_select(spec: ReportSpec, entity: ReportableEntity) -> tuple[list[str]
     if spec.group_by:
         stmt = stmt.group_by(*(entity.columns[name].attr for name in spec.group_by))
     stmt = stmt.order_by(*_order_columns(entity, spec))
-    return names, stmt
+    return names, labels, stmt
 
 
 def _effective_cap(spec: ReportSpec) -> int:
@@ -265,14 +288,18 @@ async def run_report(session: AsyncSession, spec: ReportSpec) -> ReportResult:
     scopes it), CAPS at 10k rows + 1 to flag truncation (PERFORMANCE §3), and returns JSON-safe
     rows. The caller must already hold the entity's source permission (the router enforces that)."""
     entity = _resolve_entity(spec)
-    names, stmt = _build_select(spec, entity)
+    names, labels, stmt = _build_select(spec, entity)
     cap = _effective_cap(spec)
     result = await session.execute(stmt.limit(cap + 1))
     fetched = result.all()
     truncated = len(fetched) > cap
     rows = [_row_dict(names, row) for row in fetched[:cap]]
     return ReportResult(
-        columns=names, rows=rows, row_count=len(rows), truncated=truncated
+        columns=names,
+        column_labels=labels,
+        rows=rows,
+        row_count=len(rows),
+        truncated=truncated,
     )
 
 
@@ -280,19 +307,23 @@ async def stream_report_csv(session: AsyncSession, spec: ReportSpec) -> AsyncIte
     """Stream the report as CSV rows, generated LAZILY (PERFORMANCE §3): the header line, then one
     data line per row, pulled from the DB in batches via ``stream_results`` so the full set is never
     materialized in memory. The CSV export is NOT capped at 10k — it is the path for results larger
-    than the JSON grid. Each yielded chunk is a complete CSV line (CRLF-terminated, RFC 4180)."""
+    than the JSON grid. Each yielded chunk is a complete CSV line (CRLF-terminated, RFC 4180).
+
+    The header line is the DISPLAY labels (#166) — the very list ``run_report`` puts in
+    ``ReportResult.column_labels`` — so a spreadsheet reads "Sum of Total" exactly as the on-screen
+    grid does; both surfaces take their headers from this one ``_build_select`` return."""
     import csv  # local import: only the export path needs the csv module
     import io
 
     entity = _resolve_entity(spec)
-    names, stmt = _build_select(spec, entity)
+    _names, labels, stmt = _build_select(spec, entity)
 
     def _line(values: list[Any]) -> str:
         buffer = io.StringIO()
         csv.writer(buffer).writerow(values)
         return buffer.getvalue()
 
-    yield _line(names)
+    yield _line(labels)
     stream = await session.stream(stmt.execution_options(stream_results=True))
     async for partition in stream.partitions(_STREAM_BATCH):
         for row in partition:

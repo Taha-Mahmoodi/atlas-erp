@@ -2,7 +2,7 @@
 event key, the terminology TenantSetting key prefix, the module-toggle TenantSetting key, and
 the permission keys (registered into the core RBAC catalog at import, D-009).
 
-The industry layer (PLAN 14.1 / D-060) is the configuration layer: a tenant picks one of the five
+The industry layer (PLAN 14.1 / D-060) is the configuration layer: a tenant picks one of the
 SHIPPED_TEMPLATES at onboarding and the loader applies it idempotently. The templates live as YAML
 files in the top-level ``industry-templates/`` dir (STRUCTURE §1), NOT in code — this file only
 names them and the loader reads/validates the files against ``industry-templates/_schema.yaml``.
@@ -10,14 +10,17 @@ names them and the loader reads/validates the files against ``industry-templates
 
 from app.core.rbac import register_permissions
 
-# The five shipped template names (PLAN 14.1). Each is a ``{name}.yaml`` file in the top-level
-# industry-templates/ dir whose ``name`` field equals this stem; the loader rejects any other name.
+# The shipped template names — the original five (PLAN 14.1) plus hospitality (PLAN 19.1). Each is a
+# ``{name}.yaml`` file in the top-level industry-templates/ dir whose ``name`` field equals this
+# stem; the loader rejects any other name. Adding one here also means adding it to the ``name`` enum
+# in _schema.yaml — the JSON-Schema is the declarative gate, this tuple is the runtime one.
 SHIPPED_TEMPLATES: tuple[str, ...] = (
     "manufacturing",
     "retail",
     "professional-services",
     "healthcare",
     "construction",
+    "hospitality",
 )
 
 # The domain-event key the loader publishes once it has parsed + validated a template and applied

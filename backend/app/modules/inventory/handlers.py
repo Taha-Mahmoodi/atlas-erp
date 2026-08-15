@@ -43,12 +43,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import docflow
+from app.core.exceptions import ValidationFailedError
 from app.core.tenancy import system_context
+from app.modules.hospitality.constants import TICKET_DEPLETED_BY_MOVE_LINK
+from app.modules.hospitality.events import TicketIngredientsConsumed
 from app.modules.industry.events import IndustryTemplateApplying
 from app.modules.inventory.constants import CostingMethod, MoveType
 from app.modules.inventory.models import ItemCategory, Uom
 from app.modules.inventory.schemas import StockMoveCreate
 from app.modules.inventory.service.stock_moves import create_move
+from app.modules.inventory.service.stock_reads import items_already_moved_for_document
 from app.modules.manufacturing.constants import (
     PRODUCTION_ORDER_FINISHED_TO_MOVE_LINK,
     PRODUCTION_ORDER_ISSUED_TO_MOVE_LINK,
@@ -225,6 +229,77 @@ async def issue_production_components(
         )
 
 
+async def issue_ticket_ingredients(
+    session: AsyncSession, event: TicketIngredientsConsumed
+) -> None:
+    """Create the stock ISSUE moves for a fired restaurant ticket's ingredients (PLAN 19, Q4) — the
+    hospitality twin of ``issue_delivery_moves``, and like a delivery it passes NO valuation
+    override, because an ISSUE's default offset already IS the category's COGS account.
+
+    One move per AGGREGATED ingredient (hospitality collapses a ticket's shared onion/oil/salt
+    before publishing, so this loop is ~12 long for a 56-line check), each from the bin the event
+    resolved, dated the ticket's FIRE date. Runs inside the DEPLETION JOB's transaction, not the
+    sale's — insufficient stock still rolls the whole depletion back (D-020), but it rolls back a
+    background job instead of a guest's payment. Links the ticket document to each move document
+    ('depleted_by'). Registered via ``app.main.register_event_handlers``.
+
+    Failures are RE-RAISED naming the ticket: this is the last frame holding it. ``core/jobs.py``
+    records a failure as ``str(exc)`` alone (code and details dropped, and ``JobRead`` never
+    exposes the payload), the moves roll back so no docflow edge survives, and Q4 pays for the
+    guest's dinner with a QUIET failure — so this string is the ONLY place the property can learn
+    which check went undepleted.
+
+    IDEMPOTENT (P0 Task 1). ``core/job_sweeper.py`` re-dispatches a depletion whose runner died
+    mid-flight, so an ingredient this ticket has already issued is SKIPPED rather than issued a
+    second time — a lost COGS posting is bad, a duplicated one is worse. The guard lives here
+    rather than in hospitality because this is where the duplicate would be born, so it also
+    covers any future path that re-publishes the event. Per ITEM, not per ticket: a big check is
+    chunked into several jobs over disjoint ingredient sets."""
+    move_date = date.fromisoformat(event.move_date)
+    already_issued = await items_already_moved_for_document(
+        session, event.tenant_id, event.document_id, TICKET_DEPLETED_BY_MOVE_LINK
+    )
+    for ingredient in event.ingredients:
+        if ingredient.item_id in already_issued:
+            continue
+        try:
+            move = await create_move(
+                session,
+                event.tenant_id,
+                StockMoveCreate(
+                    move_type=MoveType.ISSUE,
+                    item_id=ingredient.item_id,
+                    quantity=ingredient.quantity,
+                    from_bin_id=ingredient.bin_id,
+                    move_date=move_date,
+                    reference=event.ticket_number,
+                ),
+            )
+            await docflow.link_documents(
+                session,
+                event.tenant_id,
+                predecessor=event.document_id,
+                successor=move.document_id,
+                link_type=TICKET_DEPLETED_BY_MOVE_LINK,
+            )
+        except Exception as exc:
+            # Broad on purpose: a closed period is caught by finance's service check, but D-018's
+            # DB trigger backstops it, and a trigger surfaces as a DBAPIError whose text is raw
+            # SQL. Whatever raised, the recorded line has to start with the ticket.
+            raise ValidationFailedError(
+                message=(
+                    f"Ticket {event.ticket_number} ({event.ticket_id}) could not deplete item "
+                    f"{ingredient.item_id} from bin {ingredient.bin_id}: {exc}"
+                ),
+                code=getattr(exc, "code", "hospitality.depletion_failed"),
+                details={
+                    "ticket_id": str(event.ticket_id),
+                    "item_id": str(ingredient.item_id),
+                    "bin_id": str(ingredient.bin_id),
+                },
+            ) from exc
+
+
 async def receive_finished_order_move(
     session: AsyncSession, event: OrderFinished
 ) -> None:
@@ -371,6 +446,7 @@ __all__ = [
     "disposition_rejected_stock",
     "issue_delivery_moves",
     "issue_production_components",
+    "issue_ticket_ingredients",
     "provision_inventory_for_template",
     "receive_finished_order_move",
     "receive_goods_receipt_moves",

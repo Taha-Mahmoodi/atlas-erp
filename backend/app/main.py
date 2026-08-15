@@ -1,7 +1,10 @@
 """App factory and app-level plumbing: request id, CORS, error envelope, health."""
 
+import asyncio
 import logging
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -17,8 +20,10 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from app.core.audit import actor_user_id_ctx, request_id_ctx, request_ip_ctx
 from app.core.bootstrap import mount_routers, register_event_handlers
 from app.core.config import Settings, get_settings
+from app.core.db import session_factory
 from app.core.exceptions import AtlasError, translate_db_guard_error
 from app.core.idempotency import REPLAYED_HEADER, IdempotencyReplay
+from app.core.job_sweeper import run_sweeper
 from app.core.rbac import current_permissions
 from app.core.schemas import ErrorBody, ErrorEnvelope
 from app.core.tenancy import current_tenant_id
@@ -173,6 +178,25 @@ async def _handle_unexpected_error(request: Request, exc: Exception) -> JSONResp
     return _error_response(request, 500, "common.internal_error", "Internal server error")
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Own the stale-job sweeper's background task for the life of the process (P0).
+
+    It sweeps once on startup — a deploy IS a shutdown, so the jobs the previous process orphaned
+    are the common case — then on a timer. There is no cron in Atlas and this does not add one:
+    the loop is one asyncio task on the app's own loop, cancelled on shutdown so a reload does not
+    leak sweepers. It uses the module-level ``session_factory`` rather than the FastAPI dependency
+    because it runs outside any request; tests drive ``sweep_stale_jobs`` directly against their
+    per-test factory and never start this loop (ASGITransport does not run lifespan)."""
+    sweeper = asyncio.create_task(run_sweeper(session_factory))
+    try:
+        yield
+    finally:
+        sweeper.cancel()
+        with suppress(asyncio.CancelledError):
+            await sweeper
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     logging.basicConfig(level=settings.log_level.upper())
@@ -183,6 +207,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url=f"{API_PREFIX}/openapi.json",
         docs_url=f"{API_PREFIX}/docs",
         redoc_url=None,
+        lifespan=_lifespan,
     )
 
     app.add_middleware(

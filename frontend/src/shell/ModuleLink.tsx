@@ -40,6 +40,8 @@ export function moduleLinkProps(entry: ModuleEntry) {
       return { to: "/crm" } as const;
     case "hr":
       return { to: "/hr" } as const;
+    case "hospitality":
+      return { to: "/hospitality" } as const;
     default:
       return { to: "/$moduleKey", params: { moduleKey: entry.key } } as const;
   }

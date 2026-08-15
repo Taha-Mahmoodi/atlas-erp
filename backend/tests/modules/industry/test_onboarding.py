@@ -1,7 +1,7 @@
 """PLAN 14.2 / D-061: the tenant onboarding wizard provisions a WHOLE tenant — tenant + first admin
 role + first admin user + the chosen industry template's slices — in ONE transaction.
 
-Proves (service + API): a fresh onboard creates the tenant, an Administrator role carrying the admin
+Proves (service + API): a fresh onboard creates the tenant, an Owner role carrying the admin
 permission keys, and the admin user; the template is instantiated (COA accounts + UoMs exist + a
 terminology TenantSetting is set, read under the NEW tenant's context via the existing queries); the
 new admin can authenticate through the real login path; a duplicate slug is a 409; an unknown
@@ -23,12 +23,15 @@ from app.core.models import Permission, Role, RolePermission, User, UserRole
 from app.core.rbac import (
     ADMIN_TENANT_MANAGE,
     ADMIN_USER_MANAGE,
+    catalog_keys,
     sync_permission_catalog,
 )
 from app.core.tenancy import system_context
 from app.modules.admin.models import TenantSetting
 from app.modules.admin.service import find_tenant_by_slug
+from app.modules.finance.constants import FINANCE_ACCOUNT_READ
 from app.modules.finance.models import Account
+from app.modules.hr.constants import HR_EMPLOYEE_READ_COMPENSATION, HR_PAYROLL_READ
 from app.modules.industry import onboarding, queries
 from app.modules.industry.constants import (
     ONBOARDING_TENANT_CREATE,
@@ -86,7 +89,7 @@ async def test_onboard_creates_tenant_admin_role_and_user(db_session):
     assert admin.email == "owner@acme.test"
     assert admin.tenant_id == result.tenant_id
 
-    # An Administrator role exists AND carries the admin permission keys (via grant_admin_role).
+    # The Owner role exists AND carries the admin permission keys (via grant_admin_role).
     with system_context():
         role_keys = (
             await db_session.execute(
@@ -99,13 +102,53 @@ async def test_onboard_creates_tenant_admin_role_and_user(db_session):
         ).scalars().all()
     assert ADMIN_USER_MANAGE in role_keys
     assert ADMIN_TENANT_MANAGE in role_keys
+    # Exactly one role, and it is called "Owner" — NOT "Administrator" (#165, D-075). That name
+    # belongs to grant_admin_role's six-key default; two same-named is_system roles 25x apart in
+    # power would be indistinguishable in the roles UI.
     with system_context():
-        role_count = (
-            await db_session.execute(
-                select(func.count()).select_from(Role).where(Role.tenant_id == result.tenant_id)
-            )
-        ).scalar_one()
-    assert role_count == 1
+        role_names = (
+            await db_session.execute(select(Role.name).where(Role.tenant_id == result.tenant_id))
+        ).scalars().all()
+    assert role_names == ["Owner"]
+
+
+async def test_onboard_grants_the_owner_the_catalog_minus_the_withheld_keys(db_session):
+    """#165 / D-075: the first human in a new tenant could not read the COA/tax codes its own
+    template had just instantiated — the grant was six ``admin.*`` keys and nothing else. The grant
+    is now the WHOLE synced catalog minus ``_WITHHELD_FROM_FIRST_ADMIN``, asserted as an equality
+    rather than a sampling: a curated subset would silently go stale the next time a module ships a
+    permission, which is exactly how this issue happened.
+
+    The three withheld keys are asserted individually because each is a distinct promise. Pay is
+    the sharp one: ``hr.employee.read_compensation`` is the D-009 gate that unmasks salary/national
+    id/tax id/DOB/bank account (CLAUDE.md architecture rule 4), and ``hr.payroll.read`` is the same
+    pay per employee through the payroll lines — a wizard-provisioned tenant must not have that
+    masking off from its first login."""
+    result = await _onboard(
+        db_session,
+        company_name="Wide Co",
+        slug="wide-co",
+        template_name="manufacturing",
+        admin_email="owner@wide.test",
+        admin_password=_PASSWORD,
+    )
+    with system_context():
+        granted = set(
+            (
+                await db_session.execute(
+                    select(Permission.key)
+                    .select_from(UserRole)
+                    .join(RolePermission, RolePermission.role_id == UserRole.role_id)
+                    .join(Permission, Permission.id == RolePermission.permission_id)
+                    .where(UserRole.user_id == result.admin_user_id)
+                )
+            ).scalars().all()
+        )
+    assert FINANCE_ACCOUNT_READ in granted
+    assert ONBOARDING_TENANT_CREATE not in granted
+    assert HR_EMPLOYEE_READ_COMPENSATION not in granted
+    assert HR_PAYROLL_READ not in granted
+    assert granted == set(catalog_keys()) - onboarding._WITHHELD_FROM_FIRST_ADMIN
 
 
 async def test_onboard_instantiates_the_template(db_session):
@@ -248,6 +291,37 @@ async def test_onboard_endpoint_provisions_and_admin_can_authenticate(
     )
     assert login.status_code == 200, login.text
     assert login.json()["access_token"]
+
+
+async def test_onboarded_admin_can_read_the_template_coa(client, industry_user_factory):
+    """#165 end to end, over the real HTTP surface: onboard, log in as the brand-new admin, and
+    list the chart of accounts the template just instantiated. This is the exact request that
+    returned 403 before — the symptom the issue reported (nav showing only Home + Admin)."""
+    api = await _platform_client(client, industry_user_factory)
+    response = await api.post(
+        "/api/v1/onboarding/tenants",
+        json={
+            "company_name": "Ledger Co",
+            "slug": "ledger-co",
+            "template_name": "manufacturing",
+            "admin_email": "boss@ledger.test",
+            "admin_password": _PASSWORD,
+        },
+    )
+    assert response.status_code == 201, response.text
+
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "tenant_slug": "ledger-co",
+            "email": "boss@ledger.test",
+            "password": _PASSWORD,
+        },
+    )
+    client.headers["Authorization"] = f"Bearer {login.json()['access_token']}"
+    accounts = await client.get("/api/v1/finance/accounts")
+    assert accounts.status_code == 200, accounts.text
+    assert accounts.json()["items"], "the template's COA must be readable by its own tenant's admin"
 
 
 async def test_onboard_endpoint_rejects_duplicate_slug(client, industry_user_factory):

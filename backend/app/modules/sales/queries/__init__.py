@@ -48,6 +48,7 @@ from app.modules.sales.queries.customers import (
     customer_status,
     get_customer,
     get_customer_for_partner,
+    resolve_list_prices,
     resolve_price,
 )
 from app.modules.sales.queries.dashboards import (
@@ -86,6 +87,7 @@ __all__ = [
     "open_confirmed_order_value",
     "open_demand_item_ids",
     "open_sales_orders",
+    "resolve_list_prices",
     "resolve_price",
     "so_line_open_to_deliver",
     "so_line_open_to_invoice",

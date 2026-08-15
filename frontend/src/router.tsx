@@ -144,6 +144,13 @@ import { LeadListPage } from "@/modules/crm/pages/LeadListPage";
 import { OpportunityBoardPage } from "@/modules/crm/pages/OpportunityBoardPage";
 import { OpportunityDetailPage } from "@/modules/crm/pages/OpportunityDetailPage";
 import { OpportunityFormPage } from "@/modules/crm/pages/OpportunityFormPage";
+import { AtRiskPage } from "@/modules/hospitality/pages/AtRiskPage";
+import { HospitalityHomePage } from "@/modules/hospitality/pages/HospitalityHomePage";
+import { KdsBoardPage } from "@/modules/hospitality/pages/KdsBoardPage";
+import { MenuAvailabilityPage } from "@/modules/hospitality/pages/MenuAvailabilityPage";
+import { TicketDetailPage } from "@/modules/hospitality/pages/TicketDetailPage";
+import { TicketFormPage } from "@/modules/hospitality/pages/TicketFormPage";
+import { TicketListPage } from "@/modules/hospitality/pages/TicketListPage";
 import { DepartmentFormPage } from "@/modules/hr/pages/DepartmentFormPage";
 import { DepartmentListPage } from "@/modules/hr/pages/DepartmentListPage";
 import { EmployeeFormPage } from "@/modules/hr/pages/EmployeeFormPage";
@@ -1143,6 +1150,44 @@ const crmActivitiesRoute = createRoute({
   component: ActivityListPage,
 });
 
+// --- Hospitality (PLAN 22.2) ----------------------------------------------------------------
+
+const hospitalityHomeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hospitality",
+  component: HospitalityHomePage,
+});
+const hospitalityMenuRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hospitality/menu",
+  component: MenuAvailabilityPage,
+});
+const hospitalityAtRiskRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hospitality/at-risk",
+  component: AtRiskPage,
+});
+const hospitalityTicketsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hospitality/tickets",
+  component: TicketListPage,
+});
+const hospitalityTicketNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hospitality/tickets/new",
+  component: TicketFormPage,
+});
+const hospitalityTicketDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hospitality/tickets/$ticketId",
+  component: TicketDetailPage,
+});
+const hospitalityKitchenRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hospitality/kitchen",
+  component: KdsBoardPage,
+});
+
 // --- HR (PLAN 15.10) ------------------------------------------------------------------------
 
 const hrHomeRoute = createRoute({
@@ -1466,6 +1511,13 @@ const routeTree = rootRoute.addChildren([
   crmOpportunityDetailRoute,
   crmOpportunityEditRoute,
   crmActivitiesRoute,
+  hospitalityHomeRoute,
+  hospitalityMenuRoute,
+  hospitalityAtRiskRoute,
+  hospitalityTicketsRoute,
+  hospitalityTicketNewRoute,
+  hospitalityTicketDetailRoute,
+  hospitalityKitchenRoute,
   hrHomeRoute,
   hrDepartmentsRoute,
   hrDepartmentNewRoute,

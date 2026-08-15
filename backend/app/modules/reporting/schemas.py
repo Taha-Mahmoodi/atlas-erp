@@ -69,6 +69,16 @@ class OtdKpi(ApiModel):
     total: int
 
 
+class FailedJobsKpi(ApiModel):
+    """The background-job health card (P0 Task 3): how many jobs ended FAILED inside the last
+    ``window_days``. The window rides on the payload so the client can label the card honestly
+    ("2 failed jobs (7d)") without hard-coding the number, and the drill-down is the existing
+    ``GET /api/v1/jobs?status=FAILED``, which carries each failure's error text."""
+
+    count: int
+    window_days: int
+
+
 class DashboardResponse(ApiModel):
     """The role-based dashboard payload (D-058): every KPI is OPTIONAL — only the KPIs the caller is
     permitted to see are populated (the rest are ``None`` and excluded from the JSON). The CLIENT
@@ -82,6 +92,7 @@ class DashboardResponse(ApiModel):
     open_purchase_orders: CountValueKpi | None = None
     otd_percent: OtdKpi | None = None
     wip_value: MoneyKpi | None = None
+    failed_jobs: FailedJobsKpi | None = None
 
 
 # --- Report builder (PLAN 13.2, D-059) ----------------------------------------
@@ -128,12 +139,21 @@ class ReportSpec(ApiModel):
 
 
 class ReportResult(ApiModel):
-    """The report grid payload (D-059): ``columns`` is the ordered result column-name list,
-    ``rows`` is a list of {column → JSON-safe value} dicts (money/qty as exact strings, dates as
-    ISO), ``row_count`` is len(rows), and ``truncated`` is True when the result hit the row cap (the
-    UI then offers the streaming CSV export for the full set, PERFORMANCE §3)."""
+    """The report grid payload (D-059): ``columns`` is the ordered result column-name list — the
+    WIRE names, which are also the keys of each row dict — ``column_labels`` is the matching DISPLAY
+    header for each (same length, same order), ``rows`` is a list of {column → JSON-safe value}
+    dicts (money/qty as exact strings, dates as ISO), ``row_count`` is len(rows), and ``truncated``
+    is True when the result hit the row cap (the UI then offers the streaming CSV export for the
+    full set, PERFORMANCE §3).
+
+    WHY BOTH LISTS (#166). The row dicts must stay keyed by the wire name (that is the client's
+    lookup key, and duplicate labels would collide), so the human header travels beside them rather
+    than replacing them. ``column_labels`` is the SINGLE source both surfaces read: the grid renders
+    it as its headers and the CSV export writes it as its header line, so the two can never drift
+    apart the way they had (issue #166 — both showed ``sum_total_amount``)."""
 
     columns: list[str]
+    column_labels: list[str]
     rows: list[dict[str, Any]]
     row_count: int
     truncated: bool

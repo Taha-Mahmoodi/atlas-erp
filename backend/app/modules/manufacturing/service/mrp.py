@@ -43,14 +43,15 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import docflow
 from app.core.jobs import register_job
+from app.core.money import quantize_quantity
 from app.core.numbering import claim_number, ensure_sequence
 from app.modules.inventory import queries as inventory_queries
 from app.modules.manufacturing import queries as mfg_queries
@@ -62,7 +63,6 @@ from app.modules.manufacturing.constants import (
     MRP_RUN_NUMBER_PADDING,
     MRP_RUN_NUMBER_PREFIX,
     MRP_RUN_SEQUENCE_NAME,
-    BomStatus,
     MrpRunStatus,
     PlannedOrderStatus,
     PlannedOrderType,
@@ -71,12 +71,6 @@ from app.modules.manufacturing.models import Bom, BomComponent, MrpRun, PlannedO
 from app.modules.manufacturing.service.mrp_capacity import rough_capacity_check
 from app.modules.procurement import queries as procurement_queries
 from app.modules.sales import queries as sales_queries
-
-_QUANTITY_DP = Decimal(1).scaleb(-6)
-
-
-def _quantize_qty(value: Decimal) -> Decimal:
-    return value.quantize(_QUANTITY_DP, rounding=ROUND_HALF_UP)
 
 
 @dataclass
@@ -144,41 +138,6 @@ async def _net_supply(
     return on_hand + production + on_order + firmed
 
 
-async def _active_boms_for(
-    session: AsyncSession, tenant_id: uuid.UUID, item_ids: list[uuid.UUID]
-) -> dict[uuid.UUID, Bom]:
-    """The ACTIVE default BOMs for a BATCH of items (PLAN 8.3) — ONE query (the level's MAKE-vs-BUY
-    test + explosion input), keyed by item_id. An item absent from the result is BUY (no active
-    BOM)."""
-    if not item_ids:
-        return {}
-    stmt = select(Bom).where(
-        Bom.tenant_id == tenant_id,
-        Bom.item_id.in_(item_ids),
-        Bom.status == BomStatus.ACTIVE.value,
-        Bom.is_default.is_(True),
-    )
-    return {bom.item_id: bom for bom in (await session.execute(stmt)).scalars().all()}
-
-
-async def _components_for(
-    session: AsyncSession, tenant_id: uuid.UUID, bom_ids: list[uuid.UUID]
-) -> dict[uuid.UUID, list[BomComponent]]:
-    """The components of a BATCH of BOMs (PLAN 8.3) — ONE query, grouped by bom_id (the level's
-    explosion input, no per-BOM N+1)."""
-    if not bom_ids:
-        return {}
-    stmt = (
-        select(BomComponent)
-        .where(BomComponent.tenant_id == tenant_id, BomComponent.bom_id.in_(bom_ids))
-        .order_by(BomComponent.line_number)
-    )
-    grouped: dict[uuid.UUID, list[BomComponent]] = {}
-    for component in (await session.execute(stmt)).scalars().all():
-        grouped.setdefault(component.bom_id, []).append(component)
-    return grouped
-
-
 def _explode(
     bom: Bom, components: list[BomComponent], parent_net: Decimal
 ) -> dict[uuid.UUID, Decimal]:
@@ -190,7 +149,7 @@ def _explode(
     out: dict[uuid.UUID, Decimal] = {}
     for component in components:
         scrap_factor = Decimal(1) + (Decimal(str(component.scrap_percent)) / Decimal(100))
-        dependent = _quantize_qty(
+        dependent = quantize_quantity(
             (Decimal(str(component.quantity_per)) * parent_net / base_quantity) * scrap_factor
         )
         if dependent > 0:
@@ -230,7 +189,7 @@ async def _plan_levels(
             net = gross - supply
             if net <= 0:
                 continue  # supply covers it — no planned order, no dependent demand
-            net = _quantize_qty(net)
+            net = quantize_quantity(net)
             bom = boms_by_item.get(item_id)
             order_type = (
                 PlannedOrderType.MAKE.value if bom is not None else PlannedOrderType.BUY.value
@@ -241,8 +200,8 @@ async def _plan_levels(
                     order_type=order_type,
                     quantity=net,
                     level=level,
-                    source_notes=f"net {net} = demand {_quantize_qty(gross)} - supply "
-                    f"{_quantize_qty(supply)}",
+                    source_notes=f"net {net} = demand {quantize_quantity(gross)} - supply "
+                    f"{quantize_quantity(supply)}",
                 )
             )
             if bom is not None:
@@ -270,10 +229,12 @@ async def _bom_graph(
     seen: set[uuid.UUID] = set(roots)
     frontier = list(dict.fromkeys(roots))
     while frontier:
-        boms = await _active_boms_for(session, tenant_id, frontier)
+        boms = await mfg_queries.active_boms_for_items(session, tenant_id, frontier)
         boms_by_item.update(boms)
         components_by_bom.update(
-            await _components_for(session, tenant_id, [bom.id for bom in boms.values()])
+            await mfg_queries.components_for_boms(
+                session, tenant_id, [bom.id for bom in boms.values()]
+            )
         )
         next_frontier: list[uuid.UUID] = []
         for bom in boms.values():

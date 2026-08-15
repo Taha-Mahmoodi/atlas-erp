@@ -1,0 +1,120 @@
+# Hospitality industry template (PLAN 19.1 / D-060) — the SIXTH shipped template.
+# A property that is a hotel and a restaurant at once (the boutique-hotel-with-restaurant case the
+# hospitality spec scopes): a THREE-control-account guest/city/deposit ledger split, room + F&B
+# revenue split out, FIFO F&B costing, and a menu whose recipes are manufacturing BOMs.
+# Validated against _schema.yaml.
+name: hospitality
+display_name: Hospitality
+description: >-
+  Hotel with a restaurant: guest ledger / city ledger / advance deposits kept as three separate
+  control accounts, room and F&B revenue split, FIFO perishable costing, and menu recipes costed
+  through the manufacturing BOM engine.
+
+terminology:
+  # "Customer" is a BILLING account here — a corporate travel account, a group/event organiser, a
+  # departed guest's open city-ledger balance. The individual walk-in guest is a reservation and a
+  # folio (PLAN 20), not a persistent customer record.
+  customer: Guest / Group Account
+  # A restaurant's "warehouse" is the dry store / walk-in / cellar. Distinct from retail's "Store",
+  # which means a selling floor.
+  warehouse: Storeroom
+  invoice: Folio Invoice
+
+chart_of_accounts:
+  groups:
+    - { code: "1", name: Assets, sort_order: 1 }
+    - { code: "2", name: Liabilities, sort_order: 2 }
+    - { code: "3", name: Equity, sort_order: 3 }
+    - { code: "4", name: Revenue, sort_order: 4 }
+    - { code: "5", name: Expenses, sort_order: 5 }
+  accounts:
+    - { code: "1000", name: Front Desk Float, account_type: ASSET, group_code: "1", cash_flow_category: OPERATING, is_cash_equivalent: true }
+    - { code: "1010", name: Bank, account_type: ASSET, group_code: "1", cash_flow_category: OPERATING, is_cash_equivalent: true }
+    # THREE control accounts, not one (the spec's Q5): the Guest Ledger carries in-house folios that
+    # have not been settled, the City Ledger is the ordinary AR control for departed/company
+    # balances, and Advance Deposits is a LIABILITY because money taken before arrival is not
+    # revenue. Collapsing them into one AR control is what makes a hotel's trial balance unreadable.
+    - { code: "1100", name: Guest Ledger, account_type: ASSET, group_code: "1" }
+    - { code: "1110", name: City Ledger, account_type: ASSET, group_code: "1" }
+    - { code: "1300", name: Food Inventory, account_type: ASSET, group_code: "1" }
+    - { code: "1310", name: Beverage Inventory, account_type: ASSET, group_code: "1" }
+    - { code: "1400", name: GR/IR Clearing, account_type: ASSET, group_code: "1" }
+    - { code: "2000", name: Accounts Payable, account_type: LIABILITY, group_code: "2" }
+    - { code: "2100", name: Advance Deposits, account_type: LIABILITY, group_code: "2" }
+    - { code: "2200", name: Sales Tax Payable, account_type: LIABILITY, group_code: "2" }
+    - { code: "2210", name: Occupancy Tax Payable, account_type: LIABILITY, group_code: "2" }
+    - { code: "3000", name: Owner Equity, account_type: EQUITY, group_code: "3" }
+    - { code: "4000", name: Room Revenue, account_type: REVENUE, group_code: "4" }
+    - { code: "4100", name: Food Revenue, account_type: REVENUE, group_code: "4" }
+    - { code: "4110", name: Beverage Revenue, account_type: REVENUE, group_code: "4" }
+    - { code: "5000", name: Cost of Food and Beverage Sold, account_type: EXPENSE, group_code: "5" }
+    - { code: "5200", name: Spoilage and Waste, account_type: EXPENSE, group_code: "5" }
+
+tax_codes:
+  - { code: FB, name: Food and Beverage Tax, rate_percent: "8", is_inclusive: false }
+  - { code: OCC, name: Occupancy Tax, rate_percent: "12", jurisdiction: CITY, is_inclusive: false }
+  - { code: EXEMPT, name: Tax Exempt, rate_percent: "0", is_inclusive: false }
+
+currencies:
+  - { code: USD, name: US Dollar, decimal_places: 2, is_functional: true }
+
+uoms:
+  - { code: EA, name: Each }
+  - { code: KG, name: Kilogram }
+  - { code: L, name: Litre }
+  - { code: BTL, name: Bottle }
+  - { code: CASE, name: Case }
+  - { code: PTN, name: Portion }
+
+item_categories:
+  # FIFO throughout: perishables are consumed oldest-first and a moving average would smear a
+  # produce price spike across stock already eaten. Same call as retail and healthcare.
+  # MENU is the sellable dish — an ordinary inventory item that happens to be the parent of a BOM.
+  # Phase 19 adds NO new item entity; a recipe is a manufacturing bill of material.
+  - { code: FOOD, name: Food and Produce, default_costing_method: FIFO }
+  - { code: BEV, name: Beverage, default_costing_method: FIFO }
+  - { code: MENU, name: Menu Item, default_costing_method: FIFO }
+  - { code: SUPP, name: Operating Supplies, default_costing_method: FIFO }
+
+modules:
+  finance: true
+  inventory: true
+  procurement: true
+  sales: true
+  # ON, deliberately, and the toggle is coarser than the intent: a menu item's recipe IS a
+  # manufacturing bill of material, so the BOM sub-engine is what costs a dish and explodes it into
+  # the ingredients Phase 19 depletes. Production orders and MRP are NOT used — a kitchen does not
+  # release a production order to cook a steak — but ``modules`` is one boolean per module and
+  # cannot express "BOM yes, MRP no". Turning this off would take recipe costing with it.
+  manufacturing: true
+  quality: false
+  # Kitchen and property engineering: preventive plans on the walk-in, the fryer, the boiler.
+  maintenance: true
+  hr: true
+  projects: false
+  # Group and corporate travel accounts are a real pipeline for a property.
+  crm: true
+  reporting: true
+  hospitality: true
+
+custom_fields:
+  # Property-level facts, on the tenant record: a tenant IS the property in Atlas's model. The two
+  # times are STRING because D-016's type set has no TIME (DATE would assert a calendar day that
+  # does not exist here); they are display/policy values, never arithmetic.
+  - { entity_key: admin.tenant, field_key: star_rating, label: Star Rating, type: NUMBER }
+  - { entity_key: admin.tenant, field_key: check_in_time, label: Standard Check-In Time, type: STRING, default: "15:00" }
+  - { entity_key: admin.tenant, field_key: check_out_time, label: Standard Check-Out Time, type: STRING, default: "11:00" }
+
+approval_presets:
+  purchase_order_threshold: "3000"
+  requisition_threshold: "1000"
+  currency_code: USD
+
+numbering_formats:
+  finance.journal: { prefix: JE, padding: 6, year_reset: true }
+  sales.order: { prefix: SO, padding: 6, year_reset: true }
+  procurement.purchase_order: { prefix: PO, padding: 5, year_reset: true }
+  # The order ticket is a document in the D-012 sense (Task 4 registers it in core_documents and
+  # claims a gapless number at creation). A service runs hundreds a night, so it resets yearly and
+  # pads to 6 — the widest of any sequence here.
+  hospitality.order_ticket: { prefix: TKT, padding: 6, year_reset: true }

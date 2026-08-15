@@ -29,6 +29,12 @@ export interface OtdKpi {
   total: number;
 }
 
+/** Background-job health (D-075): FAILED jobs in the last `window_days`. */
+export interface FailedJobsKpi {
+  count: number;
+  window_days: number;
+}
+
 /** Every field is optional — the backend excludes KPIs the caller's role can't see (D-058). */
 export interface DashboardResponse {
   cash_position?: MoneyKpi;
@@ -39,6 +45,7 @@ export interface DashboardResponse {
   open_purchase_orders?: CountValueKpi;
   otd_percent?: OtdKpi;
   wip_value?: MoneyKpi;
+  failed_jobs?: FailedJobsKpi;
 }
 
 // --- Report builder (D-059) — mirrors the ReportSpec/ReportResult/catalog schemas -----------
@@ -102,7 +109,14 @@ export interface ReportSpec {
 }
 
 export interface ReportResult {
+  /** The WIRE column names — also the keys of every row dict. Not display material (#166). */
   columns: string[];
+  /**
+   * The display header for each column, same order and length (#166). Optional here only so the
+   * grid still renders against a pre-#166 server or a stale cached response; the current backend
+   * always sends it. `resultHeaders` in `reporting/components/reportHeaders.ts` does the pairing.
+   */
+  column_labels?: string[];
   rows: Record<string, unknown>[];
   row_count: number;
   truncated: boolean;

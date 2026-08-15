@@ -18,6 +18,14 @@ from app.core.security_router import router as security_router
 from app.modules.admin.router import router as admin_router
 from app.modules.crm.router import router as crm_router
 from app.modules.finance.router import router as finance_router
+from app.modules.hospitality.reservation_router import (
+    router as hospitality_reservation_router,
+)
+from app.modules.hospitality.reservation_website_router import (
+    website_router as hospitality_reservation_website_router,
+)
+from app.modules.hospitality.router import router as hospitality_router
+from app.modules.hospitality.website_router import router as hospitality_website_router
 from app.modules.hr.router import router as hr_router
 from app.modules.industry.router import onboarding_router
 from app.modules.industry.router import router as industry_router
@@ -110,6 +118,27 @@ def mount_routers(app: FastAPI) -> None:
     # publishes/subscribes to NO cross-module event (D-058 / D-021 / STRUCTURE §5). finance,
     # inventory, sales, procurement are older and import nothing from reporting — one-way, no cycle.
     app.include_router(reporting_router)
+    # Hospitality module (PLAN 19): restaurant menu availability, order tickets and background
+    # ingredient depletion at /api/v1/hospitality. Mounted after reporting, the D-011 module import
+    # order; hospitality reads inventory/queries and the manufacturing BOM engine DOWNWARD (recipes
+    # ARE BOMs — no new item entity) and posts stock through the bus, never their services
+    # (STRUCTURE §5). Task 6 fills the staff routes; the mount is already here because it is what
+    # imports constants.py, and constants.py is where the D-009 permission keys register.
+    app.include_router(hospitality_router)
+    # ...and its WEBSITE-facing half on the same prefix but a separate router, because the caller is
+    # a different kind of principal: a D-069 machine credential belonging to the property's own
+    # site, not a member of staff. Split so the two surfaces can carry different cache policies and
+    # so a website route can never inherit a staff route's guard by accident. Mounted AFTER the
+    # staff router, which owns the more specific /menu/{item_id}/availability and /menu/at-risk.
+    app.include_router(hospitality_website_router)
+    # Phase 21's reservation surface, sibling router files for the same reason ap_router.py is one
+    # (D-030/D-031): a second document family in a module whose router.py and website_router.py are
+    # already near the size cap. Split staff/website by PRINCIPAL exactly as the two above are. The
+    # website half runs under its own hospitality.reservation.book scope — narrower than the
+    # menu/order key the site already holds, because the staff BOOK is every guest's name and phone
+    # number for the night (D-069/D-070). Staff first, matching the pair above.
+    app.include_router(hospitality_reservation_router)
+    app.include_router(hospitality_reservation_website_router)
     # Industry module (PLAN 14.1): the INDUSTRY CONFIGURATION LAYER at /api/v1/industry — the YAML
     # template catalog + the idempotent apply endpoint (D-060). Mounted last; it imports core +
     # admin (it applies to a tenant + writes settings) and PUBLISHES IndustryTemplateApplying for
@@ -150,6 +179,11 @@ def register_event_handlers() -> None:
         post_stock_valuation_journal,
         provision_finance_for_template,
     )
+    from app.modules.hospitality.events import (
+        RestaurantOrderFired,
+        TicketIngredientsConsumed,
+    )
+    from app.modules.hospitality.handlers import submit_ticket_depletion
     from app.modules.hr.events import PayrollPosted
     from app.modules.industry.events import IndustryTemplateApplying
     from app.modules.inventory.events import StockValued
@@ -157,6 +191,7 @@ def register_event_handlers() -> None:
         disposition_rejected_stock,
         issue_delivery_moves,
         issue_production_components,
+        issue_ticket_ingredients,
         provision_inventory_for_template,
         receive_finished_order_move,
         receive_goods_receipt_moves,
@@ -293,3 +328,19 @@ def register_event_handlers() -> None:
         subscribe(IndustryTemplateApplying.key, provision_inventory_for_template)
     if provision_procurement_for_template not in handlers_for(IndustryTemplateApplying.key):
         subscribe(IndustryTemplateApplying.key, provision_procurement_for_template)
+    # Restaurant fire → background ingredient depletion (PLAN 19, spec Q4), a TWO-HOP chain whose
+    # hops are in DIFFERENT transactions — the only one in Atlas, and the whole point of the phase.
+    # Hop 1: firing a ticket publishes RestaurantOrderFired and hospitality's own
+    # submit_ticket_depletion explodes the recipes and submits the PENDING job row in the FIRE's
+    # transaction (so a D-013 replay returns the same job id). Hop 2: the job runner executes
+    # deplete_ticket_job in its OWN uow, which publishes TicketIngredientsConsumed for inventory's
+    # issue_ticket_ingredients to turn into ISSUE moves — which publish StockValued for the COGS
+    # handler registered at the top of this function, exactly as any other goods issue does.
+    # Synchronous depletion is what Q4 measured as an HTTP 500 at the guest's table
+    # (MAX_DISPATCHES_PER_UOW counts handler invocations and a 56-line ticket exceeds it) and as a
+    # phantom stock-out refusing a payment; hospitality never imports inventory's service
+    # (STRUCTURE §5), so both hops go through the bus.
+    if submit_ticket_depletion not in handlers_for(RestaurantOrderFired.key):
+        subscribe(RestaurantOrderFired.key, submit_ticket_depletion)
+    if issue_ticket_ingredients not in handlers_for(TicketIngredientsConsumed.key):
+        subscribe(TicketIngredientsConsumed.key, issue_ticket_ingredients)

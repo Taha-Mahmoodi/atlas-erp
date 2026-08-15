@@ -135,6 +135,39 @@ async def test_reapply_same_template_is_idempotent(db_session, tenant_a):
     assert await _count(db_session, TenantIndustryConfig, tenant_a) == 1
 
 
+async def test_hospitality_template_applies_idempotently(db_session, tenant_a):
+    """PLAN 19.1: the SIXTH template goes through the same apply/idempotency path as the five —
+    applying it twice leaves exactly the state one apply leaves, and its F&B slice (FIFO categories,
+    the Guest Ledger control account) is really there."""
+    await _apply(db_session, tenant_a, "hospitality")
+    first = {
+        model: await _count(db_session, model, tenant_a)
+        for model in (Account, Uom, ItemCategory, TaxCode, Currency, ApprovalRule, CustomFieldDef)
+    }
+    await _apply(db_session, tenant_a, "hospitality")
+    second = {
+        model: await _count(db_session, model, tenant_a)
+        for model in (Account, Uom, ItemCategory, TaxCode, Currency, ApprovalRule, CustomFieldDef)
+    }
+    assert first == second
+    assert await _count(db_session, TenantIndustryConfig, tenant_a) == 1
+    with system_context():
+        names = (
+            await db_session.execute(
+                select(Account.name).where(Account.tenant_id == tenant_a)
+            )
+        ).scalars().all()
+        methods = (
+            await db_session.execute(
+                select(ItemCategory.default_costing_method).where(
+                    ItemCategory.tenant_id == tenant_a
+                )
+            )
+        ).scalars().all()
+    assert "Guest Ledger" in names
+    assert set(methods) == {"FIFO"}
+
+
 async def test_apply_different_template_is_rejected(db_session, tenant_a):
     await _apply(db_session, tenant_a, "manufacturing")
     with pytest.raises(ConflictError) as exc:

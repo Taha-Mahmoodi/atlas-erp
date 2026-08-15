@@ -1,0 +1,95 @@
+"""Hospitality service package (STRUCTURE §3: one file per aggregate, each <400 lines).
+
+Split from the start rather than at the cap: PLAN 19 puts three independent aggregates in this
+module — menu availability (Task 3), the order-ticket lifecycle (Task 4) and background ingredient
+depletion (Task 5) — and Q2 alone budgets ~150 lines for availability, so a single ``service.py``
+would breach the 400-line cap inside the same phase and force a rename commit (STRUCTURE §8.10).
+
+Re-exported here so callers use one import (``from app.modules.hospitality import service`` then
+``service.set_availability(...)``), the inventory/finance service-package precedent.
+"""
+
+# ``depletion`` is imported for its @register_job side effect as well as its exports: a job type
+# exists in core/jobs.py's registry because a handler for it is in the codebase (the count_jobs
+# precedent in inventory/service/__init__.py), and submit_job rejects an unregistered type.
+from app.modules.hospitality.service.availability import (
+    MenuItemAvailability,
+    availability_for_items,
+    clear_86,
+    decrement_remaining,
+    decrement_remaining_many,
+    resolve,
+    set_availability,
+)
+from app.modules.hospitality.service.depletion import (
+    ComponentDemand,
+    aggregate_components,
+    deplete_ticket,
+    deplete_ticket_job,
+    take_depletion_jobs,
+)
+from app.modules.hospitality.service.pacing import (
+    ResolvedSettings,
+    SlotFullError,
+    book_into_slot,
+    get_settings,
+    override_slot,
+    release_from_slot,
+    require_bookable_slot,
+    set_settings,
+)
+from app.modules.hospitality.service.reservations import (
+    amend_reservation,
+    cancel_reservation,
+    complete_reservation,
+    create_reservation,
+    get_reservation,
+    mark_no_show,
+    seat_reservation,
+)
+from app.modules.hospitality.service.tickets import (
+    add_lines,
+    advance_ticket,
+    create_ticket,
+    fire_ticket,
+    get_ticket,
+    get_ticket_lines,
+    settle_ticket,
+)
+
+__all__ = [
+    "ComponentDemand",
+    "MenuItemAvailability",
+    "ResolvedSettings",
+    "SlotFullError",
+    "add_lines",
+    "advance_ticket",
+    "aggregate_components",
+    "amend_reservation",
+    "availability_for_items",
+    "book_into_slot",
+    "cancel_reservation",
+    "clear_86",
+    "complete_reservation",
+    "create_reservation",
+    "create_ticket",
+    "decrement_remaining",
+    "decrement_remaining_many",
+    "deplete_ticket",
+    "deplete_ticket_job",
+    "fire_ticket",
+    "get_reservation",
+    "get_settings",
+    "get_ticket",
+    "get_ticket_lines",
+    "mark_no_show",
+    "override_slot",
+    "release_from_slot",
+    "require_bookable_slot",
+    "resolve",
+    "seat_reservation",
+    "set_availability",
+    "set_settings",
+    "take_depletion_jobs",
+    "settle_ticket",
+]

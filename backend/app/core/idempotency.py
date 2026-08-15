@@ -79,7 +79,18 @@ class IdempotencyKey(TenantMixin, Base):
     id plus a UNIQUE would be redundant indirection. TenantMixin still applies (the row is
     tenant-scoped and the D-007 filter/stamp run on it); tenant_id participates in the PK so the
     composite is already tenant-unique. Not AuditMixin: reservation rows are request-control
-    infrastructure, not business state (auditing them would be noise — documented exclusion)."""
+    infrastructure, not business state (auditing them would be noise — documented exclusion).
+
+    NO PRINCIPAL COLUMN, deliberately: the namespace is the TENANT's, so every principal in a
+    tenant shares it. Since the Phase 18 machine credential (spec Q1) an EXTERNAL client sits in
+    that namespace beside the tenant's staff. Two principals presenting the same key value on the
+    same endpoint therefore meet on one row: same body replays the FIRST principal's stored
+    response verbatim, a different body is 422 key_reuse, and an unfinished one is 409
+    in_progress. Bounded, and measured in tests/core/test_api_key_concurrency.py: the route's
+    require_permission dependency is solved BEFORE this guard, so a replay never crosses the RBAC
+    line — but it does skip serialization, so a masked field (D-009) in an idempotent endpoint's
+    response would cross unmasked. That endpoint does not exist yet and a gate test keeps it that
+    way; adding one means adding a principal column here instead."""
 
     __tablename__ = "core_idempotency_keys"
     __table_args__ = (tenant_fk("adm_tenants"),)
@@ -97,8 +108,10 @@ class IdempotencyKey(TenantMixin, Base):
     request_hash: Mapped[str] = mapped_column(sa.String(64), nullable=False)
     response_status: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
     response_body: Mapped[Any] = mapped_column(JSON_VARIANT, nullable=True)
+    # index=True: the retention purge (core/job_sweeper.py) scans by AGE across tenants, so this
+    # index does not lead with tenant_id — expiry is an age question, not a tenancy one.
     created_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now(), index=True
     )
     completed_at: Mapped[datetime | None] = mapped_column(
         sa.DateTime(timezone=True), nullable=True
@@ -106,9 +119,11 @@ class IdempotencyKey(TenantMixin, Base):
 
 
 def compute_request_hash(body: bytes) -> str:
-    """sha256 hex of the raw request body (D-013). The raw bytes are the canonical form here:
-    a replay must present the byte-identical body, and hashing bytes avoids re-serialization
-    ambiguity. An empty body hashes to the sha256 of b'' — stable and well-defined."""
+    """sha256 hex of the canonical request bytes (D-013). Raw bytes are the canonical form here:
+    a replay must present the byte-identical request, and hashing bytes avoids re-serialization
+    ambiguity. An empty body hashes to the sha256 of b'' — stable and well-defined, which is why
+    the guard feeds it the request TARGET followed by the body rather than the body alone (see
+    ``Idempotent.__call__``: an action route's body is empty and its identity is in its path)."""
     return hashlib.sha256(body).hexdigest()
 
 
@@ -318,7 +333,18 @@ class Idempotent:
         # (request._body), so the route handler's own body parsing still works after this read —
         # the stream is not consumed out from under it. A replay with a different body therefore
         # produces a different hash and is rejected as key-reuse.
-        request_hash = compute_request_hash(await request.body())
+        #
+        # The request TARGET is hashed WITH the body, because on an action route the body is empty
+        # and the identity of the thing being acted on is entirely in the path: every
+        # POST /tickets/{id}/fire, /journal-entries/{id}/post, /purchase-orders/{id}/send hashes
+        # b'' otherwise, so one key spent on one document would REPLAY that document's response for
+        # a different one — a 200 for an action that never ran, which is exactly the failure the
+        # different-body 422 exists to prevent and the only case it cannot see. Query string
+        # included for the same reason. The endpoint string stays the coarse namespace it always
+        # was; this narrows the hash within it, and a genuine retry (same key, same target, same
+        # body) still replays untouched.
+        target = f"{request.url.path}?{request.url.query}".encode()
+        request_hash = compute_request_hash(target + b"\n" + await request.body())
         await reserve(factory, tenant_id, self.endpoint, idempotency_key, request_hash)
 
         context = IdempotencyContext(

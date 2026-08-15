@@ -7,6 +7,7 @@ core/security_router.py.
 """
 
 import hashlib
+import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -43,6 +44,55 @@ def as_utc(value: datetime) -> datetime:
 def sha256_hex(value: str) -> str:
     """Hex sha256 — used to store jti hashes so a DB leak cannot mint sessions."""
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+# --- Machine credential key strings (spec Q1) ---------------------------------
+
+API_KEY_PREFIX = "atk"
+
+
+def mint_api_key(tenant_id: uuid.UUID) -> tuple[str, str]:
+    """Mint a key for a tenant. Returns (full_key, secret_sha256).
+
+    The full key is shown to the operator exactly once and never stored; only the digest
+    is persisted, so a database leak cannot mint or replay a credential — the same
+    argument as the refresh-jti hashing above. sha256 and not argon2: the argument that
+    forces argon2 for passwords does not apply to 256 bits of CSPRNG output, and argon2
+    at D-008 parameters costs tens of ms per request (see hash_password_async below).
+
+    The tenant ref rides in the key so the D-007 ContextVar can be set BEFORE any lookup,
+    which is what keeps this out of the sanctioned system_context() bypass list
+    (tenancy.py). A forged ref simply finds no row.
+
+    The ref is the tenant UUID, not its slug: the slug would have to be RESOLVED to an id
+    on every request, and that query pushes an API-key list request to 4 statements —
+    over PERFORMANCE §2's ≤3 on every endpoint that also computes a collection ETag
+    (core/conditional.py), which is most reference lists in the codebase. The UUID is
+    already the id, so the ContextVar is set with zero queries and the key path costs the
+    same one statement the JWT path costs.
+    """
+    secret = secrets.token_urlsafe(32)
+    return f"{API_KEY_PREFIX}_{tenant_id.hex}_{secret}", sha256_hex(secret)
+
+
+def parse_api_key(raw: str) -> tuple[uuid.UUID, str] | None:
+    """Split a presented key into (tenant_id, secret_sha256), or None if malformed.
+
+    maxsplit=2 so the urlsafe secret's own underscores stay in the secret half; the ref is
+    a UUID hex, which carries no underscore. Never raises — deps.py turns None into a 401
+    and an exception here would surface as a 500.
+    """
+    parts = raw.split("_", 2)
+    if len(parts) != 3:
+        return None
+    scheme, tenant_ref, secret = parts
+    if scheme != API_KEY_PREFIX or not secret:
+        return None
+    try:
+        tenant_id = uuid.UUID(hex=tenant_ref)
+    except ValueError:
+        return None
+    return tenant_id, sha256_hex(secret)
 
 
 # --- Password hashing (argon2id, thread-offloaded) ----------------------------
