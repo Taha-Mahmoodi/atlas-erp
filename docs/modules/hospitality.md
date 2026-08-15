@@ -4,19 +4,23 @@ Hospitality is the **fourteenth module** and the top of the dependency order (ST
 nothing imports it. Phase 19 ships the **restaurant** half: a menu whose availability is *stored*
 state, an order **ticket** document that fires to the kitchen, ingredient depletion that runs off
 the sale, and the read/write API a property's **own website** calls over the Phase 18 machine
-credential (**D-069**).
+credential (**D-069**). **Phase 21** adds the other half of the same loop: **table reservations**,
+gated by a per-slot pacing counter (§7).
 
 Spec: [`docs/research/hospitality-industry-plan.md`](../research/hospitality-industry-plan.md) **Q2**
-(availability), **Q4** (depletion), **Q6** (the website read path). Plan:
-[`docs/research/phase-19-restaurant-ordering-plan.md`](../research/phase-19-restaurant-ordering-plan.md).
-The two decisions this module records are **D-072** (backgrounded depletion, restaurant-scoped) and
-**D-073** (why the menu read has no ETag) in [DECISIONS.md](../../DECISIONS.md).
+(availability), **Q3** (pacing), **Q4** (depletion), **Q6** (the website read path). Plans:
+[`phase-19-restaurant-ordering-plan.md`](../research/phase-19-restaurant-ordering-plan.md),
+[`phase-21-table-reservations-plan.md`](../research/phase-21-table-reservations-plan.md).
+The decisions this module records are **D-072** (backgrounded depletion, restaurant-scoped),
+**D-073** (why the menu read has no ETag), **D-074** (pacing by slot counter; a missing counter row
+means default capacity) and **D-075** (no TENTATIVE state; the counter matrix) in
+[DECISIONS.md](../../DECISIONS.md).
 
 ## Status
 
-**PLAN 19.1–19.5 shipped.** Rooms, folio, deposits, the business date and the room-charge bridge are
-**Phase 20** and nothing here anticipates them beyond publishing `RestaurantOrderSettled`, which has
-no subscriber yet.
+**PLAN 19.1–19.5 and 21.1–21.4 shipped.** Rooms, folio, deposits, the business date and the
+room-charge bridge are **Phase 20** and nothing here anticipates them beyond publishing
+`RestaurantOrderSettled`, which has no subscriber yet.
 
 Deliberately **not** in this phase: modifier-level 86 (Atlas has no modifier model), day-part menus
 beyond what `available_until` half-covers, third-party delivery injection, KDS hardware, card
@@ -261,3 +265,128 @@ Every one of these is a read seam or a core primitive, never a service import (S
     STRUCTURE §4's 400-line cap, as is `hospitality/service/tickets.py` (407). Split-only refactors
     belong in commits of their own (STRUCTURE §8.10) — tracked as tech debt, fixed before the next
     promotion per STRUCTURE §9.
+
+
+## 7. Table reservations (Phase 21, spec Q3)
+
+A guest books on the property's website, the booking is gated by a **pacing counter** that cannot
+oversell a service, and staff see the book, seat the party onto an order ticket, and record
+no-shows. **D-074** and **D-075** record the design; the two findings worth reading before changing
+anything are below.
+
+### The gate is a counter, not a table
+
+`hsp_service_slots` holds ONE row per `(service_date, slot_start)` — 15 minutes, a constant — with
+`covers_booked/covers_max` and `parties_booked/parties_max`. A booking locks that row
+(`with_for_update`), is refused **pre-flight** with `422 hospitality.slot_full`, and the portable
+`CHECK` pairs are the DB backstop. That is `inv_stock_quants` in shape (D-020/D-036). OpenTable and
+Resy both cap covers per slot and leave the physical table a revisable soft assignment made at
+seating, so **there is no table master and no floor plan**: `table_code` stays the free text the
+check already carries, and the master earns its existence the day a floor-plan UI needs something
+to reference.
+
+Measured: **12 statements to take a booking**, flat between a party of 2 on an empty night and a
+party of 8 on a night already holding 50 reservations
+(`tests/perf/test_write_budgets.py::test_booking_a_table_is_flat_in_party_size_and_book_depth`).
+
+### A missing slot row means DEFAULT capacity, not zero
+
+This is the one place the shape **inverts** the stock-quant reading it otherwise copies. A quant
+that does not exist means nothing on hand; a slot that does not exist means the whole room is free,
+because a restaurant's capacity is standing config. So the defaults live in one per-tenant
+`hsp_reservation_settings` row whose **absence is itself a complete answer** (the `MenuAvailability`
+idiom), and a counter row is materialised **lazily by the first booking's upsert-on-lock**. Its
+`covers_max`/`parties_max` are a snapshot taken at that moment: changing the settings does not reach
+back into nights already being sold, and the per-slot override is how a manager reaches one that is.
+
+`covers_max = 0` **closes** a slot — there is no separate flag, because a closed slot and a full one
+answer a guest identically. An override **below** what is already booked is refused
+(`hospitality.slot_override_below_booked`), never clamped.
+
+**Times are UTC.** Atlas stores no per-tenant timezone anywhere, so `service_open`/`service_close`
+are UTC times and a slot is an INSTANT; the property's website converts. A close at or before the
+open means the service runs past midnight and the window rolls into the next calendar day, which is
+why `service_date` is a BUSINESS date separate from the slot's own instant.
+
+### The transition / counter matrix
+
+`CONFIRMED → SEATED → COMPLETED | NO_SHOW | CANCELLED`, through an explicit `RESERVATION_FLOW` table
+(the lifecycle branches, so there is no "next state" arithmetic to lean on). **There is no
+TENTATIVE**: passing the gate IS the confirmation, which is why the gate runs inside the create
+transaction.
+
+| Transition | Counter effect |
+|---|---|
+| create (gate passes) | `covers_booked += party_size`, `parties_booked += 1` |
+| CANCELLED **before** `slot_start` | both decrement |
+| CANCELLED / NO_SHOW **at or after** `slot_start` | none — there is nobody left to resell to |
+| SEATED / COMPLETED | none — the covers were spent at confirmation |
+| party-size change before `slot_start` | delta on covers, same locked row, **no extra party** |
+| slot change before `slot_start` | release the old slot + book the new one, ONE transaction |
+
+Deliberately **simpler than the hotel's rule** (Phase 20, where a no-show keeps its count to feed
+the overbooking buffer). Each row has its own named test so the two do not get unified later.
+
+Seating opens the `OrderTicket` (`guest_count = party_size`, the host's free-text `table_code`) and
+writes the `seated_as` doc-flow edge in the same transaction, so
+`GET /api/v1/documents/{id}/chain` renders reservation → ticket → (Phase 20 folio line). A walk-in
+needs nothing from this module: it is exactly the ticket Phase 19 already creates.
+
+### Endpoints
+
+Staff (`/api/v1/hospitality`, JWT or a staff-scoped key):
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/reservations` | `hospitality.reservation.read` | the book, `Page[TableReservationRead]`, **ascending by slot**, filter by `service_date` / `status` |
+| GET | `/reservations/{id}` | `hospitality.reservation.read` | |
+| POST | `/reservations` | `hospitality.reservation.manage` | 201, **idempotent** (`hospitality.table_reservation.create`); the same gate the website uses |
+| PATCH | `/reservations/{id}` | `hospitality.reservation.manage` | party size and/or slot; omitted fields unchanged |
+| POST | `/reservations/{id}/seat` | `hospitality.reservation.manage` | body `{table_code}`; opens the linked check |
+| POST | `/reservations/{id}/no-show` · `/cancel` · `/complete` | `hospitality.reservation.manage` | the transitions above |
+| GET | `/reservation-settings` | `hospitality.reservation.read` | defaults applied; carries `slot_minutes` |
+| PUT | `/reservation-settings` | `hospitality.reservation.manage` | full replacement; no key needed (one row, same state) |
+| PUT | `/service-slots` | `hospitality.reservation.manage` | one slot's capacity, identified in the BODY; `covers_max: 0` closes it |
+
+Website (machine credential, `hospitality.reservation.book`): `GET /reservation-availability`,
+`POST /table-reservations`, `POST /table-reservations/{id}/cancel` — the published contract is in
+[docs/api.md](../api.md#the-reservation-contract). `.book` is a **third** key on purpose: the BOOK
+is every guest's name and contact detail for the night, so a leaked website key must not read it
+(D-069's narrowing rule).
+
+### Error codes
+
+| Code | HTTP | When |
+|---|---|---|
+| `hospitality.reservation_not_found` | 404 | unknown reservation in this tenant |
+| `hospitality.reservation_not_transitionable` | 409 | not a legal move in `RESERVATION_FLOW` (includes cancelling a SEATED party) |
+| `hospitality.reservation_slot_started` | 409 | amending a booking whose slot has begun |
+| `hospitality.slot_full` | 422 | `details.limit` is `covers` or `parties`, plus `requested`/`available`; on the website booking route it also carries `alternatives` |
+| `hospitality.slot_override_below_booked` | 422 | a manager cutting capacity under confirmed bookings; carries both numbers |
+| `hospitality.party_size_not_accepted` | 422 | outside `min_party`..`max_party` |
+| `hospitality.outside_booking_window` | 422 | a date in the past, or past `booking_horizon_days` |
+| `hospitality.outside_service_hours` | 422 | a slot outside `service_open`..`service_close` for that date |
+| `hospitality.slot_not_aligned` | 422 | a slot not on a 15-minute boundary |
+
+### Known limits (Phase 21, recorded not hidden)
+
+11. **A booking consumes its ARRIVAL slot only** — the OpenTable semantics. A three-hour tasting menu
+    is counted against 19:00 and nothing else, so a property whose sittings genuinely overlap must
+    set `default_covers_max` to what one slot's arrivals may be, not to the room's seat count.
+    Multi-slot pacing is the named upgrade.
+12. **No deposits and no no-show fees.** They need Phase 20's `apply_receipt` and an online payment
+    provider; wiring guest money before those exist would rebuild both badly.
+13. **No waitlist.** A refused booking is answered with the nearest bookable alternatives and
+    nothing is remembered.
+14. **Guest notification is the website's job** (Q1 boundary). Atlas sends no email or SMS, has no
+    guest-facing cancel link, and does not know which guest owns which booking — the website
+    authenticates its guest and calls a tenant-scoped operation under its own credential.
+15. **A slot earlier TODAY is bookable.** That is deliberate (a host taking a party walking in in ten
+    minutes) but it means the same route accepts a booking for a slot that has already gone, which
+    then holds capacity nothing can release.
+16. **Service hours are UTC**, because Atlas has no per-tenant timezone. A property whose local
+    service crosses a UTC day boundary must send the right `service_date` itself; the API cannot
+    infer it.
+17. **The staff surface has no slot-grid read.** A manager sets capacity blind and learns the current
+    counters only from the refusal (`covers_booked`/`parties_booked` in `details`). One endpoint over
+    `queries.slot_counters` closes it the day somebody builds the screen.
