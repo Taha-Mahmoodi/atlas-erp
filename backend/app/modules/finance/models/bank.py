@@ -136,3 +136,19 @@ class BankStatementLine(UuidPKMixin, TenantMixin, TimestampMixin, Base):
     )
     matched_journal_line_id: Mapped[uuid.UUID | None] = mapped_column(sa.Uuid, nullable=True)
     cleared_journal_entry_id: Mapped[uuid.UUID | None] = mapped_column(sa.Uuid, nullable=True)
+
+
+# Partial index declared OUTSIDE the class body so its dialect predicate is a column expression
+# rather than a raw SQL string (the D-007 grep gate bans raw-SQL constructs under app/modules/) —
+# the models/journal.py precedent. ONE statement per import job (P0 Task 1): the DB backstop under
+# the service-level guard in service/bank_import.py, so a re-dispatched import can never leave a
+# duplicate statement even if two runners race. PARTIAL because an INLINE import carries no job id
+# and a tenant may have many of those. Also serves the guard's (tenant, import_job_id) lookup.
+sa.Index(
+    "uq_fin_bank_statements_tenant_id_import_job_id",
+    BankStatement.tenant_id,
+    BankStatement.import_job_id,
+    unique=True,
+    postgresql_where=BankStatement.import_job_id.isnot(None),
+    sqlite_where=BankStatement.import_job_id.isnot(None),
+)

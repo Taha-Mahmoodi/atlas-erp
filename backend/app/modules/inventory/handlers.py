@@ -52,6 +52,7 @@ from app.modules.inventory.constants import CostingMethod, MoveType
 from app.modules.inventory.models import ItemCategory, Uom
 from app.modules.inventory.schemas import StockMoveCreate
 from app.modules.inventory.service.stock_moves import create_move
+from app.modules.inventory.service.stock_reads import items_already_moved_for_document
 from app.modules.manufacturing.constants import (
     PRODUCTION_ORDER_FINISHED_TO_MOVE_LINK,
     PRODUCTION_ORDER_ISSUED_TO_MOVE_LINK,
@@ -246,9 +247,21 @@ async def issue_ticket_ingredients(
     records a failure as ``str(exc)`` alone (code and details dropped, and ``JobRead`` never
     exposes the payload), the moves roll back so no docflow edge survives, and Q4 pays for the
     guest's dinner with a QUIET failure — so this string is the ONLY place the property can learn
-    which check went undepleted."""
+    which check went undepleted.
+
+    IDEMPOTENT (P0 Task 1). ``core/job_sweeper.py`` re-dispatches a depletion whose runner died
+    mid-flight, so an ingredient this ticket has already issued is SKIPPED rather than issued a
+    second time — a lost COGS posting is bad, a duplicated one is worse. The guard lives here
+    rather than in hospitality because this is where the duplicate would be born, so it also
+    covers any future path that re-publishes the event. Per ITEM, not per ticket: a big check is
+    chunked into several jobs over disjoint ingredient sets."""
     move_date = date.fromisoformat(event.move_date)
+    already_issued = await items_already_moved_for_document(
+        session, event.tenant_id, event.document_id, TICKET_DEPLETED_BY_MOVE_LINK
+    )
     for ingredient in event.ingredients:
+        if ingredient.item_id in already_issued:
+            continue
         try:
             move = await create_move(
                 session,
