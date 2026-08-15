@@ -94,6 +94,17 @@ export function DashboardKpis({
           label: "WIP value",
           value: formatMoney(data.wip_value.value, data.wip_value.currency),
         },
+        // D-075: the operational card. A failed background job is a posting that did not
+        // happen, so it belongs on the row a person already opens rather than behind an
+        // endpoint they would have to remember. Rendered even at zero — a card reading "0" is
+        // the signal that the check ran. No drill-through: there is no jobs page yet, and the
+        // drill-down lives at GET /api/v1/jobs?status=FAILED.
+        data.failed_jobs && {
+          key: "jobs",
+          label: "Failed background jobs",
+          value: String(data.failed_jobs.count),
+          secondary: `last ${data.failed_jobs.window_days} days`,
+        },
       ]
     : [];
   const tiles = raw.filter((tile): tile is KpiTile => Boolean(tile));
