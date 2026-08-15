@@ -16,6 +16,7 @@ block a regression.
 
 import uuid
 from collections.abc import Callable
+from datetime import date
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,7 +25,7 @@ from app.core.events import run_in_uow
 from app.core.tenancy import tenant_context
 from app.main import register_event_handlers
 from app.modules.hospitality.constants import AvailabilityState
-from app.modules.hospitality.service import availability, tickets
+from app.modules.hospitality.service import availability, depletion, tickets
 from app.modules.inventory import service
 from app.modules.inventory.constants import MoveType
 from app.modules.inventory.schemas import StockMoveCreate
@@ -48,6 +49,17 @@ STOCK_MOVE_ISSUE_CEILING = 45
 #     chunk is its own job INSERT (12 statements at 120 distinct ingredients). That is the chunking
 #     working as designed, and the only axis on this path that is not flat.
 FIRED_TICKET_CEILING = 14
+
+# The OTHER end of that trade: what the guest's request handed to the background runner actually
+# costs. Nothing in tests/perf/ executed the depletion JOB before, so P0's re-run guard
+# (items_already_moved_for_document) landed on an unmeasured path — and the two ceilings above
+# could never have moved whatever it cost, because neither runs this code.
+#
+# MEASURED at 123 statements for a 3-ingredient chunk, i.e. the 38-per-ingredient unit above plus a
+# small fixed part. The ceiling is the weaker half of this test; the RATCHET is the assertion that
+# the guard's read appears exactly ONCE, because the property P0 claims is "one query per JOB, not
+# per move" and a guard that drifted inside the per-ingredient loop would still look linear.
+DEPLETION_JOB_CEILING = 140
 
 
 async def test_single_ingredient_issue_move_stays_within_its_ceiling(
@@ -185,3 +197,57 @@ async def test_firing_does_not_scale_with_countdown_lines(
         f"firing a 24-line countdown ticket costs {counts[24]} statements "
         f"(ceiling {FIRED_TICKET_CEILING})"
     )
+
+
+async def test_the_depletion_job_pays_for_its_rerun_guard_once_per_job(
+    db_session: AsyncSession,
+    tenant_a: uuid.UUID,
+    query_counter: Callable[[], QueryCounter],
+) -> None:
+    """The depletion JOB, which is where the fired ticket's real cost went and where P0's re-run
+    guard actually runs.
+
+    ``issue_ticket_ingredients`` asks ``items_already_moved_for_document`` which items this ticket
+    has already issued, so the sweeper can re-dispatch a dead depletion without double-posting
+    COGS. That read is deliberately hoisted OUT of the ingredient loop — one query per job, not one
+    per move — and that is exactly the kind of property that decays silently: moving it inside the
+    loop keeps every behavioural test green and every count still linear, it just multiplies by the
+    chunk size (up to ``DEPLETE_MAX_COMPONENTS_PER_JOB``). So the count of guard reads is asserted
+    EXACTLY, not the total alone.
+    """
+    register_event_handlers()
+    kitchen = await build_kitchen(
+        db_session,
+        tenant_a,
+        {"BURGER": {"BUN": Decimal(2), "PATTY": Decimal(1), "ONION": Decimal(1)}},
+        stock=Decimal(500),
+    )
+    ticket_id = await build_open_ticket(db_session, tenant_a, [(kitchen.dishes["BURGER"], "1")])
+    with tenant_context(tenant_a):
+        components = await depletion.aggregate_components(db_session, tenant_a, ticket_id)
+    payload = depletion.job_payloads(ticket_id, components, move_date=date(2026, 3, 2))[0]
+    assert len(components) == 3, "the guard's cost is only observable over several ingredients"
+
+    async def deplete() -> None:
+        await depletion.deplete_ticket_job(db_session, tenant_a, payload)
+
+    with query_counter() as counted, tenant_context(tenant_a):
+        await run_in_uow(db_session, deplete)
+
+    # The guard's shape, and only it: the moved-item ids read through the ticket's outgoing doc
+    # links. Ordinary per-move link INSERTs and their ORM refreshes also touch core_doc_links, so
+    # both halves of the join have to be named.
+    guard_reads = [
+        sql
+        for sql in counted.statements
+        if "inv_stock_moves.item_id" in sql and "core_doc_links" in sql
+    ]
+    assert len(guard_reads) == 1, (
+        f"the re-run guard ran {len(guard_reads)} times for a 3-ingredient chunk; it must be one "
+        "read per JOB, not one per move:\n" + "\n".join(guard_reads)
+    )
+    assert counted.count <= DEPLETION_JOB_CEILING, (
+        f"depleting a 3-ingredient chunk now costs {counted.count} statements "
+        f"(ceiling {DEPLETION_JOB_CEILING}):\n" + "\n".join(counted.statements)
+    )
+    print(f"\n[perf] depletion job, 3 ingredients: {counted.count} statements")

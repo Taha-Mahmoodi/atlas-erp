@@ -61,7 +61,7 @@ def mint_api_key(tenant_id: uuid.UUID) -> tuple[str, str]:
     at D-008 parameters costs tens of ms per request (see hash_password_async below).
 
     The tenant ref rides in the key so the D-007 ContextVar can be set BEFORE any lookup,
-    which is what keeps the sanctioned system_context() bypass list at exactly four
+    which is what keeps this out of the sanctioned system_context() bypass list
     (tenancy.py). A forged ref simply finds no row.
 
     The ref is the tenant UUID, not its slug: the slug would have to be RESOLVED to an id

@@ -49,11 +49,15 @@ def tenant_context(tenant_id: uuid.UUID) -> Iterator[None]:
 def system_context() -> Iterator[None]:
     """Suspend tenant filtering and write stamping for the block.
 
-    Sanctioned in exactly four greppable app call sites (D-007):
+    Sanctioned for exactly five purposes (D-007) — the list is by PURPOSE, since one purpose can
+    span a few call sites in the same file:
     1. login user-lookup (core/auth, PLAN 3.3);
     2. tenant provisioning in modules/admin (PLAN 14.2);
     3. Alembic/seed provisioning phase (seed.py, PLAN 16);
-    4. event-bus system-event replay (core/events, PLAN 3.6).
+    4. event-bus system-event replay (core/events, PLAN 3.6);
+    5. the background-job runner and its sweeper (core/jobs.py, core/job_sweeper.py, P0/D-075):
+       a scheduled or orphaned job's tenant is UNKNOWABLE until its row is read, and neither
+       runs business logic under the bypass — both restore the job's own tenant first.
     Test fixtures may also use it (D-025 tenant_factory). Writers under system
     context must set tenant_id explicitly; the composite-FK backstop still applies.
     """

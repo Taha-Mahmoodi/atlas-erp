@@ -18,7 +18,7 @@ jobs, and inventing ``admin.job.read`` would leave every existing tenant's admin
 """
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 import sqlalchemy as sa
@@ -75,10 +75,16 @@ async def _backdate(session: AsyncSession, job_id: uuid.UUID, *, days: int) -> N
         await session.commit()
 
 
-async def _kpi(session: AsyncSession, tenant_id: uuid.UUID, permissions: frozenset[str]):
+async def _kpi(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    permissions: frozenset[str],
+    *,
+    as_of: date | None = None,
+):
     with tenant_context(tenant_id):
         return (
-            await reporting.dashboard_kpis(session, tenant_id, permissions)
+            await reporting.dashboard_kpis(session, tenant_id, permissions, as_of=as_of)
         ).failed_jobs
 
 
@@ -111,6 +117,21 @@ async def test_failed_jobs_kpi_ignores_failures_outside_the_window(
     kpi = await _kpi(db_session, tenant_a, frozenset({ADMIN_AUDIT_READ}))
 
     assert kpi is not None and kpi.count == 1
+
+
+async def test_failed_jobs_kpi_respects_a_historical_as_of(
+    db_session: AsyncSession, tenant_a: uuid.UUID, job_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """``as_of`` is a user-supplied query parameter and every other card on the dashboard treats it
+    as a real as-of bound. A card counting TODAY's failures next to correctly-bounded 2020 figures
+    is a lying dashboard, so the window is bounded at both ends."""
+    await _fail_a_job(db_session, tenant_a, job_factory)
+
+    kpi = await _kpi(
+        db_session, tenant_a, frozenset({ADMIN_AUDIT_READ}), as_of=date(2020, 1, 1)
+    )
+
+    assert kpi is not None and kpi.count == 0
 
 
 async def test_failed_jobs_kpi_is_omitted_without_the_read_permission(

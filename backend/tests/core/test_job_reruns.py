@@ -1,9 +1,17 @@
 """Every registered job handler must be safe to run TWICE (P0 Task 1).
 
 This file is the safety precondition for ``core/job_sweeper.py``, not a nice-to-have. The sweeper
-re-dispatches a job whose runner died mid-flight; a handler that is not safe to re-run turns a
+re-dispatches a job whose PENDING row was orphaned; a handler that is not safe to re-run turns a
 LOST COGS posting into a DUPLICATED one, which is strictly worse than the gap it closes. So the
 ordering is: prove every handler here first, reclaim second.
+
+**What these tests do and do NOT prove.** They exercise SEQUENTIAL re-execution — run, commit, run
+again — which is the only shape the sweeper can produce, because it never re-dispatches a RUNNING
+row and ``_run_handler``'s conditional claim means at most one runner ever executes a given job.
+They prove nothing about CONCURRENT re-execution: every guard below is read-then-write with no
+lock, so two handlers running at once against one payload would double-post (``run_payment_batch``
+selects bills with ``open_amount > 0`` before either transaction commits). That is precisely why
+the sweeper FAILS a stale RUNNING row for a human instead of re-dispatching it — see D-075(b).
 
 **The shared detector.** :func:`ledger_fingerprint` counts the three append-only ledgers a
 double-post can only ever grow — journal entries, journal lines and stock moves. Any handler that
@@ -16,8 +24,8 @@ only way the sweeper's safety argument stays true as the codebase grows.
 
 Note that ``run_in_uow`` commits ONCE, at the end, with the COMPLETED status inside the same
 transaction (``core/jobs.py``) — so a runner killed mid-handler leaves no committed business
-effect at all. These tests prove the STRONGER property (the first run fully committed), because
-that is what a RUNNING-row reclaim can race against.
+effect at all. These tests prove the STRONGER property (the first run fully committed anyway),
+because that is what a human resubmitting an abandoned job re-runs against.
 """
 
 import uuid
@@ -195,8 +203,8 @@ async def test_depletion_of_a_second_chunk_still_issues_its_own_ingredients(
 async def test_count_post_run_twice_adjusts_once(
     db_session: AsyncSession, tenant_a: uuid.UUID
 ) -> None:
-    """post_count already refuses a POSTED count (D-013). A re-run fails LOUDLY — which the
-    sweeper's attempt ceiling turns into a FAILED row — rather than double-adjusting."""
+    """post_count already refuses a POSTED count (D-013). A re-run fails LOUDLY — which the runner
+    records as a FAILED row on the ``failed_jobs`` card — rather than double-adjusting."""
     setup = await build_stock_setup(db_session, tenant_a)
     await build_stock(db_session, tenant_a, setup.item_id, setup.bin_a_id, Decimal(10))
     count = await build_count(

@@ -191,7 +191,7 @@ async def test_the_sweep_result_reports_both_kinds_of_work(
 
     result = await sweep_stale_jobs(job_factory)
 
-    assert (result.reclaimed_pending, result.reclaimed_running, result.abandoned) == (0, 0, 0)
+    assert (result.reclaimed_pending, result.abandoned) == (0, 0)
     assert result.purged_idempotency_keys == 1
 
 

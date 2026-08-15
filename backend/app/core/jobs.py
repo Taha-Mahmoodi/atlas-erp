@@ -126,9 +126,10 @@ class Job(UuidPKMixin, TenantMixin, TimestampMixin, Base):
     result: Mapped[Any] = mapped_column(JSON_VARIANT, nullable=True)
     error: Mapped[str | None] = mapped_column(sa.String(_ERROR_MAX_CHARS), nullable=True)
     submitted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(sa.Uuid, nullable=True)
-    # How many times the P0 sweeper has re-dispatched this job. The ceiling
-    # (job_sweeper.MAX_JOB_ATTEMPTS) is what turns "reclaim forever" into "abandon visibly": a
-    # job that fails, is reclaimed and fails again eventually goes FAILED and stays there.
+    # How many times the P0 sweeper has re-dispatched this job. DIAGNOSTICS ONLY — nothing
+    # branches on it: a high count on a still-PENDING row is how an operator sees that the runner
+    # is saturated rather than dead. job_sweeper's docstring explains why a ceiling on it would
+    # abandon jobs that never ran.
     attempts: Mapped[int] = mapped_column(
         sa.Integer, nullable=False, default=0, server_default="0"
     )
@@ -302,9 +303,10 @@ async def _run_handler(session: AsyncSession, job: Job) -> None:
     and a runner that does not win it returns without touching the handler. This is what makes
     re-dispatch safe at all — the P0 sweeper reclaims a stale PENDING row whose original asyncio
     task may merely have been queued behind ``MAX_CONCURRENT_JOBS``, and without the claim BOTH
-    tasks would run the same payload, concurrently. Reclaiming a RUNNING row still races a runner
-    that is genuinely alive; that is what the much longer ``RUNNING_RECLAIM_AFTER`` window and the
-    per-handler idempotency guards (tests/core/test_job_reruns.py) are for."""
+    tasks would run the same payload, concurrently. Since nothing ever moves a row back OUT of
+    RUNNING (the sweeper FAILS a stale RUNNING row rather than re-dispatching it, precisely so it
+    cannot race a live handler), this one conditional update is what makes execution
+    at-most-once."""
     # Plain locals: a rollback below expires the instance, and expired-attribute access on an
     # async session raises (MissingGreenlet) — never touch job.<col> in the except path.
     tenant_id, job_pk, job_type = job.tenant_id, job.id, job.job_type

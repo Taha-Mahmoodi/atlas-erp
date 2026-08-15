@@ -7,33 +7,51 @@ an OOM kill — the task dies with it. The row is left PENDING (never picked up)
 up, never finished) and nothing in Atlas ever looks at it again. Since Phase 19 moved ingredient
 depletion onto the runner, that means a restart during service silently loses a COGS posting.
 
-**The shape.** A periodic sweep re-dispatches orphans through the ordinary
+**The shape.** A periodic sweep re-dispatches orphaned PENDING rows through the ordinary
 ``schedule_job``/``_execute_job`` path, so a reclaimed job restores ITS OWN tenant and actor
-exactly as a fresh one does (D-007/D-010) and still runs inside ``run_in_uow`` (D-011). No new
-infrastructure: the sweep runs on the app lifespan, and there is no cron in Atlas.
+exactly as a fresh one does (D-007/D-010) and still runs inside ``run_in_uow`` (D-011). A stale
+RUNNING row is NOT re-dispatched; it is marked FAILED for a human. No new infrastructure: the
+sweep runs on the app lifespan, and there is no cron in Atlas.
 
-**Why this is safe at all.** Two things, in order:
+**Why this is safe, and why RUNNING is treated differently from PENDING.** ``_run_handler``
+claims its row with a CONDITIONAL ``PENDING -> RUNNING`` update, and nothing ever moves a row back
+out of RUNNING. That single conditional transition gives at-most-once execution outright: however
+many times a PENDING row is dispatched, exactly one runner wins the claim and the rest return
+without touching the handler.
 
-1. Every registered handler is proven safe to run twice (``tests/core/test_job_reruns.py``). A
-   sweeper that re-dispatches a non-idempotent handler turns a LOST posting into a DUPLICATED one,
-   which is strictly worse. Handler idempotency is a PRECONDITION of reclaim, not a nice-to-have.
-2. ``_run_handler`` claims the row with a conditional PENDING -> RUNNING update, so a job
-   dispatched twice runs once.
+Re-dispatching a RUNNING row would break that, and the guards cannot cover the gap. A RUNNING row
+has a handler that MAY still be alive — nothing distinguishes "the process died" from "this MRP
+run is slow" except elapsed time — so re-dispatch would run the same payload CONCURRENTLY with
+itself, and every idempotency guard in Atlas is read-then-write with no lock: ``run_payment_batch``
+selects bills with ``open_amount > 0`` before either transaction commits, so the same vendor bill
+gets paid twice; FX revaluation reverses only a prior COMPLETED run; the depletion guard reads the
+already-issued items before the first run's moves commit. Only two handlers have a DB-level
+backstop. So the sweep does not re-dispatch RUNNING at all — the row goes FAILED, lands on the
+``failed_jobs`` KPI, and a person decides whether to resubmit.
 
-**The four numbers**, each a real trade-off rather than a tunable:
+Handler re-run safety (``tests/core/test_job_reruns.py``) remains a hard PRECONDITION: it is what
+makes that human's resubmission safe, and what keeps the door open for any future path that
+re-publishes an event. It is simply not what makes the sweep safe — the claim is.
+
+**The three numbers**, each a real trade-off rather than a tunable:
 
 * ``PENDING_RECLAIM_AFTER`` is short. A PENDING row is one nobody has started; the only cost of
   reclaiming an in-flight one is the wasted claim the loser drops.
-* ``RUNNING_RECLAIM_AFTER`` is long. A RUNNING row has a handler executing against it, and the
-  claim cannot arbitrate between "dead" and "slow" — only elapsed time can. It must exceed the
-  slowest legitimate handler (an MRP run over a full BOM explosion) by a wide margin, because
-  reclaiming underneath a live runner is the one case the per-handler guards have to absorb.
+* ``RUNNING_ABANDON_AFTER`` is long, because it is how long we wait before declaring a live
+  handler dead. It must exceed the slowest legitimate handler (an MRP run over a full BOM
+  explosion) by a wide margin — the price of being wrong is a FAILED row for work that actually
+  succeeded, so the row's terminal status is written conditionally on it still being RUNNING.
 * ``SWEEP_BUDGET`` bounds a tick. After a long outage there may be thousands of orphans;
   reclaiming them all at once would schedule thousands of asyncio tasks on a system that is
   already unhealthy. The backlog drains over several ticks instead.
-* ``MAX_JOB_ATTEMPTS`` bounds a job. Something that fails, is reclaimed and fails again must end
-  up FAILED and STAY there — an unbounded retry loop burns the runner forever and buries the
-  failure from the human who has to fix it.
+
+**There is deliberately no attempt ceiling on PENDING reclaim.** A ceiling on ``attempts`` would
+count SWEEPS, not executions — a handler that actually raises is set FAILED by ``_run_handler``
+and is never swept again — so the only thing it could ever fire on is a job that keeps failing to
+get STARTED, most often one merely queued behind ``MAX_CONCURRENT_JOBS``. Abandoning that job
+marks FAILED something no runner ever touched and loses it permanently, which is the opposite of
+this module's purpose. The bound that actually matters comes from the RUNNING rule above: a job
+that does start and does not finish is FAILED once, and stays FAILED.
 
 **Retention.** ``core_idempotency_keys`` stored full response bodies forever, and Phase 19 gave a
 public website a write channel into that table. The same sweep purges keys past
@@ -60,13 +78,11 @@ logger = logging.getLogger("atlas")
 PENDING_RECLAIM_AFTER = timedelta(minutes=10)
 # A RUNNING row is one with a handler actually executing. Nothing distinguishes "the process died"
 # from "this MRP run is slow" except elapsed time, so this window is deliberately far larger than
-# any handler's realistic runtime — reclaiming under a live runner is the case the per-handler
-# idempotency guards have to absorb, and it should stay rare.
-RUNNING_RECLAIM_AFTER = timedelta(hours=2)
-# Orphans reclaimed per tick (see module docstring).
+# any handler's realistic runtime: past it we declare the runner dead and FAIL the row rather than
+# re-dispatching it, and being wrong costs a FAILED row for work that succeeded.
+RUNNING_ABANDON_AFTER = timedelta(hours=2)
+# Orphans handled per tick (see module docstring).
 SWEEP_BUDGET = 50
-# Reclaims allowed per job before it is abandoned as FAILED.
-MAX_JOB_ATTEMPTS = 3
 # How often the lifespan loop sweeps. Small enough that PENDING_RECLAIM_AFTER is the real latency
 # a lost job waits, large enough that the scan is nowhere near a hot path.
 SWEEP_INTERVAL = timedelta(minutes=5)
@@ -88,22 +104,22 @@ class SweepResult:
     """What one tick did. Returned so the caller (and the tests) can assert on it; also logged."""
 
     reclaimed_pending: int = 0
-    reclaimed_running: int = 0
+    #: Stale RUNNING rows given up on and marked FAILED — never re-dispatched (module docstring).
     abandoned: int = 0
     purged_idempotency_keys: int = 0
 
 
 def _stale_before(status: JobStatus, moment: datetime) -> datetime:
-    grace = PENDING_RECLAIM_AFTER if status is JobStatus.PENDING else RUNNING_RECLAIM_AFTER
+    grace = PENDING_RECLAIM_AFTER if status is JobStatus.PENDING else RUNNING_ABANDON_AFTER
     return moment - grace
 
 
 async def sweep_stale_jobs(
     session_factory: async_sessionmaker[AsyncSession], *, now: datetime | None = None
 ) -> SweepResult:
-    """Reclaim orphaned jobs, abandon the ones past the attempt ceiling, purge expired
-    idempotency keys. Opens its own session from ``session_factory`` — the same factory the
-    submitter passed the runner, so the sweep always lands in the same database.
+    """Re-dispatch orphaned PENDING jobs, FAIL the RUNNING ones whose runner never came back,
+    purge expired idempotency keys. Opens its own session from ``session_factory`` — the same
+    factory the submitter passed the runner, so the sweep always lands in the same database.
 
     Statement cost is FLAT in the size of the backlog: one bounded scan, then one bulk UPDATE per
     outcome. A per-job UPDATE would make a bad outage quadratically worse, which is exactly when
@@ -135,7 +151,7 @@ async def _reclaim(
     """The scan plus the bulk transitions, inside the caller's transaction."""
     stale = (
         await session.execute(
-            sa.select(Job.id, Job.status, Job.attempts)
+            sa.select(Job.id, Job.status)
             .where(
                 sa.or_(
                     sa.and_(
@@ -155,51 +171,45 @@ async def _reclaim(
     if not stale:
         return SweepResult(purged_idempotency_keys=await _purge_keys(session, moment)), []
 
-    exhausted = [row.id for row in stale if row.attempts >= MAX_JOB_ATTEMPTS]
-    retryable: dict[JobStatus, list[uuid.UUID]] = {
-        JobStatus.PENDING: [],
-        JobStatus.RUNNING: [],
-    }
-    for row in stale:
-        if row.attempts < MAX_JOB_ATTEMPTS:
-            retryable[JobStatus(row.status)].append(row.id)
-
-    abandoned = await _abandon(session, exhausted, moment)
-    counts = {
-        status: await _reclaim_batch(session, ids, status)
-        for status, ids in retryable.items()
-    }
+    pending = [row.id for row in stale if row.status == JobStatus.PENDING.value]
+    running = [row.id for row in stale if row.status == JobStatus.RUNNING.value]
     return (
         SweepResult(
-            reclaimed_pending=counts[JobStatus.PENDING],
-            reclaimed_running=counts[JobStatus.RUNNING],
-            abandoned=abandoned,
+            reclaimed_pending=await _reclaim_batch(session, pending),
+            abandoned=await _abandon(session, running, moment),
             purged_idempotency_keys=await _purge_keys(session, moment),
         ),
         # The ids the scan SELECTED, which may be a superset of the ones the conditional UPDATE
-        # actually flipped if a second sweeper raced us. Over-scheduling is harmless — the loser's
-        # dispatch fails ``_run_handler``'s claim and returns without touching the handler — and
-        # it is strictly safer than the alternative, which would be to skip a job we did reclaim.
-        retryable[JobStatus.PENDING] + retryable[JobStatus.RUNNING],
+        # actually touched if a second sweeper (or a late runner) raced us. Over-scheduling is
+        # harmless — the loser's dispatch fails ``_run_handler``'s claim and returns without
+        # touching the handler — and it is strictly safer than the alternative, which would be to
+        # skip a job we did reclaim.
+        pending,
     )
 
 
 async def _abandon(
     session: AsyncSession, job_ids: list[uuid.UUID], moment: datetime
 ) -> int:
-    """Mark jobs past the ceiling FAILED, with an error a human can act on. The error text is the
-    ONLY record of why the job stopped — ``JobRead`` exposes no payload — so it names the ceiling
-    rather than saying 'abandoned'."""
+    """Give up on stale RUNNING jobs: FAILED, with an error a human can act on. NOT re-dispatched
+    — see the module docstring on why concurrency is the one thing the handler guards do not
+    cover. The error text is the ONLY record of why the job stopped (``JobRead`` exposes no
+    payload), so it says what happened and what to do.
+
+    Conditional on the row still being RUNNING, for the same reason ``_reclaim_batch`` is
+    conditional: the scan takes no lock, so a genuinely slow handler that finishes between the
+    SELECT and this UPDATE would otherwise have its COMPLETED status (and its result) overwritten
+    with a failure that never happened."""
     if not job_ids:
         return 0
     outcome = await session.execute(
         sa.update(Job)
-        .where(Job.id.in_(job_ids))
+        .where(Job.id.in_(job_ids), Job.status == JobStatus.RUNNING.value)
         .values(
             status=JobStatus.FAILED.value,
             error=(
-                f"Abandoned by the stale-job sweeper after {MAX_JOB_ATTEMPTS} attempts: the "
-                "runner did not finish it. Investigate and resubmit."
+                "Abandoned by the stale-job sweeper: the runner started this job and never "
+                "finished it. Part of its work may have been committed. Investigate and resubmit."
             ),
             finished_at=moment,
         )
@@ -207,18 +217,21 @@ async def _abandon(
     return outcome.rowcount
 
 
-async def _reclaim_batch(
-    session: AsyncSession, job_ids: list[uuid.UUID], from_status: JobStatus
-) -> int:
-    """Flip a batch back to PENDING and count the attempt, in ONE statement. Conditional on the
-    status still being what the scan saw, so two sweepers racing cannot both reclaim a row —
-    ``rowcount`` is therefore the count of jobs actually reclaimed, not merely selected."""
+async def _reclaim_batch(session: AsyncSession, job_ids: list[uuid.UUID]) -> int:
+    """Count the re-dispatch on a batch of orphaned PENDING rows, in ONE statement. The row is
+    already PENDING — the UPDATE exists to bump ``updated_at`` (so the next tick does not re-scan
+    a row this tick just handled) and to record ``attempts``, which is diagnostics only: nothing
+    branches on it, and the module docstring says why a ceiling on it would be actively harmful.
+
+    Conditional on the row still being PENDING, so a sweeper cannot count an attempt against a job
+    a runner claimed between the scan and here — ``rowcount`` is therefore the count of jobs
+    actually reclaimed, not merely selected."""
     if not job_ids:
         return 0
     outcome = await session.execute(
         sa.update(Job)
-        .where(Job.id.in_(job_ids), Job.status == from_status.value)
-        .values(status=JobStatus.PENDING.value, attempts=Job.attempts + 1)
+        .where(Job.id.in_(job_ids), Job.status == JobStatus.PENDING.value)
+        .values(attempts=Job.attempts + 1)
     )
     return outcome.rowcount
 
@@ -271,9 +284,8 @@ async def run_sweeper(
 __all__ = [
     "IDEMPOTENCY_RETENTION",
     "IDEMPOTENCY_PURGE_BUDGET",
-    "MAX_JOB_ATTEMPTS",
     "PENDING_RECLAIM_AFTER",
-    "RUNNING_RECLAIM_AFTER",
+    "RUNNING_ABANDON_AFTER",
     "SWEEP_BUDGET",
     "SWEEP_INTERVAL",
     "SweepResult",

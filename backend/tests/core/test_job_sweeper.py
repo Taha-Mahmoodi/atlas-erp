@@ -6,9 +6,11 @@ transaction and ``schedule_job`` hands it to an asyncio task on the REQUEST's ow
 the row PENDING (never picked up) or RUNNING (picked up, never finished), and nothing in Atlas
 ever looks at it again — a restart during service silently loses a COGS posting.
 
-Proven here: both thresholds and why they differ, the attempt ceiling that abandons instead of
-looping, the per-tick budget, the constant statement cost, that a reclaimed job runs under ITS OWN
-tenant, and the atomic claim that stops a doubly-dispatched job from running twice.
+Proven here: both thresholds and why they differ, that a stale RUNNING row is FAILED for a human
+rather than re-dispatched under a possibly-live handler, that a job which never got to run is
+retried instead of abandoned, the per-tick budget, the constant statement cost, that a reclaimed
+job runs under ITS OWN tenant, and the atomic claim that stops a doubly-dispatched job from
+running twice.
 """
 
 import uuid
@@ -23,10 +25,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from app.core.db import build_session_factory
 from app.core.events import run_in_uow
 from app.core.job_sweeper import (
-    MAX_JOB_ATTEMPTS,
     PENDING_RECLAIM_AFTER,
-    RUNNING_RECLAIM_AFTER,
+    RUNNING_ABANDON_AFTER,
     SWEEP_BUDGET,
+    _abandon,
     sweep_stale_jobs,
 )
 from app.core.jobs import Job, JobStatus, register_job, submit_job, wait_for_jobs
@@ -136,16 +138,20 @@ async def test_a_fresh_pending_job_is_left_alone(
     assert (await _job(db_session, job_id)).status == JobStatus.PENDING.value
 
 
-async def test_a_running_job_is_given_a_longer_grace_than_a_pending_one(
+async def test_a_stale_running_job_is_failed_for_a_human_never_re_dispatched(
     db_session: AsyncSession, tenant_a: uuid.UUID, job_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """RUNNING means a handler is actually executing. A legitimately slow MRP run must not be
-    reclaimed out from under itself, so RUNNING waits far longer than PENDING — and a job aged
-    past the PENDING threshold but inside the RUNNING one is deliberately untouched."""
+    """RUNNING means a handler was actually executing, and elapsed time cannot tell "the process
+    died" from "this MRP run is slow". Re-dispatching such a row would run the same payload
+    CONCURRENTLY with a possibly-live handler, and every idempotency guard in Atlas is
+    read-then-write with no lock — ``run_payment_batch`` selects bills with ``open_amount > 0``
+    before either transaction commits, so the same vendor bill gets paid twice. So the sweep never
+    re-dispatches RUNNING: the row goes FAILED with an error a human can act on, and a legitimately
+    slow run inside the window is left completely alone."""
     slow = await _submit(db_session, tenant_a, "slow")
     dead = await _submit(db_session, tenant_a, "dead")
     pending_minutes = PENDING_RECLAIM_AFTER.total_seconds() / 60
-    running_minutes = RUNNING_RECLAIM_AFTER.total_seconds() / 60
+    running_minutes = RUNNING_ABANDON_AFTER.total_seconds() / 60
     assert running_minutes > pending_minutes, "RUNNING needs the longer window, by construction"
     await _age(db_session, slow, minutes=pending_minutes + 1, status=JobStatus.RUNNING)
     await _age(db_session, dead, minutes=running_minutes + 1, status=JobStatus.RUNNING)
@@ -153,46 +159,65 @@ async def test_a_running_job_is_given_a_longer_grace_than_a_pending_one(
     result = await sweep_stale_jobs(job_factory)
     await wait_for_jobs()
 
-    assert result.reclaimed_running == 1
-    assert (await _job(db_session, slow)).status == JobStatus.RUNNING.value
-    assert (await _job(db_session, dead)).status == JobStatus.COMPLETED.value
-
-
-# --- The ceiling -----------------------------------------------------------------
-
-
-async def test_a_job_that_keeps_failing_is_abandoned_not_looped(
-    db_session: AsyncSession, tenant_a: uuid.UUID, job_factory: async_sessionmaker[AsyncSession]
-) -> None:
-    """Reclaim has a ceiling. A job that fails, is reclaimed and fails again must eventually go
-    FAILED and STAY there — an unbounded retry loop would burn the runner forever and hide the
-    failure from the human who needs to see it."""
-    job_id = await _submit(db_session, tenant_a)
-    await _age(
-        db_session,
-        job_id,
-        minutes=PENDING_RECLAIM_AFTER.total_seconds() / 60 + 1,
-        attempts=MAX_JOB_ATTEMPTS,
-    )
-
-    result = await sweep_stale_jobs(job_factory)
-    await wait_for_jobs()
-
     assert (result.abandoned, result.reclaimed_pending) == (1, 0)
-    job = await _job(db_session, job_id)
-    assert job.status == JobStatus.FAILED.value
-    assert str(MAX_JOB_ATTEMPTS) in job.error
-    assert _runs == [], "an abandoned job must not be dispatched"
+    assert _runs == [], "a stale RUNNING job must never be re-executed"
+    assert (await _job(db_session, slow)).status == JobStatus.RUNNING.value
+    dead_job = await _job(db_session, dead)
+    assert dead_job.status == JobStatus.FAILED.value
+    assert "resubmit" in dead_job.error
 
     # ...and stays there: a FAILED row is not stale, so the next sweep leaves it alone.
     assert (await sweep_stale_jobs(job_factory)).abandoned == 0
 
 
+async def test_abandoning_cannot_overwrite_a_job_that_finished_in_the_meantime(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    """The scan takes no row lock, so a genuinely slow handler can COMPLETE between the SELECT and
+    the UPDATE (and a multi-worker deploy runs one sweeper per process). Without the status guard
+    the sweeper would rewrite that success as FAILED, discard its result, and light the
+    ``failed_jobs`` KPI for work that actually worked."""
+    job_id = await _submit(db_session, tenant_a)
+    await _age(db_session, job_id, minutes=1, status=JobStatus.COMPLETED)
+
+    with system_context():  # the sweeper's own context (the scan is cross-tenant)
+        assert await _abandon(db_session, [job_id], datetime.now(UTC)) == 0
+    assert (await _job(db_session, job_id)).status == JobStatus.COMPLETED.value
+
+
+# --- Retrying vs giving up -------------------------------------------------------
+
+
+async def test_a_job_that_never_ran_is_retried_indefinitely_not_abandoned(
+    db_session: AsyncSession, tenant_a: uuid.UUID, job_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """``attempts`` counts SWEEPS, not executions — a handler that actually raises is set FAILED by
+    the runner and never swept again — so the only thing an attempt CEILING could ever fire on is a
+    job that keeps failing to get STARTED, most often one merely queued behind
+    ``MAX_CONCURRENT_JOBS``. Abandoning that marks FAILED something no runner ever touched and
+    loses it permanently. However many times it has been swept, a job that has never run must still
+    be dispatched."""
+    job_id = await _submit(db_session, tenant_a)
+    await _age(
+        db_session,
+        job_id,
+        minutes=PENDING_RECLAIM_AFTER.total_seconds() / 60 + 1,
+        attempts=99,
+    )
+
+    result = await sweep_stale_jobs(job_factory)
+    await wait_for_jobs()
+
+    assert (result.reclaimed_pending, result.abandoned) == (1, 0)
+    assert (await _job(db_session, job_id)).status == JobStatus.COMPLETED.value
+    assert _runs == [(tenant_a, "swept")]
+
+
 async def test_each_reclaim_counts_an_attempt(
     db_session: AsyncSession, tenant_a: uuid.UUID, job_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """The ceiling only bites if reclaiming records an attempt — otherwise a permanently broken
-    job loops forever."""
+    """``attempts`` is diagnostics, not a ceiling: a high count on a still-PENDING row is how an
+    operator sees the runner is saturated rather than dead. It only says that if it is recorded."""
     job_id = await _submit(db_session, tenant_a)
     await _age(db_session, job_id, minutes=PENDING_RECLAIM_AFTER.total_seconds() / 60 + 1)
 
