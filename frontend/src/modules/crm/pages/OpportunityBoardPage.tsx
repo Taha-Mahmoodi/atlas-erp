@@ -55,15 +55,15 @@ export function OpportunityBoardPage() {
 
   // Each card carries its own currency; a column total over mixed currencies is displayed in
   // the first card's currency (single-currency tenants — the common case — are always exact).
+  // The total is header-only decoration (#163): baking it into `title` leaked it into the move
+  // menu ("Move to Prospecting · USD 60,000.00") and the column's aria-label.
   const columns: KanbanColumn<Opportunity>[] = (board.data?.columns ?? []).map((column) => ({
     key: column.stage,
-    title:
+    title: STAGE_LABEL[column.stage],
+    headerExtra:
       column.count > 0
-        ? `${STAGE_LABEL[column.stage]} · ${formatMoney(
-            column.total_estimated_value,
-            column.opportunities[0]?.currency_code ?? "—",
-          )}`
-        : STAGE_LABEL[column.stage],
+        ? formatMoney(column.total_estimated_value, column.opportunities[0]?.currency_code ?? "—")
+        : undefined,
     items: column.opportunities,
   }));
 
@@ -112,6 +112,7 @@ export function OpportunityBoardPage() {
           <Kanban
             columns={columns}
             itemKey={(opportunity) => opportunity.id}
+            itemLabel={(opportunity) => `${opportunity.opportunity_number} ${opportunity.name}`}
             renderItem={(opportunity) => <Card opportunity={opportunity} />}
             {...(canManage ? { onItemMove } : {})}
             emptyHint="No deals"
