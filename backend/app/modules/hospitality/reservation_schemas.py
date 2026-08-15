@@ -123,8 +123,8 @@ class TableReservationAmend(ApiModel):
 
 
 class TableReservationSeat(ApiModel):
-    """Sit the party down. ``table_code`` is the floor's own free text ("T12", "BAR-3") and lands on
-    the check opened for them — Phase 19 already litigated why a table master nothing else
+    """Sit the party down. ``table_code`` is the floor's own free-text label — "T12", "BAR-3" — and
+    lands on the check opened for them. Phase 19 already litigated why a table master nothing else
     references would be config for its own sake, and pacing does not reference tables either."""
 
     model_config = ConfigDict(extra="forbid")
