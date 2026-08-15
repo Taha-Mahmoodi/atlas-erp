@@ -161,7 +161,8 @@ async def test_the_purge_never_touches_another_tenants_live_keys(
 def test_the_retention_window_exceeds_any_realistic_retry_horizon() -> None:
     """A regression guard on the number itself: shortening this silently converts replays into
     re-executions, which is a data-integrity bug that no other test would catch."""
-    assert IDEMPOTENCY_RETENTION >= timedelta(days=7)
+    longest_realistic_client_retry = timedelta(days=7)
+    assert longest_realistic_client_retry <= IDEMPOTENCY_RETENTION
 
 
 async def test_the_purge_scan_is_index_served(db_session: AsyncSession) -> None:
