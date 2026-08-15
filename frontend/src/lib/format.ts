@@ -52,6 +52,23 @@ export function formatDateTime(isoTimestamp: string): string {
   }).format(value);
 }
 
+/**
+ * "7m" / "1h 25m" — how long ago a timestamp was, for screens where the age of a thing IS the
+ * information (a kitchen display: how long has this check been on the pass).
+ *
+ * Minutes, never seconds: a number that changes every second on a board that refreshes every ten
+ * would be a lie about its own freshness. A future timestamp clamps to "0m" rather than counting
+ * backwards, because the timestamp is the server's and the clock is the browser's, and a check
+ * that fired "-2m" ago reads as a bug in the kitchen instead of as a clock difference.
+ */
+export function formatElapsed(isoTimestamp: string, now: Date = new Date()): string {
+  const then = new Date(isoTimestamp).getTime();
+  if (Number.isNaN(then)) return "—";
+  const minutes = Math.max(0, Math.floor((now.getTime() - then) / 60_000));
+  if (minutes < 60) return `${minutes}m`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
 /** "12.5%" from a decimal-string percent (e.g. tax rate_percent "12.50"). */
 export function formatPercent(percent: string | number): string {
   const value = typeof percent === "number" ? percent : Number(percent);
