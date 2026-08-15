@@ -146,6 +146,7 @@ import { OpportunityDetailPage } from "@/modules/crm/pages/OpportunityDetailPage
 import { OpportunityFormPage } from "@/modules/crm/pages/OpportunityFormPage";
 import { AtRiskPage } from "@/modules/hospitality/pages/AtRiskPage";
 import { HospitalityHomePage } from "@/modules/hospitality/pages/HospitalityHomePage";
+import { KdsBoardPage } from "@/modules/hospitality/pages/KdsBoardPage";
 import { MenuAvailabilityPage } from "@/modules/hospitality/pages/MenuAvailabilityPage";
 import { TicketDetailPage } from "@/modules/hospitality/pages/TicketDetailPage";
 import { TicketFormPage } from "@/modules/hospitality/pages/TicketFormPage";
@@ -1181,6 +1182,11 @@ const hospitalityTicketDetailRoute = createRoute({
   path: "/hospitality/tickets/$ticketId",
   component: TicketDetailPage,
 });
+const hospitalityKitchenRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hospitality/kitchen",
+  component: KdsBoardPage,
+});
 
 // --- HR (PLAN 15.10) ------------------------------------------------------------------------
 
@@ -1511,6 +1517,7 @@ const routeTree = rootRoute.addChildren([
   hospitalityTicketsRoute,
   hospitalityTicketNewRoute,
   hospitalityTicketDetailRoute,
+  hospitalityKitchenRoute,
   hrHomeRoute,
   hrDepartmentsRoute,
   hrDepartmentNewRoute,

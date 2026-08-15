@@ -30,6 +30,12 @@ const SECTIONS = [
     description: "Open a check, add dishes, fire it, settle it",
     permission: "hospitality.ticket.read",
   },
+  {
+    to: "/hospitality/kitchen",
+    label: "Kitchen display",
+    description: "The pass: what is queued, cooking and ready",
+    permission: "hospitality.ticket.read",
+  },
 ] as const;
 
 export function HospitalityHomePage() {
