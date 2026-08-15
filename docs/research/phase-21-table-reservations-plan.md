@@ -20,8 +20,8 @@ already carries.
 **Spec:** [`hospitality-industry-plan.md`](./hospitality-industry-plan.md) Q3 (the pacing counter
 and why per-table locking is wrong) and "The guest-facing surface" (the website-as-client
 boundary); owner directive 2026-08-15 (Taha: the restaurant needs its reservation part). This
-phase is **new scope relative to PLAN.md** — the phase number 21 is proposed, not reserved, and
-PLAN.md stays untouched until Taha ratifies it (the field-force rule).
+phase was new scope relative to PLAN.md; Taha ratified it on 2026-08-15 and **PLAN.md Phase 21
+(21.1-21.4) is now the tracked source of truth** — tick those boxes as tasks land.
 
 **Sequencing:** Independent of Phase 20 — it touches no finance code and no shipped module.
 Recommended order: **before** Phase 20, because it extends the website loop Phase 19 just proved,
@@ -254,8 +254,7 @@ async def test_a_cancel_racing_a_booking_never_tears_the_counter(...):
 - [ ] `docs/modules/hospitality.md`: the reservation surface, the transition/counter matrix, new
       known limits (below) recorded not hidden. `docs/api.md`: the website scope for the operator
       flow.
-- [ ] `PROGRESS.md` per task; propose the PLAN.md Phase 21 block for Taha to ratify (proposed
-      text in the PR body, **not** committed to PLAN.md).
+- [ ] `PROGRESS.md` per task, and tick PLAN.md 21.1-21.4 as each lands (the block is ratified).
 
 ---
 
@@ -276,7 +275,6 @@ async def test_a_cancel_racing_a_booking_never_tears_the_counter(...):
   provider; wiring guest money before those exist would rebuild both badly.
 - **Waitlists**, **multi-slot pacing for long meals** (a booking consumes its arrival slot only —
   the OpenTable semantics), **guest notifications** (the website's job, Q1 boundary).
-- **PLAN.md edits** — proposed in the PR body for Taha's ratification.
 
 ## Self-review
 

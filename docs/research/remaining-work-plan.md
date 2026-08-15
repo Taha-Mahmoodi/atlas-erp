@@ -77,8 +77,8 @@ a status-filtered query, and the at-risk list. Follows the module-UI anatomy the
 Not in the original list: Taha directed on 2026-08-15 that the restaurant side needs its
 reservation part. The research already existed — Q3's pacing-counter model and the guest-facing
 section's `table_reservation` document — but Phase 19 shipped ordering without it, so it was
-roadmapped scope with no phase. It is now planned as **Phase 21** (number proposed, PLAN.md to be
-ratified by Taha): the `hsp_service_slot` pacing gate, the reservation document, website
+roadmapped scope with no phase. It is now **Phase 21** in PLAN.md (ratified 2026-08-15):
+the `hsp_service_slot` pacing gate, the reservation document, website
 book/cancel, and staff seat/no-show — no table master, no finance touch, independent of Phase 20
 and recommended before it.
 
