@@ -20,6 +20,7 @@ export type IconName =
   | "layers"
   | "spark"
   | "chart"
+  | "utensils"
   | "gear"
   | "search"
   | "plus"
@@ -89,6 +90,12 @@ export function IconSprite() {
       </symbol>
       <symbol id="atlas-chart" viewBox="0 0 24 24">
         <path d="M4 20V10M10 20V4M16 20v-7M21 20H3" />
+      </symbol>
+      <symbol id="atlas-utensils" viewBox="0 0 24 24">
+        <path d="M4.6 2.5v4.6a2.7 2.7 0 005.4 0V2.5" />
+        <path d="M7.3 9.8v11.7" />
+        <path d="M15.8 2.5c2.4 1.9 3.8 4.7 3.8 7.7V13h-3.8V2.5z" />
+        <path d="M17.7 13v8.5" />
       </symbol>
       <symbol id="atlas-gear" viewBox="0 0 24 24">
         <circle cx="12" cy="12" r="3.2" />

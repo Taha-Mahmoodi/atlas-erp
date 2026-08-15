@@ -144,6 +144,9 @@ import { LeadListPage } from "@/modules/crm/pages/LeadListPage";
 import { OpportunityBoardPage } from "@/modules/crm/pages/OpportunityBoardPage";
 import { OpportunityDetailPage } from "@/modules/crm/pages/OpportunityDetailPage";
 import { OpportunityFormPage } from "@/modules/crm/pages/OpportunityFormPage";
+import { AtRiskPage } from "@/modules/hospitality/pages/AtRiskPage";
+import { HospitalityHomePage } from "@/modules/hospitality/pages/HospitalityHomePage";
+import { MenuAvailabilityPage } from "@/modules/hospitality/pages/MenuAvailabilityPage";
 import { DepartmentFormPage } from "@/modules/hr/pages/DepartmentFormPage";
 import { DepartmentListPage } from "@/modules/hr/pages/DepartmentListPage";
 import { EmployeeFormPage } from "@/modules/hr/pages/EmployeeFormPage";
@@ -1143,6 +1146,24 @@ const crmActivitiesRoute = createRoute({
   component: ActivityListPage,
 });
 
+// --- Hospitality (PLAN 22.2) ----------------------------------------------------------------
+
+const hospitalityHomeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hospitality",
+  component: HospitalityHomePage,
+});
+const hospitalityMenuRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hospitality/menu",
+  component: MenuAvailabilityPage,
+});
+const hospitalityAtRiskRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/hospitality/at-risk",
+  component: AtRiskPage,
+});
+
 // --- HR (PLAN 15.10) ------------------------------------------------------------------------
 
 const hrHomeRoute = createRoute({
@@ -1466,6 +1487,9 @@ const routeTree = rootRoute.addChildren([
   crmOpportunityDetailRoute,
   crmOpportunityEditRoute,
   crmActivitiesRoute,
+  hospitalityHomeRoute,
+  hospitalityMenuRoute,
+  hospitalityAtRiskRoute,
   hrHomeRoute,
   hrDepartmentsRoute,
   hrDepartmentNewRoute,
