@@ -69,6 +69,16 @@ class OtdKpi(ApiModel):
     total: int
 
 
+class FailedJobsKpi(ApiModel):
+    """The background-job health card (P0 Task 3): how many jobs ended FAILED inside the last
+    ``window_days``. The window rides on the payload so the client can label the card honestly
+    ("2 failed jobs (7d)") without hard-coding the number, and the drill-down is the existing
+    ``GET /api/v1/jobs?status=FAILED``, which carries each failure's error text."""
+
+    count: int
+    window_days: int
+
+
 class DashboardResponse(ApiModel):
     """The role-based dashboard payload (D-058): every KPI is OPTIONAL — only the KPIs the caller is
     permitted to see are populated (the rest are ``None`` and excluded from the JSON). The CLIENT
@@ -82,6 +92,7 @@ class DashboardResponse(ApiModel):
     open_purchase_orders: CountValueKpi | None = None
     otd_percent: OtdKpi | None = None
     wip_value: MoneyKpi | None = None
+    failed_jobs: FailedJobsKpi | None = None
 
 
 # --- Report builder (PLAN 13.2, D-059) ----------------------------------------
