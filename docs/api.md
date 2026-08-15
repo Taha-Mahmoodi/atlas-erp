@@ -212,7 +212,10 @@ invalidates it even though no booking changed. `party_size` is echoed back becau
 meaningless without it; never render a cached grid against a different party.
 
 A party the property does not seat is `422 hospitality.party_size_not_accepted` rather than a grid
-of `false`, and a date outside the booking window is `422 hospitality.outside_booking_window`.
+of `false`, and a date outside the booking window is `422 hospitality.outside_booking_window`. The
+window's floor is the earliest service whose hours have **not yet closed**, not the UTC calendar
+date: a service running past UTC midnight (22:00–05:00 UTC is an ordinary Americas dinner) keeps
+answering for its own `service_date` while it is still being run.
 
 ### `POST /api/v1/hospitality/table-reservations`
 

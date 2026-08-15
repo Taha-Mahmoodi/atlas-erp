@@ -16,14 +16,16 @@ from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.models import utcnow
 from app.modules.hospitality.constants import (
+    HOSPITALITY_RESERVATION_BOOK,
     HOSPITALITY_RESERVATION_MANAGE,
     HOSPITALITY_RESERVATION_READ,
 )
 from tests.conftest import QueryCounter, assert_query_budget
-from tests.modules.hospitality.factories import HospitalityPrincipal
+from tests.modules.hospitality.factories import HospitalityPrincipal, mint_website_key
 
 
 @pytest.fixture
@@ -341,13 +343,26 @@ async def test_changing_a_booking_needs_the_manage_key(
 
 
 async def test_a_staff_booking_and_a_website_booking_share_one_counter(
-    book_client: AsyncClient,
+    client: AsyncClient,
+    db_session: AsyncSession,
+    hospitality_user_factory: Callable[..., Awaitable[HospitalityPrincipal]],
 ) -> None:
     """One gate, every writer — the availability module's lesson. A phone booking that decremented
     a different counter from the website's would oversell the room from the one direction nobody
-    watches, so the staff route is refused by exactly the same slot the website filled."""
+    watches, so the staff route is refused by exactly the slot the WEBSITE filled.
+
+    The two surfaces are the point, so each booking really goes through its own: the first over the
+    website's ``hospitality.reservation.book`` machine credential on ``/table-reservations``, the
+    second over the host's JWT on ``/reservations``. Posting both through one router would pass
+    identically if the website router were ever pointed at a second counter.
+    """
+    principal = await hospitality_user_factory(slug="hsp-both", email="host@hsp-both.test")
+    staff = await _logged_in(client, principal)
+    website_key = await mint_website_key(
+        db_session, principal, name="bookings", scopes=[HOSPITALITY_RESERVATION_BOOK]
+    )
     service_date = a_service_date()
-    await book_client.put(
+    await staff.put(
         "/api/v1/hospitality/reservation-settings",
         json={
             "service_open": "11:00:00",
@@ -359,9 +374,17 @@ async def test_a_staff_booking_and_a_website_booking_share_one_counter(
             "booking_horizon_days": 90,
         },
     )
-    await take(book_client, booking(service_date, hour=19, party_size=4))
+    from_website = await client.post(
+        "/api/v1/hospitality/table-reservations",
+        json=booking(service_date, hour=19, party_size=4),
+        headers={
+            "Idempotency-Key": str(uuid.uuid4()),
+            "Authorization": f"Bearer {website_key}",
+        },
+    )
+    assert from_website.status_code == 201, from_website.text
 
-    response = await book_client.post(
+    response = await staff.post(
         "/api/v1/hospitality/reservations",
         json=booking(service_date, hour=19, party_size=1),
         headers={"Idempotency-Key": str(uuid.uuid4())},

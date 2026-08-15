@@ -290,6 +290,42 @@ async def test_an_override_below_what_is_already_booked_is_refused_not_clamped(
     assert excinfo.value.details["covers_booked"] == "8"
 
 
+@pytest.mark.parametrize(
+    ("hour", "minute", "code"),
+    [(19, 7, "hospitality.slot_not_aligned"), (3, 0, "hospitality.outside_service_hours")],
+)
+async def test_an_override_on_a_slot_the_service_never_offers_is_refused(
+    db_session: AsyncSession, tenant_a: uuid.UUID, hour: int, minute: int, code: str
+) -> None:
+    """A manager can only close a slot the room actually sells.
+
+    ``slot_times`` never emits 03:00 on a property open 11:00-23:00, and never emits 19:07 at all,
+    so an override there closes NOTHING while the manager believes a private event is handled — and
+    the junk counter row it materialises then rides every subsequent grid read of that date, moving
+    the availability validator for a slot nobody can see. The booking gate already refuses both.
+    """
+    service_date = a_service_date()
+    with tenant_context(tenant_a):
+        settings = await pacing.set_settings(
+            db_session,
+            tenant_a,
+            pacing.ResolvedSettings(service_open=time(11, 0), service_close=time(23, 0)),
+        )
+        with pytest.raises(ValidationFailedError) as excinfo:
+            await pacing.override_slot(
+                db_session,
+                tenant_a,
+                service_date,
+                slot_at(service_date, hour, minute),
+                covers_max=0,
+                parties_max=0,
+                settings=settings,
+            )
+        await db_session.commit()
+    assert excinfo.value.code == code
+    assert await stored_slot(db_session, tenant_a, service_date) is None
+
+
 # --- What may be asked for at all ---------------------------------------------
 
 
@@ -332,6 +368,37 @@ async def test_a_date_past_the_booking_horizon_is_refused(
     far = a_service_date(days_ahead=31)
     with pytest.raises(ValidationFailedError) as excinfo:
         pacing.require_bookable_slot(settings, far, slot_at(far, 19), 2)
+    assert excinfo.value.code == "hospitality.outside_booking_window"
+
+
+async def test_a_service_running_past_utc_midnight_is_still_bookable_after_midnight(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    """The horizon's floor is the SERVICE, not the UTC calendar day.
+
+    A property open 22:00-05:00 UTC is an ordinary New York dinner (18:00-01:00 local). Tonight's
+    service carries ``service_date = D``, and at 00:30 UTC — half past eight in the dining room —
+    a calendar floor refuses D as "in the past" while the window check refuses D+1 for the very
+    same slot, so NO ``service_date`` books the service the room is currently running. That is the
+    walk-in and phone booking the same-day path exists for, lost nightly from midnight until close.
+    """
+    settings = pacing.ResolvedSettings(service_open=time(22, 0), service_close=time(5, 0))
+    service_date = a_service_date(days_ahead=-1)
+    mid_service = datetime.combine(service_date + timedelta(days=1), time(0, 30), tzinfo=UTC)
+
+    pacing.require_bookable_slot(
+        settings, service_date, slot_at(service_date + timedelta(days=1), 1), 2, now=mid_service
+    )
+    # And the same service's date IS refused once its window has actually closed, so the floor has
+    # not simply been loosened by a day.
+    with pytest.raises(ValidationFailedError) as excinfo:
+        pacing.require_bookable_slot(
+            settings,
+            service_date,
+            slot_at(service_date + timedelta(days=1), 1),
+            2,
+            now=datetime.combine(service_date + timedelta(days=1), time(6, 0), tzinfo=UTC),
+        )
     assert excinfo.value.code == "hospitality.outside_booking_window"
 
 
@@ -499,21 +566,50 @@ async def test_cancelling_after_the_slot_has_started_releases_nothing(
     assert await counters(db_session, tenant_a, reservation.service_date) == (4, 1)
 
 
-async def test_a_no_show_releases_nothing(
+async def test_a_no_show_at_the_slot_releases_nothing(
     db_session: AsyncSession, tenant_a: uuid.UUID
 ) -> None:
     """Row 3 again, by the other door — and the rule that must NOT be unified with the hotel's.
 
-    A no-show is bookkeeping: it says the covers were wasted, not that they became available. This
-    is deliberately simpler than Phase 20's rooms, where a no-show keeps its count to feed the
-    overbooking buffer; here there is no buffer and no time left to sell into.
+    A no-show recorded at the slot is bookkeeping: it says the covers were wasted, not that they
+    became available. This is deliberately simpler than Phase 20's rooms, where a no-show keeps its
+    count to feed the overbooking buffer; here there is no buffer and no time left to sell into.
     """
-    reservation = await book(db_session, tenant_a, party_size=4)
+    with tenant_context(tenant_a):
+        await pacing.set_settings(
+            db_session,
+            tenant_a,
+            pacing.ResolvedSettings(service_open=time(0, 0), service_close=time(0, 0)),
+        )
+        await db_session.commit()
+    started = a_slot_that_has_already_started()
+    reservation = await book(
+        db_session, tenant_a, service_date=started.date(), slot_start=started, party_size=4
+    )
     with tenant_context(tenant_a):
         await reservations.mark_no_show(db_session, tenant_a, reservation.id)
         await db_session.commit()
     assert reservation.status == ReservationStatus.NO_SHOW
     assert await counters(db_session, tenant_a, reservation.service_date) == (4, 1)
+
+
+async def test_a_no_show_marked_before_the_slot_gives_the_covers_back(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    """A host mis-clicking "no-show" on tomorrow's eight-top must not strand its covers forever.
+
+    NO_SHOW is TERMINAL in ``RESERVATION_FLOW``: the booking cannot then be cancelled, re-confirmed
+    or amended, so without this release the slot carries a phantom party for the rest of the night
+    and the only remedy is a manager raising ``covers_max`` on that one slot. Before the slot the
+    covers are still resellable, which is the whole of ``_holds_capacity`` — the same predicate a
+    cancellation already reads.
+    """
+    reservation = await book(db_session, tenant_a, party_size=8)
+    with tenant_context(tenant_a):
+        await reservations.mark_no_show(db_session, tenant_a, reservation.id)
+        await db_session.commit()
+    assert reservation.status == ReservationStatus.NO_SHOW
+    assert await counters(db_session, tenant_a, reservation.service_date) == (0, 0)
 
 
 async def test_seating_and_completing_leave_the_counter_alone(
@@ -580,6 +676,42 @@ async def test_moving_a_booking_to_another_slot_releases_the_old_and_books_the_n
     by_hour = await slot_rows(db_session, tenant_a, service_date)
     assert by_hour[19] == (0, 0)
     assert by_hour[20] == (4, 1)
+
+
+async def test_moving_a_booking_backwards_still_locks_the_two_slots_in_key_order(
+    db_session: AsyncSession, tenant_a: uuid.UUID, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Row 7 takes TWO row locks, so it takes them in a fixed order — ``apply_bin_delta``'s rule.
+
+    Two hosts moving one booking 19:00 -> 20:00 and another 20:00 -> 19:00 at the same moment would
+    otherwise lock the same pair of ``hsp_service_slots`` rows in opposite orders and deadlock on
+    PostgreSQL; the loser reaches the host as a 500, not as the 409 a conflict is supposed to be.
+    Asserted by watching WHICH rows the amend locks rather than by racing two movers, because a
+    deadlock is precisely the outcome a test cannot provoke on demand (and never on SQLite, where
+    ``FOR UPDATE`` is a no-op).
+    """
+    service_date = a_service_date()
+    reservation = await book(
+        db_session, tenant_a, service_date=service_date, slot_start=slot_at(service_date, 20)
+    )
+    locked: list[tuple[date, datetime]] = []
+    real = pacing._locked_slot
+
+    async def watched(
+        session: AsyncSession, tenant_id: uuid.UUID, on: date, at: datetime
+    ) -> ServiceSlot | None:
+        locked.append((on, at))
+        return await real(session, tenant_id, on, at)
+
+    monkeypatch.setattr(pacing, "_locked_slot", watched)
+    with tenant_context(tenant_a):
+        await reservations.amend_reservation(
+            db_session, tenant_a, reservation.id, slot_start=slot_at(service_date, 19)
+        )
+        await db_session.commit()
+
+    assert len(locked) == 2, "a move locks the slot it leaves and the slot it takes"
+    assert locked == sorted(locked), "the pair must be locked in key order, whichever way it moves"
 
 
 async def test_a_move_into_a_full_slot_leaves_the_original_booking_intact(

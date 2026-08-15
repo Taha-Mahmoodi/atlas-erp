@@ -6,7 +6,7 @@ guest and the floor the instant it is confirmed. What is specific to a restauran
 counter moves, and that is the whole of finding 4:
 
     create (gate passes)                 covers += party, parties += 1
-    CANCELLED before slot_start          both decrement
+    CANCELLED / NO_SHOW before slot      both decrement
     CANCELLED / NO_SHOW at or after      nothing — there is nothing left to resell
     SEATED / COMPLETED                   nothing
     party-size change before slot_start  delta on covers, same locked row
@@ -95,7 +95,8 @@ async def _apply_transition(
 
 def _holds_capacity(reservation: TableReservation) -> bool:
     """Whether this reservation's covers are still worth giving back — finding 4's whole rule in one
-    predicate, so "before the slot" is written once and cannot drift between cancel and amend.
+    predicate, so "before the slot" is written once and cannot drift between cancel, no-show and
+    amend.
 
     The counter only means something BEFORE the slot starts: after it, the covers cannot be resold
     to anybody, so releasing them would only invite a double-booking of a table that is already
@@ -216,18 +217,29 @@ async def amend_reservation(
     settings = await pacing.get_settings(session, tenant_id)
     pacing.require_bookable_slot(settings, new_date, new_slot, new_party)
 
-    moved = (new_date, new_slot) != (reservation.service_date, as_utc(reservation.slot_start))
-    if moved:
-        await pacing.release_from_slot(
-            session,
-            tenant_id,
-            reservation.service_date,
-            as_utc(reservation.slot_start),
-            reservation.party_size,
-        )
-        await pacing.book_into_slot(
-            session, tenant_id, new_date, new_slot, new_party, settings=settings
-        )
+    old_key = (reservation.service_date, as_utc(reservation.slot_start))
+    new_key = (new_date, new_slot)
+    if old_key != new_key:
+        # Two counter rows means a LOCK ORDER, the ``stock_quants.apply_bin_delta`` discipline
+        # (D-036): both halves take their row ``with_for_update``, so they take them in key order
+        # and two hosts swapping a pair of bookings between 19:00 and 20:00 cannot lock the same
+        # pair in opposite orders. A deadlock there reaches the host as a 500, not as a 409.
+        # Either order still leaves a full destination harmless: ``book_into_slot`` refuses before
+        # mutating anything, so the original booking survives whichever half runs first.
+        if old_key < new_key:
+            await pacing.release_from_slot(
+                session, tenant_id, *old_key, reservation.party_size
+            )
+            await pacing.book_into_slot(
+                session, tenant_id, *new_key, new_party, settings=settings
+            )
+        else:
+            await pacing.book_into_slot(
+                session, tenant_id, *new_key, new_party, settings=settings
+            )
+            await pacing.release_from_slot(
+                session, tenant_id, *old_key, reservation.party_size
+            )
     elif (delta := new_party - reservation.party_size) > 0:
         # Same slot: take the DELTA on the one locked row, counting NO extra party (they are already
         # one booking). A release-then-rebook pair would let 8 growing to 9 fail on a slot with
@@ -316,14 +328,26 @@ async def cancel_reservation(
 async def mark_no_show(
     session: AsyncSession, tenant_id: uuid.UUID, reservation_id: uuid.UUID
 ) -> TableReservation:
-    """They never came. Bookkeeping ONLY — no counter effect, ever.
+    """They never came. Bookkeeping at or after the slot, and a release before it (finding 4).
 
-    A no-show is recorded at or after the slot, when the covers cannot be resold to anybody; giving
-    them back would offer a table that has been standing empty for an hour and is about to turn. The
-    difference from a cancellation is entirely that one arrives in time to be useful.
+    A no-show is normally recorded at or after the slot, when the covers cannot be resold to
+    anybody; giving them back would offer a table that has been standing empty for an hour and is
+    about to turn. The difference from a cancellation is entirely that one arrives in time to be
+    useful — which is exactly why an EARLY no-show (a host's mis-click on tomorrow's eight-top)
+    must release like a cancel: NO_SHOW is terminal in ``RESERVATION_FLOW``, so covers stranded
+    here have no transition left that could ever give them back, and the only remedy would be a
+    manager raising ``covers_max`` on that one slot.
     """
     reservation = await get_reservation(session, tenant_id, reservation_id)
     _require_transition(reservation, ReservationStatus.NO_SHOW)
+    if _holds_capacity(reservation):
+        await pacing.release_from_slot(
+            session,
+            tenant_id,
+            reservation.service_date,
+            as_utc(reservation.slot_start),
+            reservation.party_size,
+        )
     await _apply_transition(session, tenant_id, reservation, ReservationStatus.NO_SHOW)
     return reservation
 

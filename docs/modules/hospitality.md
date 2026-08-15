@@ -318,14 +318,16 @@ transaction.
 | Transition | Counter effect |
 |---|---|
 | create (gate passes) | `covers_booked += party_size`, `parties_booked += 1` |
-| CANCELLED **before** `slot_start` | both decrement |
+| CANCELLED / NO_SHOW **before** `slot_start` | both decrement |
 | CANCELLED / NO_SHOW **at or after** `slot_start` | none — there is nobody left to resell to |
 | SEATED / COMPLETED | none — the covers were spent at confirmation |
 | party-size change before `slot_start` | delta on covers, same locked row, **no extra party** |
 | slot change before `slot_start` | release the old slot + book the new one, ONE transaction |
 
 Deliberately **simpler than the hotel's rule** (Phase 20, where a no-show keeps its count to feed
-the overbooking buffer). Each row has its own named test so the two do not get unified later.
+the overbooking buffer). Each row has its own named test so the two do not get unified later. A
+no-show marked EARLY releases like a cancel because NO_SHOW is terminal: a host mis-clicking it on
+tomorrow's eight-top would otherwise strand those covers with no transition left to give them back.
 
 Seating opens the `OrderTicket` (`guest_count = party_size`, the host's free-text `table_code`) and
 writes the `seated_as` doc-flow edge in the same transaction, so
@@ -364,9 +366,9 @@ is every guest's name and contact detail for the night, so a leaked website key 
 | `hospitality.slot_full` | 422 | `details.limit` is `covers` or `parties`, plus `requested`/`available`; on the website booking route it also carries `alternatives` |
 | `hospitality.slot_override_below_booked` | 422 | a manager cutting capacity under confirmed bookings; carries both numbers |
 | `hospitality.party_size_not_accepted` | 422 | outside `min_party`..`max_party` |
-| `hospitality.outside_booking_window` | 422 | a date in the past, or past `booking_horizon_days` |
-| `hospitality.outside_service_hours` | 422 | a slot outside `service_open`..`service_close` for that date |
-| `hospitality.slot_not_aligned` | 422 | a slot not on a 15-minute boundary |
+| `hospitality.outside_booking_window` | 422 | a service whose hours have already closed, or a date past `booking_horizon_days`. The floor is the SERVICE, not the UTC calendar day, so a service running past midnight stays bookable while it is running |
+| `hospitality.outside_service_hours` | 422 | a slot outside `service_open`..`service_close` for that date (booking **and** `PUT /service-slots`) |
+| `hospitality.slot_not_aligned` | 422 | a slot not on a 15-minute boundary (booking **and** `PUT /service-slots`) |
 
 ### Known limits (Phase 21, recorded not hidden)
 
@@ -386,7 +388,9 @@ is every guest's name and contact detail for the night, so a leaked website key 
     then holds capacity nothing can release.
 16. **Service hours are UTC**, because Atlas has no per-tenant timezone. A property whose local
     service crosses a UTC day boundary must send the right `service_date` itself; the API cannot
-    infer it.
+    infer it. It will not REFUSE the right one, though: the booking window's floor is the service's
+    own close instant, so the second half of a midnight-crossing service stays bookable and
+    readable while it is being run.
 17. **The staff surface has no slot-grid read.** A manager sets capacity blind and learns the current
     counters only from the refusal (`covers_booked`/`parties_booked` in `details`). One endpoint over
     `queries.slot_counters` closes it the day somebody builds the screen.

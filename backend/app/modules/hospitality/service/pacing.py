@@ -188,13 +188,42 @@ def slot_times(settings: ResolvedSettings, service_date: date) -> list[datetime]
     return slots
 
 
+def require_slot_on_grid(
+    settings: ResolvedSettings, service_date: date, slot_start: datetime
+) -> None:
+    """The slot must be one the service actually OFFERS: on the grid, and inside the window.
+
+    Shared by the booking gate and the manager's override, because a time ``slot_times`` never emits
+    is a slot nothing can render and nothing can book — an override written against 03:07 on a room
+    that opens at 11:00 would answer 200 while closing nothing, and its junk counter row would then
+    sit in every subsequent grid read of that date.
+
+    Alignment before the window, so an off-grid time is named as such rather than as "outside
+    service hours", which would send a caller looking at the wrong setting. Every real UTC offset
+    is a whole number of quarter-hours, so a local :15 is always a UTC :00/:15/:30/:45.
+    """
+    if slot_start.minute % SLOT_MINUTES or slot_start.second or slot_start.microsecond:
+        raise ValidationFailedError(
+            message=f"A reservation slot must start on a {SLOT_MINUTES}-minute boundary",
+            code="hospitality.slot_not_aligned",
+            details={"slot_start": slot_start.isoformat(), "slot_minutes": str(SLOT_MINUTES)},
+        )
+    opens_at, closes_at = service_window(settings, service_date)
+    if not opens_at <= slot_start < closes_at:
+        raise ValidationFailedError(
+            message="That time is outside the property's service hours for this date",
+            code="hospitality.outside_service_hours",
+            details={"opens_at": opens_at.isoformat(), "closes_at": closes_at.isoformat()},
+        )
+
+
 def require_bookable_slot(
     settings: ResolvedSettings,
     service_date: date,
     slot_start: datetime,
     party_size: int,
     *,
-    today: date | None = None,
+    now: datetime | None = None,
 ) -> None:
     """Everything that must hold before the counter is consulted, in the order a caller can act on:
     the party first (a host can offer to split it), then the date, then the time.
@@ -213,32 +242,26 @@ def require_bookable_slot(
                 "max_party": str(settings.max_party),
             },
         )
-    today = today or utcnow().date()
+    now = now or utcnow()
+    today = now.date()
+    # The floor is the earliest service whose window has NOT ALREADY CLOSED, not the UTC calendar
+    # date — the two differ for every service that crosses UTC midnight, which is every dinner
+    # service in the Americas (22:00-05:00 UTC is 18:00-01:00 in New York). Tonight's service has
+    # service_date = D; the moment UTC ticks over to D+1 a calendar floor refuses D, while the
+    # window check below refuses D+1 for the very same slot — so NO date at all would book the
+    # service currently being run, every night, from UTC midnight until close.
+    yesterday = today - timedelta(days=1)
+    earliest = yesterday if service_window(settings, yesterday)[1] > now else today
     horizon = today + timedelta(days=settings.booking_horizon_days)
-    if not today <= service_date <= horizon:
+    if not earliest <= service_date <= horizon:
         # ONE code for both ends: a date in the past and a date past the horizon are the same
         # answer to a caller ("not that day"); splitting them invents a code nothing branches on.
         raise ValidationFailedError(
             message="That service date is outside the property's booking window",
             code="hospitality.outside_booking_window",
-            details={"from": today.isoformat(), "to": horizon.isoformat()},
+            details={"from": earliest.isoformat(), "to": horizon.isoformat()},
         )
-    # Alignment before the window, so an off-grid time is named as such rather than as "outside
-    # service hours", which would send a caller looking at the wrong setting. Every real UTC offset
-    # is a whole number of quarter-hours, so a local :15 is always a UTC :00/:15/:30/:45.
-    if slot_start.minute % SLOT_MINUTES or slot_start.second or slot_start.microsecond:
-        raise ValidationFailedError(
-            message=f"A reservation slot must start on a {SLOT_MINUTES}-minute boundary",
-            code="hospitality.slot_not_aligned",
-            details={"slot_start": slot_start.isoformat(), "slot_minutes": str(SLOT_MINUTES)},
-        )
-    opens_at, closes_at = service_window(settings, service_date)
-    if not opens_at <= slot_start < closes_at:
-        raise ValidationFailedError(
-            message="That time is outside the property's service hours for this date",
-            code="hospitality.outside_service_hours",
-            details={"opens_at": opens_at.isoformat(), "closes_at": closes_at.isoformat()},
-        )
+    require_slot_on_grid(settings, service_date, slot_start)
 
 
 # --- The pacing counter -------------------------------------------------------
@@ -379,7 +402,12 @@ async def override_slot(
     what is already booked is REFUSED, not clamped: clamping would either silently drop guests
     already holding a confirmed booking, or leave the row violating its own CHECK and surface as a
     500 on the manager's next save. The refusal names both numbers so the manager can decide whom
-    to call."""
+    to call.
+
+    The slot has to be one the service OFFERS, exactly as a booking's does: without that check a
+    manager "closing" 03:07 gets a 200 and closes nothing, because the grid read never renders a
+    time ``slot_times`` does not emit and the booking gate would refuse it anyway."""
+    require_slot_on_grid(settings, service_date, slot_start)
     slot = await _slot_for_update(session, tenant_id, service_date, slot_start, settings)
     if covers_max < slot.covers_booked or parties_max < slot.parties_booked:
         raise ValidationFailedError(

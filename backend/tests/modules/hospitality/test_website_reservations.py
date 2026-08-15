@@ -388,12 +388,19 @@ async def test_cancelling_an_unknown_reservation_is_a_404(
 # --- D-069: the key is exactly as wide as its job -----------------------------
 
 
-async def test_a_booking_key_cannot_read_the_kitchen(
+async def test_a_booking_key_cannot_read_the_book_or_the_kitchen(
     reservation_site: ReservationWebsite,
 ) -> None:
     """The narrowing proof. A credential scoped to ``hospitality.reservation.book`` may take
-    bookings and nothing else — it cannot read the floor's open checks, which is what a leaked
-    website key would otherwise walk out with (D-069/D-070)."""
+    bookings and nothing else.
+
+    The BOOK is the one that matters and is asserted first: ``GET /reservations`` returns every
+    guest's name and contact detail for the night, and the whole reason ``.book`` is a third key
+    rather than an alias for ``.read`` is that a leaked website key must not be a guest list
+    (D-069/D-070). The kitchen's open checks are the second thing it cannot walk out with.
+    """
+    book = await reservation_site.client.get("/api/v1/hospitality/reservations")
+    assert book.status_code == 403
     response = await reservation_site.client.get("/api/v1/hospitality/tickets")
     assert response.status_code == 403
 
