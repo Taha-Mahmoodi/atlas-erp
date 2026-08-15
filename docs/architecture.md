@@ -641,3 +641,36 @@ Seeding through real services is the load-bearing choice: SQL-dump seeds rot wit
 - Anchor defaulting to today means runs on different days differ in dates (structure stays identical given anchor) — acceptable; CI pins a fixed anchor for the smoke gate.
 - Seed duration creeps as modules land — bounded by per-tenant volume caps and the CI timing check.
 - The `--reset` cascade is a footgun if pointed at a non-demo tenant — guarded by a slug prefix check (refuses anything not starting with `demo-`).
+
+
+## D-075 — Background-job durability: the stale-job sweeper and its precondition
+
+**Decision.**
+`core/jobs.py` is at-most-once by construction and, before P0, *lost* jobs on process death. `submit_job` commits a PENDING row inside the caller's transaction; `schedule_job` then creates an asyncio task on the REQUEST's own event loop. A deploy, container restart or OOM kill between those two points killed the task and left the row PENDING (never picked up) or RUNNING (picked up, never finished), with nothing in the system ever reading it again. Since D-072 moved ingredient depletion — which posts COGS — onto the runner, that was a silent loss of GL postings.
+
+**The three mechanisms, in the order they must be understood.**
+
+1. **Handler idempotency is the precondition, not a feature.** Re-dispatching a handler that is not safe to run twice converts a LOST posting into a DUPLICATED one, which is strictly worse than the gap being closed. All seven `@register_job` handlers are audited and pinned by `tests/core/test_job_reruns.py`, whose `RERUN_VERDICTS` map fails the build if a handler is added without a stated verdict. The shared detector is a fingerprint over the three append-only ledgers (journal entries, journal lines, stock moves) — a double-post can only ever make that tuple grow, whatever module it happened in.
+2. **The runner claims its row.** `_run_handler` transitions PENDING → RUNNING with a CONDITIONAL update and returns without touching the handler if it loses. This is what makes reclaiming a PENDING row safe when the original asyncio task was merely queued behind `MAX_CONCURRENT_JOBS` rather than dead.
+3. **The sweep itself** (`core/job_sweeper.py`) runs on the app lifespan — once at startup, because a deploy IS a shutdown and its orphans are the common case, then every 5 minutes. It reclaims through the ordinary `schedule_job` path, so a reclaimed job restores its own tenant (D-007) and actor (D-010) and still executes inside `run_in_uow` (D-011); the sweeper itself runs no business logic.
+
+**Thresholds and bounds.** PENDING reclaims after 10 minutes, RUNNING after 2 hours — nothing distinguishes "the process died" from "this MRP run is slow" except elapsed time, so the RUNNING window must exceed the slowest legitimate handler by a wide margin. 50 reclaims per tick keeps a post-outage backlog from scheduling thousands of tasks on an already-unhealthy system. 3 attempts (`core_jobs.attempts`, migration 0049) then the row is marked FAILED and left alone.
+
+**Cost.** One bounded scan plus one bulk UPDATE per outcome — flat in the backlog size. Served by `ix_core_jobs_status_updated_at_unfinished`, the only index on `core_jobs` that does not lead with `tenant_id` (the scan is cross-tenant by definition) and partial on the unfinished statuses so it stays small however large the job history grows.
+
+**Visibility.** A `failed_jobs` dashboard KPI (7-day window, gated on `admin.audit.read`) plus the pre-existing `GET /api/v1/jobs?status=FAILED`, which was already keyset-paginated and already carried the handler's error text. With the sweeper in place, "stale" collapses into "FAILED": every lost job eventually lands on that list.
+
+**Retention.** The same tick purges `core_idempotency_keys` older than 7 days, bounded at 500 rows. One mechanism on one timer rather than two.
+
+**Rationale.**
+Reliability here had to be bought without adding infrastructure — Atlas has no queue, no cron, and no scheduler process, and introducing one for this would be a far larger change than the gap warrants. An asyncio task on the existing lifespan, re-dispatching through the existing runner, reuses every property the runner already guarantees. The genuinely hard part was never the sweep; it was proving that every handler could survive being run twice, which is why that work is a separate, earlier commit.
+
+**Rejected alternatives.**
+- A heartbeat / lease column on `core_jobs`, so a RUNNING row could be told "dead" from "slow" precisely: correct, but it makes every handler write on a timer and the two-hour window plus the handler guards cover the same ground at zero runtime cost.
+- A real queue (arq/celery): the `JobScheduler` Protocol already exists as the swap seam, but adding Redis and a worker process to close a reclaim gap is not proportionate.
+- Reclaiming with a per-job UPDATE so each reclaim could be individually arbitrated: quadratic in the backlog exactly when the sweep must stay cheap; the bulk UPDATE is already conditional, and the runner's claim arbitrates the rest.
+
+**Risks & mitigations.**
+- A multi-worker deploy runs one sweeper per process. Safe (every transition is conditional) but wasteful; a single-owner lease is the upgrade path if it ever matters.
+- Reclaiming under a genuinely slow live runner remains possible; it is absorbed by the handler guards rather than prevented, which is why (1) above is a hard precondition.
+- This is polling made reliable, not alerting: nothing pushes. The signal now sits somewhere a person already looks, which is what D-072 owed, but a property that never opens the dashboard still learns nothing.

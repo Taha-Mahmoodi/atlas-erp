@@ -9,7 +9,11 @@ Nothing here is new scope invented in this document.
 
 ---
 
-## P0 — Job-runner reliability
+## P0 — Job-runner reliability — **DONE** (2026-08-15, D-075)
+
+Shipped as `core/job_sweeper.py` + the seven handler idempotency guards. The original statement of
+the problem is kept below unchanged, because the reasoning is what makes the thresholds defensible;
+what changed is that P0.1, P0.2 and P0.3 are all closed. See D-075 in `DECISIONS.md`.
 
 **Why this is first, and why it is first *now*.** Phase 19 deliberately moved ingredient depletion
 off the settle transaction onto the job runner. That was the right call — synchronous depletion
@@ -27,7 +31,7 @@ was explicit that this trade is only acceptable if it is bought back:
 Depletion has a GL effect. Until this lands, a backend restart mid-service silently loses COGS
 postings, and nothing in Atlas will ever tell anyone.
 
-### P0.1 Stale-PENDING sweeper
+### P0.1 Stale-PENDING sweeper — DONE
 
 `submit_job` inserts a PENDING row inside the caller's transaction and the runner picks it up
 post-commit (`core/jobs.py:13-16, 157, 183, 215`). If the process dies between the commit and the
@@ -38,14 +42,14 @@ re-dispatches them, and RUNNING rows orphaned by a restart. Must be idempotent �
 run twice, so re-dispatch has to be safe, which for depletion means the handler checks whether the
 ticket already has its issue moves. That check is the real work.
 
-### P0.2 FAILED-job visibility
+### P0.2 FAILED-job visibility — DONE
 
 FAILED jobs are recorded (`jobs.py:304-312`) and nothing surfaces them. Minimum: an admin endpoint
 listing FAILED/stale jobs for the tenant, and a KPI tile so it appears on a dashboard someone
 actually looks at. This is the "bought back" clause above; without it Phase 19's concession is not
 paid for.
 
-### P0.3 Idempotency-key retention
+### P0.3 Idempotency-key retention — DONE
 
 `core_idempotency_keys` stores full response bodies forever (`core/idempotency.py:99`). Phase 19
 gives a website a write channel, so that table now grows with guest traffic. Needs a retention
