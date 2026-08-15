@@ -24,6 +24,12 @@ const SECTIONS = [
     description: "Dishes the storeroom only covers a few more portions of",
     permission: "hospitality.menu.read",
   },
+  {
+    to: "/hospitality/tickets",
+    label: "Tickets",
+    description: "Open a check, add dishes, fire it, settle it",
+    permission: "hospitality.ticket.read",
+  },
 ] as const;
 
 export function HospitalityHomePage() {
