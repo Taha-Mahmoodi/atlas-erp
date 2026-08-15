@@ -17,12 +17,12 @@ BACKGROUND concern (Q4, Task 5); this file must stay off the settle path entirel
 """
 
 import uuid
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import ColumnElement, case, func, select, update
+from sqlalchemy import ColumnElement, and_, case, func, literal, null, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -224,57 +224,94 @@ async def clear_86(session: AsyncSession, tenant_id: uuid.UUID, item_id: uuid.UU
         await session.delete(row)
 
 
-async def _burn(session: AsyncSession, row: MenuAvailability, remaining: Decimal) -> None:
-    """Write ONE countdown's new value, with the counter the burn was COMPUTED FROM pinned in the
-    WHERE clause. The only write in this module that is not a plain ORM mutation, for one reason.
+async def _burn_all(
+    session: AsyncSession, burns: Sequence[tuple[MenuAvailability, Decimal]]
+) -> None:
+    """Write every countdown's new value in ONE statement, each row's counter the burn was
+    COMPUTED FROM pinned in the WHERE clause. The only write in this module that is not a plain
+    ORM mutation, for two reasons.
 
-    A burn is decided from a read and applied afterwards, and ``clear_86`` DELETES the row — the
-    chef finding another tray while the ticket is firing. Mutating the loaded row instead leaves
-    the write to a later autoflush (in ``fire_ticket`` that is the ticket's own transition, three
-    statements downstream), and the ORM's UPDATE for a row somebody deleted in between matches zero
-    rows and raises ``StaleDataError``: an HTTP 500 on the fire, with a table sitting waiting to
-    eat. The row lock does not prevent it wherever ``with_for_update`` is a no-op — SQLite, D-003,
-    where every test and the local demo run — because there the DELETE simply commits inside the
-    window.
+    THE PIN. A burn is decided from a read and applied afterwards, and ``clear_86`` DELETES the
+    row — the chef finding another tray while the ticket is firing. Mutating the loaded row
+    instead leaves the write to a later autoflush (in ``fire_ticket`` that is the ticket's own
+    transition, three statements downstream), and the ORM's UPDATE for a row somebody deleted in
+    between matches zero rows and raises ``StaleDataError``: an HTTP 500 on the fire, with a table
+    sitting waiting to eat. The row lock does not prevent it wherever ``with_for_update`` is a
+    no-op — SQLite, D-003, where every test and the local demo run — because there the DELETE
+    simply commits inside the window. Pinning ``(id, remaining_qty)`` per row makes the write
+    self-checking on EVERY engine instead of trusting a lock only one of them takes: a burn lands
+    only while its countdown still holds exactly what was counted, and matching nothing means
+    another writer removed or moved that countdown in the window. There is then nothing left to
+    burn — the dish is back on the menu, or its counter is already somebody else's — so the burn
+    is dropped rather than blindly restated over the winner, which is what would tear the row into
+    LIMITED with nothing left: a state the menu reads to a guest as orderable while the counter
+    says there is none. On PostgreSQL the row lock makes the zero-match branch unreachable (the
+    deleter blocks on it until this transaction commits, which a probe pins directly); the pin is
+    what gives SQLite the same two outcomes instead of a 500.
 
-    Pinning ``remaining_qty`` makes the write self-checking on EVERY engine instead of trusting a
-    lock only one of them takes: it lands only while the countdown still holds exactly what was
-    counted, and matching nothing means another writer removed or moved the countdown in the
-    window. There is then nothing left to burn — the dish is back on the menu, or its counter is
-    already somebody else's — so the burn is dropped rather than blindly restated over the winner,
-    which is what would tear the row into LIMITED with nothing left: a state the menu reads to a
-    guest as orderable while the counter says there is none. On PostgreSQL the row lock makes the
-    zero-match branch unreachable (the deleter blocks on it until this transaction commits, which
-    a probe pins directly); the guard is what gives SQLite the same two outcomes instead of a 500.
+    ONE STATEMENT. Firing burns a countdown per LINE, and a per-row spelling of this write is one
+    UPDATE per line on the request a guest waits on — the N+1 shape PERFORMANCE §2 bans, caught by
+    ``test_firing_does_not_scale_with_countdown_lines`` the first time this function was written
+    per-row. The per-row pins become OR'd ``(id, counter)`` pairs and the per-row values CASE arms
+    on ``id``, so a 24-line ticket and a 2-line one cost the same one statement. The statement is
+    ORM-enabled, so D-007's do_orm_execute listener injects the tenant predicate exactly as it
+    does for the locked read; ``synchronize_session`` cannot evaluate these CASE values, so it is
+    off and each loaded row is expired instead — nothing on the fire path reads them again, so the
+    expiry costs no query until somebody does.
 
     ``updated_at`` still moves: ``TimestampMixin``'s Python ``onupdate`` fires for a Core UPDATE
     exactly as it does for a flush (models.py #34), so ``collection_etag`` still invalidates the
     website's cached menu when a countdown auto-86s a dish.
     """
-    values: dict[str, object] = {"remaining_qty": remaining}
-    if remaining <= 0:
+    if not burns:
+        return
+    values: dict[str, object] = {
+        # ``literal`` with the COLUMN'S type: a bare Decimal in a CASE arm has no column context,
+        # so it binds through the default Numeric — skipping QuantityType's micro-unit scaling on
+        # SQLite and landing as value/10^6. Invisible on Postgres, where NUMERIC(18,6) binds plain.
+        "remaining_qty": case(
+            *[
+                (
+                    MenuAvailability.id == row.id,
+                    literal(remaining, MenuAvailability.remaining_qty.type),
+                )
+                for row, remaining in burns
+            ]
+        )
+    }
+    if zero_ids := [row.id for row, remaining in burns if remaining <= 0]:
         # The time box came with the COUNTDOWN ("twenty portions, until 22:00"); it says nothing
         # about the 86 that replaces it. Left in place it lapses at 22:00 and ``resolve`` hands the
         # website AVAILABLE for a dish with nothing behind it — and nothing sweeps expired rows, so
         # it stays wrongly sellable until a human notices.
+        hit_zero = MenuAvailability.id.in_(zero_ids)
         values |= {
-            "state": AvailabilityState.EIGHTY_SIXED.value,
-            "source": AvailabilitySource.AUTO.value,
-            "available_until": None,
+            "state": case(
+                (hit_zero, AvailabilityState.EIGHTY_SIXED.value), else_=MenuAvailability.state
+            ),
+            "source": case(
+                (hit_zero, AvailabilitySource.AUTO.value), else_=MenuAvailability.source
+            ),
+            "available_until": case((hit_zero, null()), else_=MenuAvailability.available_until),
         }
     await session.execute(
         update(MenuAvailability)
         .where(
-            MenuAvailability.id == row.id,
-            MenuAvailability.remaining_qty == row.remaining_qty,
+            or_(
+                *[
+                    and_(
+                        MenuAvailability.id == row.id,
+                        MenuAvailability.remaining_qty == row.remaining_qty,
+                    )
+                    for row, _ in burns
+                ]
+            )
         )
         .values(**values)
-        # The statement is still ORM-enabled, so D-007's do_orm_execute listener injects the tenant
-        # predicate exactly as it does for the locked read. ``evaluate`` keeps the loaded row in
-        # step with what was written without the extra SELECT ``fetch`` costs on SQLite; the
-        # criteria are equality tests on loaded columns, which is what ``evaluate`` handles.
-        .execution_options(synchronize_session="evaluate")
+        .execution_options(synchronize_session=False)
     )
+    for row, _ in burns:
+        session.expire(row)
 
 
 async def decrement_remaining(
@@ -334,8 +371,7 @@ async def decrement_remaining_many(
             code="hospitality.item_unavailable",
             details={"item_ids": sorted(exhausted)},
         )
-    for row, remaining in burns:
-        await _burn(session, row, remaining)
+    await _burn_all(session, burns)
 
 
 async def availability_for_items(
