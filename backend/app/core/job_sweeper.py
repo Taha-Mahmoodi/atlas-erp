@@ -156,7 +156,10 @@ async def _reclaim(
         return SweepResult(purged_idempotency_keys=await _purge_keys(session, moment)), []
 
     exhausted = [row.id for row in stale if row.attempts >= MAX_JOB_ATTEMPTS]
-    retryable = {JobStatus.PENDING: [], JobStatus.RUNNING: []}
+    retryable: dict[JobStatus, list[uuid.UUID]] = {
+        JobStatus.PENDING: [],
+        JobStatus.RUNNING: [],
+    }
     for row in stale:
         if row.attempts < MAX_JOB_ATTEMPTS:
             retryable[JobStatus(row.status)].append(row.id)
@@ -173,6 +176,10 @@ async def _reclaim(
             abandoned=abandoned,
             purged_idempotency_keys=await _purge_keys(session, moment),
         ),
+        # The ids the scan SELECTED, which may be a superset of the ones the conditional UPDATE
+        # actually flipped if a second sweeper raced us. Over-scheduling is harmless — the loser's
+        # dispatch fails ``_run_handler``'s claim and returns without touching the handler — and
+        # it is strictly safer than the alternative, which would be to skip a job we did reclaim.
         retryable[JobStatus.PENDING] + retryable[JobStatus.RUNNING],
     )
 
