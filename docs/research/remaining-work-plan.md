@@ -51,6 +51,8 @@ paid for.
 gives a website a write channel, so that table now grows with guest traffic. Needs a retention
 window and a purge, on the same sweeper mechanism as P0.1.
 
+**Task-level plan:** [`p0-job-runner-reliability-plan.md`](./p0-job-runner-reliability-plan.md).
+
 ---
 
 ## P1 — Hospitality has no user interface
@@ -66,6 +68,22 @@ already exist, and the porcelain design system (v1.1.0) is the register.
 Scope: menu + availability management, the ticket board with its status lifecycle, the KDS view as
 a status-filtered query, and the at-risk list. Follows the module-UI anatomy the other twelve use.
 
+**Task-level plan:** [`p1-hospitality-ui-plan.md`](./p1-hospitality-ui-plan.md).
+
+---
+
+## P1.5 — Table reservations (added 2026-08-15, owner-directed)
+
+Not in the original list: Taha directed on 2026-08-15 that the restaurant side needs its
+reservation part. The research already existed — Q3's pacing-counter model and the guest-facing
+section's `table_reservation` document — but Phase 19 shipped ordering without it, so it was
+roadmapped scope with no phase. It is now **Phase 21** in PLAN.md (ratified 2026-08-15):
+the `hsp_service_slot` pacing gate, the reservation document, website
+book/cancel, and staff seat/no-show — no table master, no finance touch, independent of Phase 20
+and recommended before it.
+
+**Task-level plan:** [`phase-21-table-reservations-plan.md`](./phase-21-table-reservations-plan.md).
+
 ---
 
 ## P2 — Open issues (all minor, all tracked)
@@ -77,6 +95,9 @@ a status-filtered query, and the at-risk list. Follows the module-UI anatomy the
 | #165 | New-tenant admin from onboarding cannot read the masters its own template instantiated | Core/RBAC; smallest surface, sharpest confusion for a new tenant |
 | #166 | Report-builder grid/CSV headers show wire column names instead of catalog labels | Contained to reporting |
 | #176 | Nine files exceed the STRUCTURE §8.4 size caps | Split-only refactors, no behaviour change |
+
+**Fix plans (one per issue, verified against the tree):**
+[`p2-minor-issues-plan.md`](./p2-minor-issues-plan.md).
 
 ---
 
@@ -95,6 +116,10 @@ overbooking uses counter tables plus `with_for_update` and a portable CHECK — 
 PostgreSQL-only exclusion constraint, because D-003 requires the suite to run on SQLite; the
 business date is its own concept and does not reuse fiscal periods; night audit is an idempotent
 job on the existing runner.
+
+**Task-level plan:** [`phase-20-rooms-folio-plan.md`](./phase-20-rooms-folio-plan.md) — includes
+the restaurant settlement money path Phase 19 deferred here (tax at settlement, split checks, the
+charge-to-room bridge), with the ONLINE_CARD provider split out as its own future phase.
 
 ---
 

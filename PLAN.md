@@ -180,7 +180,7 @@ Spec: hospitality plan Q2 (stored availability, derived suggestion), Q4 (depleti
 
 ## Phase 20 — Rooms & Folio
 
-Spec: hospitality plan Q3 (overbooking), Q5 (folio, deposits, business date, night audit).
+Spec: hospitality plan Q3 (overbooking), Q5 (folio, deposits, business date, night audit). Plan: [`docs/research/phase-20-rooms-folio-plan.md`](docs/research/phase-20-rooms-folio-plan.md). **20.4 changes shipped finance — this phase lands in `dev` and is reviewed by the owner before any promotion to `main`.**
 
 - [ ] 20.1 `room_type`, `room` with housekeeping status, `rate_plan` (manual nightly rates); `housekeeping_task` document
 - [ ] 20.2 `reservation` document type + the overbooking guard (counter tables, `with_for_update`, portable CHECK — no Postgres-only exclusion constraint, D-003)
@@ -188,6 +188,23 @@ Spec: hospitality plan Q3 (overbooking), Q5 (folio, deposits, business date, nig
 - [ ] 20.4 Advance deposits — widening finance's `CustomerReceipt` clearing engine rather than duplicating it (a change to shipped finance)
 - [ ] 20.5 Business date + night audit as an idempotent job on the existing runner; group bookings with a master folio splitting back at settlement
 - [ ] 20.6 The room-charge bridge: `order_ticket.settle(charge_to_room)` → `RestaurantOrderSettled` → a folio line with a doc-flow link back
+
+## Phase 21 — Table Reservations
+
+Spec: hospitality plan Q3 (the pacing counter) + "The guest-facing surface". Plan: [`docs/research/phase-21-table-reservations-plan.md`](docs/research/phase-21-table-reservations-plan.md). Owner-directed 2026-08-15. Independent of Phase 20 — no finance touch — and sequenced before it.
+
+- [ ] 21.1 `hsp_reservation_settings` + `hsp_service_slot` pacing counter: unique on `(tenant_id, service_date, slot_start)` on a fixed 15-minute grid, covers/parties CHECK pairs, upsert-on-lock from tenant defaults, manager slot overrides
+- [ ] 21.2 `table_reservation` document: CONFIRMED → SEATED → COMPLETED/NO_SHOW/CANCELLED, counter discipline per transition (release only before `slot_start`), seating opens a doc-flow-linked order ticket
+- [ ] 21.3 Website surface: slot-grid availability read with conditional GET, booking write under D-013 returning nearest alternatives on refusal, guest cancel; its own `hospitality.reservation.book` scope (D-069 narrowing)
+- [ ] 21.4 Staff book: list by service date, phone bookings through the same gate, seat/no-show/cancel endpoints
+
+## Phase 22 — Platform hardening and the hospitality UI
+
+The remaining-work priorities from [`docs/research/remaining-work-plan.md`](docs/research/remaining-work-plan.md), promoted here so they are tracked like any other task.
+
+- [ ] 22.1 **P0 — job-runner reliability**: handler idempotency, the stale-PENDING/RUNNING sweeper with an attempt ceiling, FAILED-job visibility, idempotency-key retention. Plan: [`docs/research/p0-job-runner-reliability-plan.md`](docs/research/p0-job-runner-reliability-plan.md). Pays back D-072's "bought back with alerting" clause
+- [ ] 22.2 **P1 — the hospitality module UI**: menu/86 management, the at-risk list, tickets, and the KDS board on the porcelain register. Plan: [`docs/research/p1-hospitality-ui-plan.md`](docs/research/p1-hospitality-ui-plan.md)
+- [ ] 22.3 **P2 — the tracked minor issues** #163, #164, #165, #166, #176. Plans: [`docs/research/p2-minor-issues-plan.md`](docs/research/p2-minor-issues-plan.md)
 
 ## Scope-cut rule
 
