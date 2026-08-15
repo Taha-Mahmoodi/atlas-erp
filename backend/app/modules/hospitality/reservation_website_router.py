@@ -1,15 +1,14 @@
-"""The reservation HTTP surface (Phase 21): the property's WEBSITE and the staff BOOK.
+"""The property's WEBSITE booking tables (Phase 21).
 
-A sibling router file rather than more of ``router.py`` / ``website_router.py``, the
-``finance/ap_router.py`` precedent (D-030/D-031) — those two are already near STRUCTURE §8.4's
-400-line cap, and reservations are a whole second document family. Both routers live HERE, in one
-file, because they are two views of ONE surface and every rule they share (the gate, the counter,
-the transition table) is one import away from both; ``industry/router.py`` already ships two
-``APIRouter``s in a file for the same reason.
+A sibling router file rather than more of ``website_router.py``, the ``finance/ap_router.py``
+precedent (D-030/D-031): that file is already near STRUCTURE §8.4's 400-line cap and reservations
+are a whole second document family. The split from ``reservation_router.py`` next door is by
+PRINCIPAL, exactly like ``router.py``/``website_router.py`` — the staff book and the guest-facing
+surface answer to different credentials and different cache policies.
 
-**Two principals, two widths (D-069).** ``website_router`` is what the property's own website calls
-under a machine credential scoped to ``hospitality.reservation.book`` and NOTHING else: it can ask
-what is bookable, book, and cancel on a guest's behalf. It cannot read the book — that is
+**Two widths (D-069).** This router is what the property's own website calls under a machine
+credential scoped to ``hospitality.reservation.book`` and NOTHING else: it can ask what is bookable,
+book, and cancel on a guest's behalf. It cannot read the book — that is
 ``hospitality.reservation.read``, which is every guest's name and phone number for the night, and a
 leaked website key must not be a guest list. Q1's boundary holds throughout: the website has already
 authenticated its guest and owns notification, and Atlas exposes tenant-scoped operations.
