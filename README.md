@@ -189,7 +189,7 @@ Around these sit the rest of each module: PO/order/delivery/billing **lines**, g
 - **Projects** ([guide](docs/modules/projects.md)) — projects and WBS costing objects with a cost report
 - **CRM** ([guide](docs/modules/crm.md)) — leads → opportunities kanban, activities, and conversion
 - **Reporting** ([guide](docs/modules/reporting.md)) — role-based dashboard KPIs and a generic whitelist-driven, tenant-scoped report builder
-- **Hospitality** ([guide](docs/modules/hospitality.md)) — the restaurant half: stored menu availability (86 / countdown / time-box), order tickets fired to the kitchen, ingredient depletion aggregated and run off the sale, and a menu + order API for a property's own website over a machine API key
+- **Hospitality** ([guide](docs/modules/hospitality.md)) — the restaurant half: stored menu availability (86 / countdown / time-box), order tickets fired to the kitchen, ingredient depletion aggregated and run off the sale, and a menu + order API for a property's own website over a machine API key; the staff UI covers the 86 board, the at-risk list, the check workbench and a self-refreshing kitchen display
 - **Industry templates & onboarding** ([guide](docs/modules/industry.md)) — six industry templates (manufacturing, retail, professional-services, healthcare, construction, hospitality) applied idempotently, and a one-call tenant onboarding wizard
 - **Admin** ([guide](docs/modules/admin.md)) — user/role management, permission catalog, audit-log viewer, and per-tenant number-sequence viewer
 
