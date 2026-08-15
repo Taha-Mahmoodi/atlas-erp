@@ -151,6 +151,10 @@ export function MenuAvailabilityPage() {
 
       {(creating || editing) && (
         <AvailabilityEditor
+          // Remounts when the target row changes: the editor seeds its fields from `existing`
+          // once, at mount, so without this, clicking Edit on a second dish would show the
+          // first dish's reason and count.
+          key={editing?.item_id ?? "new"}
           {...(editing ? { existing: editing } : {})}
           onDone={() => {
             setCreating(false);
