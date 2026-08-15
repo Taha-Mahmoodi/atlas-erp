@@ -122,18 +122,23 @@ it — no flag needed.
 // hooks/tickets.ts — the codebase's FIRST polling query; deliberate, see p1 plan finding 2.
 // staleTime: 0 + refetchInterval beat the global 30s staleTime (lib/queryClient.ts:16),
 // which would otherwise freeze a kitchen display between manual navigations.
-export function useKdsTickets(statuses: OrderTicketStatus[]) {
+// ONE status per query: router.py:189-195 takes `status: OrderTicketStatus | None`, a single
+// value, and the board's three columns are three statuses — so three queries, which TanStack
+// runs in parallel and caches per column. Widening the endpoint to a repeated param would be a
+// backend change for something the client already gets for free.
+export function useKdsColumn(status: OrderTicketStatus) {
   return useQuery({
-    queryKey: ["hospitality", "kds", statuses],
-    queryFn: () => listTickets({ status: statuses, limit: 200 }),
+    queryKey: ["hospitality", "kds", status],
+    queryFn: () => listTickets({ status, limit: 200 }),
     staleTime: 0,
     refetchInterval: 10_000,
   });
 }
 ```
 
-  (Check first how `router.py`'s list endpoint takes status filters — single vs repeated param —
-  and shape the call accordingly; do not guess.)
+  The board calls it once per column. If the three columns visibly tear (one refreshes a beat
+  before another), say so in the PR rather than papering over it — the fix would be a backend
+  multi-status filter, and that is a decision, not a detail.
 
 - [ ] **Step 1:** types + api + hooks. **Step 2:** typecheck. **Step 3: Commit.**
 
@@ -198,7 +203,7 @@ export function useKdsTickets(statuses: OrderTicketStatus[]) {
   IN_PREP / READY; card = ticket number, table_code, elapsed-since-fired, line summary.
   `onItemMove` calls `advanceTicket` and refuses non-adjacent moves client-side with the same
   message shape the backend would 422 (`hospitality.status_not_advanceable`).
-- Data: `useKdsTickets` (Task 2), the polling query. Full-screen-friendly layout (a kitchen
+- Data: `useKdsColumn` (Task 2) called once per column, the polling queries. Full-screen-friendly layout (a kitchen
   screen), `density` on the grid components where offered.
 - If the ticket read exposes a prep-station field on lines, add a station `<select>` filter; if
   it does not, **skip it and say so in the PR** — do not invent a client-side grouping the data
@@ -241,6 +246,6 @@ convention: README lists module UIs, add the row).
 
 Coverage against §P1's named gaps: menu management → Task 3, 86 toggle → Task 3, ticket board →
 Tasks 4–5, KDS view → Task 5, at-risk list → Task 3. Names used across tasks match Task 2's
-exports (`useKdsTickets`, `advanceTicket`, `setAvailability`). The two component-library edits
+exports (`useKdsColumn`, `advanceTicket`, `setAvailability`). The two component-library edits
 (StatusPill tones, first `refetchInterval`) are called out as deliberate, with tests where the
 convention has them.
