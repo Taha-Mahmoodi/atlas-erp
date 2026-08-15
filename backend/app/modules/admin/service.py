@@ -3,7 +3,7 @@ RBAC resolution come from core. Kept minimal and real — full onboarding (setti
 templates) lands with PLAN 14."""
 
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -160,9 +160,22 @@ async def grant_admin_role(
     user_id: uuid.UUID,
     token_version: int = 0,
     role_name: str = "Administrator",
+    *,
+    permission_keys: Sequence[str] = _ADMIN_PERMISSION_KEYS,
 ) -> Role:
     """Convenience used by tests/provisioning to make a tenant's first user a full admin
-    (D-009): create (or reuse) the admin role with the four admin keys and assign it."""
+    (D-009): create (or reuse) the admin role with ``permission_keys`` and assign it.
+
+    ``permission_keys`` defaults to the six admin.* keys — the narrow role every existing
+    caller (seed, the test factories) already got. Onboarding overrides BOTH it and
+    ``role_name`` (#165, D-075): a tenant's FIRST human has to be able to read what its own
+    industry template just created, and the six admin keys cover none of the COA/tax/UoM rows
+    the template writes, so the wizard grants a wide ``Owner`` role instead. Keys are still
+    validated against the synced catalog by ``create_role``, so callers must sync first.
+
+    Only used when the role is CREATED: an existing role of the same name is reused as-is
+    rather than re-granted, because re-granting would silently re-widen a role a tenant
+    admin had deliberately narrowed."""
     with system_context():
         existing = (
             await session.execute(
@@ -170,7 +183,7 @@ async def grant_admin_role(
             )
         ).scalar_one_or_none()
     role = existing or await create_role(
-        session, tenant_id, role_name, _ADMIN_PERMISSION_KEYS, is_system=True
+        session, tenant_id, role_name, permission_keys, is_system=True
     )
     await assign_role(session, tenant_id, user_id, role.id, token_version)
     return role

@@ -12,8 +12,8 @@ Spec: [`docs/research/hospitality-industry-plan.md`](../research/hospitality-ind
 [`phase-19-restaurant-ordering-plan.md`](../research/phase-19-restaurant-ordering-plan.md),
 [`phase-21-table-reservations-plan.md`](../research/phase-21-table-reservations-plan.md).
 The decisions this module records are **D-072** (backgrounded depletion, restaurant-scoped),
-**D-073** (why the menu read has no ETag), **D-075** (pacing by slot counter; a missing counter row
-means default capacity) and **D-076** (no TENTATIVE state; the counter matrix) in
+**D-073** (why the menu read has no ETag), **D-076** (pacing by slot counter; a missing counter row
+means default capacity) and **D-077** (no TENTATIVE state; the counter matrix) in
 [DECISIONS.md](../../DECISIONS.md).
 
 ## Status
@@ -271,7 +271,7 @@ Every one of these is a read seam or a core primitive, never a service import (S
 
 A guest books on the property's website, the booking is gated by a **pacing counter** that cannot
 oversell a service, and staff see the book, seat the party onto an order ticket, and record
-no-shows. **D-075** and **D-076** record the design; the two findings worth reading before changing
+no-shows. **D-076** and **D-077** record the design; the two findings worth reading before changing
 anything are below.
 
 ### The gate is a counter, not a table
