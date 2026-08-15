@@ -108,10 +108,28 @@ The admin keys are **core RBAC keys** declared in `core/rbac.py` (registered at 
 added in 14.3) and `admin.apikey.manage`.
 
 `grant_admin_role` creates the tenant's `Administrator` role from these six by default — the role
-seed and the test factories get. **Onboarding overrides it** (#165): a tenant provisioned through
-the wizard gets an Administrator holding the *whole synced catalog minus the platform-only keys*,
-today just `onboarding.tenant.create`. The six admin keys grant no read on the COA, tax codes or
-UoMs the industry template instantiates, so the tenant's first human could not see its own
-company's masters. The grant is computed from `catalog_keys()`, not curated, so a module shipping a
-new permission does not silently re-open the gap. `grant_admin_role` reuses an existing role of the
-same name untouched, so a narrowed Administrator is never re-widened behind the tenant's back.
+seed and the test factories get. **Onboarding overrides both the keys and the name** (#165, D-075):
+a tenant provisioned through the wizard gets an **`Owner`** role holding the *whole synced catalog
+minus `_WITHHELD_FROM_FIRST_ADMIN`* (`industry/onboarding.py`). The six admin keys grant no read on
+the COA, tax codes or UoMs the industry template instantiates, so the tenant's first human could not
+see its own company's masters. The name differs deliberately: two `is_system` roles both called
+`Administrator` but 25x apart in power would be indistinguishable in the roles UI.
+
+Three keys are withheld from that Owner grant, each named individually rather than matched by a rule:
+
+| Key | Why it is not a default |
+|---|---|
+| `onboarding.tenant.create` | Provisioning a whole tenant is a **platform** action; granting it would let any tenant spin up arbitrary tenants. |
+| `hr.employee.read_compensation` | The D-009 masking gate — it alone unmasks salary, national ID, tax ID, DOB and bank account, and gates the compensation write. Field-level masking is binding (CLAUDE.md architecture rule 4), so it cannot be off from a tenant's first login. |
+| `hr.payroll.read` | The same pay through the other door: payroll run *lines* are per-employee gross/tax/net, unmasked. |
+
+This is a default, not a wall — the Owner holds `admin.role.manage`, so a tenant that wants its
+owner to see pay grants the key deliberately and that grant is audited. Everything else, including
+the segregation-of-duties keys (`finance.ap.pay`, `procurement.po.approve`, `finance.journal.reverse`,
+`sales.order.credit_release`, `hr.payroll.post`), IS granted: a one-person tenant that cannot approve
+its own documents cannot operate, and no project rule mandates SoD by default the way rule 4 mandates
+masking. The grant is computed by subtraction, not curated, so a module shipping a new permission
+does not silently re-open the #165 gap; `tests/modules/industry/test_onboarding_grant.py` pins the
+whole catalog so a new key cannot silently join the grant either. `grant_admin_role` reuses an
+existing role of the same name untouched, so a narrowed Owner is never re-widened behind the
+tenant's back.

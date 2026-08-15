@@ -1,7 +1,7 @@
 """PLAN 14.2 / D-061: the tenant onboarding wizard provisions a WHOLE tenant — tenant + first admin
 role + first admin user + the chosen industry template's slices — in ONE transaction.
 
-Proves (service + API): a fresh onboard creates the tenant, an Administrator role carrying the admin
+Proves (service + API): a fresh onboard creates the tenant, an Owner role carrying the admin
 permission keys, and the admin user; the template is instantiated (COA accounts + UoMs exist + a
 terminology TenantSetting is set, read under the NEW tenant's context via the existing queries); the
 new admin can authenticate through the real login path; a duplicate slug is a 409; an unknown
@@ -31,6 +31,7 @@ from app.modules.admin.models import TenantSetting
 from app.modules.admin.service import find_tenant_by_slug
 from app.modules.finance.constants import FINANCE_ACCOUNT_READ
 from app.modules.finance.models import Account
+from app.modules.hr.constants import HR_EMPLOYEE_READ_COMPENSATION, HR_PAYROLL_READ
 from app.modules.industry import onboarding, queries
 from app.modules.industry.constants import (
     ONBOARDING_TENANT_CREATE,
@@ -88,7 +89,7 @@ async def test_onboard_creates_tenant_admin_role_and_user(db_session):
     assert admin.email == "owner@acme.test"
     assert admin.tenant_id == result.tenant_id
 
-    # An Administrator role exists AND carries the admin permission keys (via grant_admin_role).
+    # The Owner role exists AND carries the admin permission keys (via grant_admin_role).
     with system_context():
         role_keys = (
             await db_session.execute(
@@ -101,22 +102,28 @@ async def test_onboard_creates_tenant_admin_role_and_user(db_session):
         ).scalars().all()
     assert ADMIN_USER_MANAGE in role_keys
     assert ADMIN_TENANT_MANAGE in role_keys
+    # Exactly one role, and it is called "Owner" — NOT "Administrator" (#165, D-075). That name
+    # belongs to grant_admin_role's six-key default; two same-named is_system roles 25x apart in
+    # power would be indistinguishable in the roles UI.
     with system_context():
-        role_count = (
-            await db_session.execute(
-                select(func.count()).select_from(Role).where(Role.tenant_id == result.tenant_id)
-            )
-        ).scalar_one()
-    assert role_count == 1
+        role_names = (
+            await db_session.execute(select(Role.name).where(Role.tenant_id == result.tenant_id))
+        ).scalars().all()
+    assert role_names == ["Owner"]
 
 
-async def test_onboard_grants_the_admin_the_catalog_minus_platform_keys(db_session):
-    """#165: the first human in a new tenant could not read the COA/tax codes its own template had
-    just instantiated — the grant was six ``admin.*`` keys and nothing else. The grant is now the
-    WHOLE synced catalog minus the platform-only keys, asserted as an equality rather than a
-    sampling: a curated subset would silently go stale the next time a module ships a permission,
-    which is exactly how this issue happened. ``onboarding.tenant.create`` stays out by design —
-    provisioning tenants is a platform action (industry/constants.py), not a tenant-admin one."""
+async def test_onboard_grants_the_owner_the_catalog_minus_the_withheld_keys(db_session):
+    """#165 / D-075: the first human in a new tenant could not read the COA/tax codes its own
+    template had just instantiated — the grant was six ``admin.*`` keys and nothing else. The grant
+    is now the WHOLE synced catalog minus ``_WITHHELD_FROM_FIRST_ADMIN``, asserted as an equality
+    rather than a sampling: a curated subset would silently go stale the next time a module ships a
+    permission, which is exactly how this issue happened.
+
+    The three withheld keys are asserted individually because each is a distinct promise. Pay is
+    the sharp one: ``hr.employee.read_compensation`` is the D-009 gate that unmasks salary/national
+    id/tax id/DOB/bank account (CLAUDE.md architecture rule 4), and ``hr.payroll.read`` is the same
+    pay per employee through the payroll lines — a wizard-provisioned tenant must not have that
+    masking off from its first login."""
     result = await _onboard(
         db_session,
         company_name="Wide Co",
@@ -139,7 +146,9 @@ async def test_onboard_grants_the_admin_the_catalog_minus_platform_keys(db_sessi
         )
     assert FINANCE_ACCOUNT_READ in granted
     assert ONBOARDING_TENANT_CREATE not in granted
-    assert granted == set(catalog_keys()) - {ONBOARDING_TENANT_CREATE}
+    assert HR_EMPLOYEE_READ_COMPENSATION not in granted
+    assert HR_PAYROLL_READ not in granted
+    assert granted == set(catalog_keys()) - onboarding._WITHHELD_FROM_FIRST_ADMIN
 
 
 async def test_onboard_instantiates_the_template(db_session):

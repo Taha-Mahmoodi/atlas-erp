@@ -167,11 +167,11 @@ async def grant_admin_role(
     (D-009): create (or reuse) the admin role with ``permission_keys`` and assign it.
 
     ``permission_keys`` defaults to the six admin.* keys — the narrow role every existing
-    caller (seed, the test factories) already got. Onboarding overrides it with the whole
-    catalog minus the platform-only keys (#165): a tenant's FIRST human has to be able to
-    read what its own industry template just created, and the six admin keys cover none of
-    the COA/tax/UoM rows the template writes. Keys are still validated against the synced
-    catalog by ``create_role``, so callers must sync the catalog first.
+    caller (seed, the test factories) already got. Onboarding overrides BOTH it and
+    ``role_name`` (#165, D-075): a tenant's FIRST human has to be able to read what its own
+    industry template just created, and the six admin keys cover none of the COA/tax/UoM rows
+    the template writes, so the wizard grants a wide ``Owner`` role instead. Keys are still
+    validated against the synced catalog by ``create_role``, so callers must sync first.
 
     Only used when the role is CREATED: an existing role of the same name is reused as-is
     rather than re-granted, because re-granting would silently re-widen a role a tenant
