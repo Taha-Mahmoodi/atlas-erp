@@ -20,13 +20,22 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError
+from app.core.rbac import catalog_keys, sync_permission_catalog
+from app.core.tenancy import system_context
 from app.modules.admin.service import (
     find_tenant_by_slug,
     grant_admin_role,
     provision_tenant,
     provision_user,
 )
+from app.modules.industry.constants import ONBOARDING_TENANT_CREATE
 from app.modules.industry.loader import apply_template, load_template
+
+# Keys the first admin of a new tenant does NOT get (#165). Provisioning a WHOLE tenant is a
+# platform action, not a tenant-admin one (constants.py says so at the key's declaration), so
+# handing it to every tenant admin would let any tenant spin up arbitrary tenants. Everything
+# else in the catalog is tenant-scoped and the tenant's own admin is entitled to it.
+_PLATFORM_ONLY_KEYS = frozenset({ONBOARDING_TENANT_CREATE})
 
 
 @dataclass(frozen=True)
@@ -82,8 +91,21 @@ async def onboard_tenant(
     admin = await provision_user(
         session, tenant.id, email=admin_email, password=admin_password
     )
+    # Sync BEFORE granting: create_role validates every key against core_permissions, so a key
+    # that no deploy has ever synced is un-grantable. Idempotent and cheap (one SELECT of the
+    # keys, inserts only what is missing) — onboarding runs once per tenant, not per request.
+    with system_context():
+        await sync_permission_catalog(session)
+    # The first admin gets the whole catalog minus the platform-only keys (#165). Deliberately a
+    # computed set, not a curated list: a curated "tenant admin" subset is a second catalog that
+    # rots the next time a module ships a permission, which is precisely how the first admin ended
+    # up unable to read its own template's chart of accounts.
     await grant_admin_role(
-        session, tenant.id, admin.id, token_version=admin.token_version
+        session,
+        tenant.id,
+        admin.id,
+        token_version=admin.token_version,
+        permission_keys=sorted(catalog_keys() - _PLATFORM_ONLY_KEYS),
     )
     await apply_template(session, tenant.id, template_name)
 

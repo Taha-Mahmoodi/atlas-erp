@@ -103,7 +103,15 @@ See [finance.md](finance.md) for the full FX (D-019) and tax-code surfaces.
 ## Permission keys
 
 The admin keys are **core RBAC keys** declared in `core/rbac.py` (registered at import, seeded by
-`sync_permission_catalog`, granted to a tenant's first admin by `grant_admin_role`):
-`admin.user.manage`, `admin.role.manage`, `admin.audit.read`, `admin.tenant.manage`, and — new in
-14.3 — `admin.numbering.read` (the read-only number-sequence viewer's own key, added to the
-Administrator role's grant so tenant admins hold it).
+`sync_permission_catalog`): `admin.user.manage`, `admin.role.manage`, `admin.audit.read`,
+`admin.tenant.manage`, `admin.numbering.read` (the read-only number-sequence viewer's own key,
+added in 14.3) and `admin.apikey.manage`.
+
+`grant_admin_role` creates the tenant's `Administrator` role from these six by default — the role
+seed and the test factories get. **Onboarding overrides it** (#165): a tenant provisioned through
+the wizard gets an Administrator holding the *whole synced catalog minus the platform-only keys*,
+today just `onboarding.tenant.create`. The six admin keys grant no read on the COA, tax codes or
+UoMs the industry template instantiates, so the tenant's first human could not see its own
+company's masters. The grant is computed from `catalog_keys()`, not curated, so a module shipping a
+new permission does not silently re-open the gap. `grant_admin_role` reuses an existing role of the
+same name untouched, so a narrowed Administrator is never re-widened behind the tenant's back.

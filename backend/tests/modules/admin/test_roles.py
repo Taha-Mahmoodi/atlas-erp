@@ -68,6 +68,27 @@ async def test_permission_catalog_lists_the_grantable_keys(admin_client):
     assert any(key.startswith("finance.") for key in keys)
 
 
+async def test_default_administrator_grant_stays_narrow(admin_client):
+    """#165 widened ONBOARDING's first admin to the whole catalog by passing the keys explicitly.
+    ``grant_admin_role``'s DEFAULT — what seed, the test factories and any future caller get — is
+    unchanged: the six ``admin.*`` keys. Spelled out literally rather than compared against
+    ``_ADMIN_PERMISSION_KEYS`` so widening that constant fails here instead of agreeing with
+    itself."""
+    listed = await admin_client.get(f"{_ADMIN}/roles")
+    role_id = next(
+        row["id"] for row in listed.json()["items"] if row["name"] == "Administrator"
+    )
+    detail = await admin_client.get(f"{_ADMIN}/roles/{role_id}")
+    assert detail.json()["permissions"] == [
+        "admin.apikey.manage",
+        "admin.audit.read",
+        "admin.numbering.read",
+        "admin.role.manage",
+        "admin.tenant.manage",
+        "admin.user.manage",
+    ]
+
+
 async def test_roles_require_permission(authed_client):
     resp = await authed_client.get(f"{_ADMIN}/roles")
     assert resp.status_code == 403

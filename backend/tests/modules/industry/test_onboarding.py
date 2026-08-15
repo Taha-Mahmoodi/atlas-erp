@@ -23,11 +23,13 @@ from app.core.models import Permission, Role, RolePermission, User, UserRole
 from app.core.rbac import (
     ADMIN_TENANT_MANAGE,
     ADMIN_USER_MANAGE,
+    catalog_keys,
     sync_permission_catalog,
 )
 from app.core.tenancy import system_context
 from app.modules.admin.models import TenantSetting
 from app.modules.admin.service import find_tenant_by_slug
+from app.modules.finance.constants import FINANCE_ACCOUNT_READ
 from app.modules.finance.models import Account
 from app.modules.industry import onboarding, queries
 from app.modules.industry.constants import (
@@ -106,6 +108,38 @@ async def test_onboard_creates_tenant_admin_role_and_user(db_session):
             )
         ).scalar_one()
     assert role_count == 1
+
+
+async def test_onboard_grants_the_admin_the_catalog_minus_platform_keys(db_session):
+    """#165: the first human in a new tenant could not read the COA/tax codes its own template had
+    just instantiated — the grant was six ``admin.*`` keys and nothing else. The grant is now the
+    WHOLE synced catalog minus the platform-only keys, asserted as an equality rather than a
+    sampling: a curated subset would silently go stale the next time a module ships a permission,
+    which is exactly how this issue happened. ``onboarding.tenant.create`` stays out by design —
+    provisioning tenants is a platform action (industry/constants.py), not a tenant-admin one."""
+    result = await _onboard(
+        db_session,
+        company_name="Wide Co",
+        slug="wide-co",
+        template_name="manufacturing",
+        admin_email="owner@wide.test",
+        admin_password=_PASSWORD,
+    )
+    with system_context():
+        granted = set(
+            (
+                await db_session.execute(
+                    select(Permission.key)
+                    .select_from(UserRole)
+                    .join(RolePermission, RolePermission.role_id == UserRole.role_id)
+                    .join(Permission, Permission.id == RolePermission.permission_id)
+                    .where(UserRole.user_id == result.admin_user_id)
+                )
+            ).scalars().all()
+        )
+    assert FINANCE_ACCOUNT_READ in granted
+    assert ONBOARDING_TENANT_CREATE not in granted
+    assert granted == set(catalog_keys()) - {ONBOARDING_TENANT_CREATE}
 
 
 async def test_onboard_instantiates_the_template(db_session):
@@ -248,6 +282,37 @@ async def test_onboard_endpoint_provisions_and_admin_can_authenticate(
     )
     assert login.status_code == 200, login.text
     assert login.json()["access_token"]
+
+
+async def test_onboarded_admin_can_read_the_template_coa(client, industry_user_factory):
+    """#165 end to end, over the real HTTP surface: onboard, log in as the brand-new admin, and
+    list the chart of accounts the template just instantiated. This is the exact request that
+    returned 403 before — the symptom the issue reported (nav showing only Home + Admin)."""
+    api = await _platform_client(client, industry_user_factory)
+    response = await api.post(
+        "/api/v1/onboarding/tenants",
+        json={
+            "company_name": "Ledger Co",
+            "slug": "ledger-co",
+            "template_name": "manufacturing",
+            "admin_email": "boss@ledger.test",
+            "admin_password": _PASSWORD,
+        },
+    )
+    assert response.status_code == 201, response.text
+
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "tenant_slug": "ledger-co",
+            "email": "boss@ledger.test",
+            "password": _PASSWORD,
+        },
+    )
+    client.headers["Authorization"] = f"Bearer {login.json()['access_token']}"
+    accounts = await client.get("/api/v1/finance/accounts")
+    assert accounts.status_code == 200, accounts.text
+    assert accounts.json()["items"], "the template's COA must be readable by its own tenant's admin"
 
 
 async def test_onboard_endpoint_rejects_duplicate_slug(client, industry_user_factory):
