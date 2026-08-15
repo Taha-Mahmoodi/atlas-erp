@@ -44,13 +44,14 @@ async def _collect_csv(
 async def test_csv_has_header_and_data_rows(
     db_session: AsyncSession, rb_setup: ReportBuilderSetup
 ) -> None:
-    """The stream is the header line then one data line per row, money as exact strings."""
+    """The stream is the header line then one data line per row, money as exact strings. The header
+    carries the registry's DISPLAY labels, not the wire column names (#166)."""
     rows = await _collect_csv(
         db_session,
         rb_setup.tenant_id,
         ReportSpec(entity="sales.orders", columns=["order_number", "status", "total_amount"]),
     )
-    assert rows[0] == ["order_number", "status", "total_amount"]
+    assert rows[0] == ["Order Number", "Status", "Total"]
     data = rows[1:]
     assert len(data) == rb_setup.confirmed_count + rb_setup.draft_count
     # Money column is a plain decimal string in the CSV cell.
@@ -80,7 +81,8 @@ async def test_csv_export_reflects_filter(
 async def test_csv_export_grouped(
     db_session: AsyncSession, rb_setup: ReportBuilderSetup
 ) -> None:
-    """A grouped export streams the group-by + aggregate columns (one line per group)."""
+    """A grouped export streams the group-by + aggregate columns (one line per group). The group-by
+    column shows its registry label; a caller-chosen ``alias`` stays as given (#166)."""
     from app.modules.reporting.constants import Aggregation
     from app.modules.reporting.schemas import ReportAggregation
 
@@ -93,10 +95,23 @@ async def test_csv_export_grouped(
             aggregations=[ReportAggregation(func=Aggregation.COUNT, alias="n")],
         ),
     )
-    assert rows[0] == ["status", "n"]
+    assert rows[0] == ["Status", "n"]
     by_status = {row[0]: row[1] for row in rows[1:]}
     assert by_status["CONFIRMED"] == str(rb_setup.confirmed_count)
     assert by_status["DRAFT"] == str(rb_setup.draft_count)
+
+
+async def test_csv_header_matches_the_json_grid_labels(
+    db_session: AsyncSession, rb_setup: ReportBuilderSetup
+) -> None:
+    """#166: the CSV header line IS ``ReportResult.column_labels`` — grid and export take their
+    headers from the SAME source, so they cannot drift apart again."""
+    spec = ReportSpec(entity="sales.orders", columns=["order_number", "order_date"])
+    rows = await _collect_csv(db_session, rb_setup.tenant_id, spec)
+    with tenant_context(rb_setup.tenant_id):
+        result = await report_builder.run_report(db_session, spec)
+    assert rows[0] == result.column_labels
+    assert rows[0] != result.columns  # the wire names are NOT what either surface shows
 
 
 async def test_export_validates_spec_before_streaming(

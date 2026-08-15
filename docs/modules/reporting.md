@@ -205,6 +205,18 @@ session; it never calls their services and writes nothing). finance / inventory 
 - `GET /reporting/reports/entities` → the whitelist catalog, **filtered to the entities the caller's
   role permits** (each gated by its source read permission), so a UI builds a role-correct picker.
 
+## Human headers on both surfaces (#166)
+
+A result carries two aligned lists: `columns` — the **wire** names, which are also the keys of every
+row dict — and `column_labels`, the **display** header for each, in the same order. A plain column's
+label is the registry's `ReportColumn.label` (`order_number` → "Order Number"); an aggregate's is
+composed as `"{Sum|Count|Average|Minimum|Maximum} of {column label}"` (`sum_total_amount` → "Sum of
+Total"), unless the caller supplied an `alias`, in which case the alias they chose **is** the label.
+
+Both surfaces read that one list: the results grid renders it as its headers, and the streaming CSV
+writes it as its header line. Keeping them on a single source is the fix's point — issue #166 was
+the grid and the export agreeing with each other on the *wrong* thing.
+
 ## Role-based gating of the report builder (D-059 / D-009)
 
 The endpoints are guarded by the base **`reporting.report.run`** key (the price of admission), then
