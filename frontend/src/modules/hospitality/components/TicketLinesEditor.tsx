@@ -12,6 +12,9 @@
  * it for zero. (The website surface resolves price server-side instead, because that caller is
  * untrusted. There is no staff-side equivalent endpoint: `/sales/price-quote` needs a customer id
  * and a walk-in table has none.)
+ *
+ * The menu read is `hospitality.menu.read`, which a server may not hold — so it degrades to raw
+ * item ids and a note rather than taking the whole check down (see `useMenu`'s `throwOnError`).
  */
 
 import { useState } from "react";
@@ -89,6 +92,11 @@ export function TicketLinesEditor({
       {error && (
         <p role="alert" className="mb-3 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
+        </p>
+      )}
+      {menu.isError && (
+        <p className="mb-3 text-xs text-ink-muted">
+          Dishes show as ids: this account cannot read the menu (hospitality.menu.read).
         </p>
       )}
       <table className="w-full border-collapse text-[13px]">

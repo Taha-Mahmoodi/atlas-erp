@@ -11,14 +11,9 @@ import { useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
 import { FormBuilder, type FieldDef, type FormValues } from "@/components/FormBuilder";
+import { endOfLocalDay, localDateInput } from "@/modules/hospitality/components/availabilityDates";
 import { useMenu, useSetAvailability } from "@/modules/hospitality/hooks";
 import type { AvailabilityState, MenuAvailability } from "@/modules/hospitality/types";
-
-/** A `<input type="date">` value → the END of that day in UTC. End, not start: a kitchen 86s a
- * dish "for tonight", so picking today has to mean "through today" rather than "already lapsed". */
-function endOfLocalDay(isoDate: string): string {
-  return new Date(`${isoDate}T23:59:59`).toISOString();
-}
 
 export function AvailabilityEditor({
   existing,
@@ -34,7 +29,7 @@ export function AvailabilityEditor({
     item_id: existing?.item_id ?? "",
     state: existing?.state === "LIMITED" ? "LIMITED" : "EIGHTY_SIXED",
     remaining_qty: existing?.remaining_qty ?? "",
-    available_until: existing?.available_until?.slice(0, 10) ?? "",
+    available_until: existing?.available_until ? localDateInput(existing.available_until) : "",
     reason: existing?.reason ?? "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});

@@ -18,6 +18,11 @@ export function useMenu() {
     queryKey: ["hospitality", "menu"],
     queryFn: () => listMenu({ limit: 200 }),
     staleTime: 60_000,
+    // A server holds `ticket.*` and not `menu.read` (docs §7), and this read is a label lookup on
+    // the check screen — the global throwOnError (lib/queryClient.ts) would turn that 403 into a
+    // full-page error and lock the module's main persona out of every check. Degrading to raw
+    // item ids is the honest failure here; #180's rule is about the record a page is FOR.
+    throwOnError: false,
   });
 }
 

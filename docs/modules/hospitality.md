@@ -273,7 +273,7 @@ one screen in Atlas that refreshes itself).
 | `/hospitality` | module home; tiles are filtered by permission, because a chef holds `menu.*` and a server holds `ticket.*` | any `hospitality.*` |
 | `/hospitality/menu` | the 86 board + the set-availability editor | `menu.read`; the editor and Clear need `menu.manage` |
 | `/hospitality/at-risk` | the advisory coverage list, read-only | `menu.read` |
-| `/hospitality/tickets` · `/tickets/new` · `/tickets/{id}` | checks: list, open, lines, the status flow | `ticket.read`; New/lines/fire/advance need `ticket.manage`; Settle needs `ticket.settle` |
+| `/hospitality/tickets` · `/tickets/new` · `/tickets/{id}` | checks: list, open, lines, the status flow | `ticket.read`; New/lines/fire/advance need `ticket.manage`; Settle needs `ticket.settle`. Dish NAMES and the price prefill also need `menu.read` — without it the check still opens, with item ids and an empty dish picker |
 | `/hospitality/kitchen` | the kitchen display | `ticket.read`; dragging a card needs `ticket.manage` |
 
 Four things about it are decisions rather than styling:
@@ -291,7 +291,9 @@ Four things about it are decisions rather than styling:
 4. **Ticket line prices are typed, prefilled from the menu read.** The staff service trusts a
    caller-supplied `unit_price` by contract, and there is no staff-side price-resolution endpoint —
    `/sales/price-quote` needs a customer id and a walk-in table has none. The website surface
-   resolves price server-side instead, because that caller is untrusted.
+   resolves price server-side instead, because that caller is untrusted. That menu read is the one
+   query in the module with `throwOnError: false`: it is a label lookup, not the record the page is
+   for, and a server holding only `ticket.*` must not be handed a full-page 403 for it.
 
 Known UI gaps, recorded not hidden: a kitchen card shows the check, the table, the covers and the
 time since it fired but **no line summary** (that would cost one `GET /tickets/{id}/lines` per card

@@ -87,6 +87,10 @@ export function KdsBoardPage() {
   };
 
   const loading = sentToKitchen.isPending || inPrep.isPending || ready.isPending;
+  // A 5xx or a dropped network gives up after two retries (lib/queryClient.ts) and leaves the last
+  // snapshot on screen under a header promising a 10s refresh — a board that LOOKS live while
+  // frozen is the one failure a kitchen display cannot have.
+  const stalled = sentToKitchen.isError || inPrep.isError || ready.isError;
 
   return (
     <div>
@@ -108,6 +112,13 @@ export function KdsBoardPage() {
       {error && (
         <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
           {error}
+        </p>
+      )}
+
+      {stalled && (
+        <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
+          The board stopped refreshing — what you see below may be out of date. Check the
+          connection; it retries on its own.
         </p>
       )}
 

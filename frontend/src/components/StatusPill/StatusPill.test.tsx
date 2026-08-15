@@ -28,11 +28,14 @@ describe("StatusPill", () => {
     expect(toneFor("AVAILABLE")).toBe("ok");
     expect(toneFor("LIMITED")).toBe("warn");
     expect(toneFor("EIGHTY_SIXED")).toBe("bad");
-    expect(toneFor("SENT_TO_KITCHEN")).toBe(toneFor("SENT"));
-    expect(toneFor("IN_PREP")).toBe(toneFor("IN_PROGRESS"));
+    // Literal, not compared against SENT/IN_PROGRESS/DELIVERED/PAID: an assertion of the form
+    // `toneFor(a) === toneFor(b)` passes on "mute" === "mute" if BOTH words were ever dropped
+    // from the table, which is precisely the leak this test is named for.
+    expect(toneFor("SENT_TO_KITCHEN")).toBe("info");
+    expect(toneFor("IN_PREP")).toBe("warn");
     expect(toneFor("READY")).toBe("ok");
-    expect(toneFor("SERVED")).toBe(toneFor("DELIVERED"));
-    expect(toneFor("SETTLED")).toBe(toneFor("PAID"));
+    expect(toneFor("SERVED")).toBe("ok");
+    expect(toneFor("SETTLED")).toBe("ok");
   });
 
   it("humanizes every underscore, not just the first", () => {

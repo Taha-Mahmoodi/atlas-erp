@@ -31,6 +31,11 @@ export function MenuAvailabilityPage() {
   const [error, setError] = useState<string | null>(null);
 
   const rows = board.data?.pages.flatMap((page) => page.items) ?? [];
+  // Each page is its own snapshot with its own `as_of` (schemas.py: two pages are a state the
+  // kitchen was never in, and `as_of` exists to make that visible rather than silent). The FIRST
+  // page's stamp is the one no row is older than — a later page's would claim a freshness the
+  // rows above it do not have — so the honest label is the oldest instant plus the page count.
+  const pageCount = board.data?.pages.length ?? 0;
   const asOf = board.data?.pages[0]?.as_of;
 
   const itemLabel = (itemId: string) => {
@@ -125,7 +130,10 @@ export function MenuAvailabilityPage() {
           <div>
             <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">Menu availability</h1>
             {asOf && (
-              <p className="mt-1 text-[12px] text-ink-muted">As of {formatDateTime(asOf)}</p>
+              <p className="mt-1 text-[12px] text-ink-muted">
+                As of {formatDateTime(asOf)}
+                {pageCount > 1 && ` · stitched from ${pageCount} snapshots, each read a beat later`}
+              </p>
             )}
           </div>
           {canManage && (

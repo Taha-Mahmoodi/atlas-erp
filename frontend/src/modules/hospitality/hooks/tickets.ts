@@ -61,6 +61,11 @@ export function useKdsColumn(status: OrderTicketStatus) {
     queryFn: () => listTickets({ status, limit: 200 }),
     staleTime: 0,
     refetchInterval: 10_000,
+    // The card's "time since fired" is computed from `new Date()` at render, so it needs a render
+    // to move. With TanStack's default tracked props, a poll that returns identical JSON hands
+    // back the same `data` reference and notifies nobody — the clock would freeze exactly when
+    // nothing is moving, which is when a check sitting 12 minutes on the pass IS the alarm.
+    notifyOnChangeProps: "all",
   });
 }
 
