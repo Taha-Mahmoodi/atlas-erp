@@ -77,8 +77,8 @@ a status-filtered query, and the at-risk list. Follows the module-UI anatomy the
 **Done 2026-08-15** as Phase 21 (21.1–21.4): the `hsp_service_slots` pacing counter and its
 per-tenant settings, the `table_reservation` document with the finding-4 counter matrix, the
 website's availability/book/cancel surface under a new `hospitality.reservation.book` scope, and the
-staff book (list, take, amend, seat, no-show, cancel, complete, capacity). Recorded as **D-074** and
-**D-075**; surface and known limits in
+staff book (list, take, amend, seat, no-show, cancel, complete, capacity). Recorded as **D-075** and
+**D-076**; surface and known limits in
 [`docs/modules/hospitality.md`](../modules/hospitality.md#7-table-reservations-phase-21-spec-q3).
 Explicitly NOT taken, and named there: a table master / floor plan, deposits and no-show fees,
 waitlists, multi-slot pacing for long meals, guest notification.
