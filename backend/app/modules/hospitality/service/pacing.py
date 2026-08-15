@@ -307,9 +307,14 @@ async def book_into_slot(
     slot_start: datetime,
     covers: int,
     *,
+    parties: int = 1,
     settings: ResolvedSettings,
 ) -> ServiceSlot:
-    """THE GATE. Take ``covers`` and one party out of the slot's capacity, or refuse.
+    """THE GATE. Take ``covers`` and ``parties`` out of the slot's capacity, or refuse.
+
+    ``parties=0`` is how a party that GREW takes only the extra covers: it is already counted as one
+    party, and a release-then-rebook pair would let 8 growing to 9 fail on a slot that has exactly
+    the room for it.
 
     Single-slot by construction: a booking consumes its ARRIVAL slot only (the OpenTable
     semantics), so unlike the stock engine's two-quant transfer there is no lock ordering to get
@@ -319,22 +324,16 @@ async def book_into_slot(
     rather than read here because every caller has already read it to validate the request — one
     statement per booking, not two."""
     slot = await _slot_for_update(session, tenant_id, service_date, slot_start, settings)
-    if slot.covers_booked + covers > slot.covers_max:
-        raise SlotFullError(
-            slot=slot,
-            limit="covers",
-            requested=covers,
-            available=slot.covers_max - slot.covers_booked,
-        )
-    if slot.parties_booked + 1 > slot.parties_max:
-        raise SlotFullError(
-            slot=slot,
-            limit="parties",
-            requested=1,
-            available=slot.parties_max - slot.parties_booked,
-        )
+    for limit, requested, booked, ceiling in (
+        ("covers", covers, slot.covers_booked, slot.covers_max),
+        ("parties", parties, slot.parties_booked, slot.parties_max),
+    ):
+        if booked + requested > ceiling:
+            raise SlotFullError(
+                slot=slot, limit=limit, requested=requested, available=ceiling - booked
+            )
     slot.covers_booked += covers
-    slot.parties_booked += 1
+    slot.parties_booked += parties
     await session.flush()
     return slot
 
@@ -345,8 +344,10 @@ async def release_from_slot(
     service_date: date,
     slot_start: datetime,
     covers: int,
+    *,
+    parties: int = 1,
 ) -> None:
-    """Give ``covers`` and one party back to the slot — the inverse of :func:`book_into_slot`.
+    """Give ``covers`` and ``parties`` back to the slot — the inverse of :func:`book_into_slot`.
 
     A no-op when no counter row exists: the only way to reach that is a slot nothing was ever booked
     into, and inventing a row to decrement would materialise capacity for a night nobody booked.
@@ -359,7 +360,7 @@ async def release_from_slot(
     if slot is None:
         return
     slot.covers_booked = max(0, slot.covers_booked - covers)
-    slot.parties_booked = max(0, slot.parties_booked - 1)
+    slot.parties_booked = max(0, slot.parties_booked - parties)
     await session.flush()
 
 

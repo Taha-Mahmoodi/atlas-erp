@@ -11,37 +11,40 @@ present one means, and about which refusals are pre-flight rather than constrain
 """
 
 import uuid
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ValidationFailedError
+from app.core import docflow
+from app.core.exceptions import ConflictError, ValidationFailedError
 from app.core.models import utcnow
 from app.core.tenancy import tenant_context
 from app.modules.hospitality.constants import (
     DEFAULT_COVERS_MAX,
     DEFAULT_PARTIES_MAX,
+    ReservationStatus,
 )
-from app.modules.hospitality.models import ServiceSlot
-from app.modules.hospitality.service import pacing
+from app.modules.hospitality.models import ServiceSlot, TableReservation
+from app.modules.hospitality.reservation_schemas import TableReservationCreate
+from app.modules.hospitality.service import pacing, reservations, tickets
 
 
-def a_service_date(days_ahead: int = 1) -> "datetime.date":  # noqa: F821 - date via datetime
+def a_service_date(days_ahead: int = 1) -> date:
     """A bookable service date. Relative to today because the booking horizon is, so the suite does
     not rot the way a hard-coded 2026 date would."""
     return utcnow().date() + timedelta(days=days_ahead)
 
 
-def slot_at(service_date: "datetime.date", hour: int, minute: int = 0) -> datetime:  # noqa: F821
+def slot_at(service_date: date, hour: int, minute: int = 0) -> datetime:
     """A slot instant on ``service_date``. UTC, because that is what the settings' service window is
     expressed in — Atlas stores no per-tenant timezone."""
     return datetime.combine(service_date, time(hour, minute), tzinfo=UTC)
 
 
 async def stored_slot(
-    session: AsyncSession, tenant_id: uuid.UUID, service_date: "datetime.date"  # noqa: F821
+    session: AsyncSession, tenant_id: uuid.UUID, service_date: date
 ) -> ServiceSlot | None:
     """The one materialised counter row for a service date, or None — what "lazily materialised"
     is actually asserted against."""
@@ -385,3 +388,363 @@ async def test_the_service_grid_is_quarter_hours_between_open_and_close(
         slot_at(service_date, 18, 30),
         slot_at(service_date, 18, 45),
     ]
+
+
+# --- The reservation document: the transition/counter matrix (finding 4) ------
+
+
+async def book(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    service_date: date | None = None,
+    slot_start: datetime | None = None,
+    party_size: int = 4,
+) -> TableReservation:
+    """One confirmed booking through the real service, committed."""
+    service_date = service_date or a_service_date()
+    with tenant_context(tenant_id):
+        reservation = await reservations.create_reservation(
+            session,
+            tenant_id,
+            TableReservationCreate(
+                service_date=service_date,
+                slot_start=slot_start or slot_at(service_date, 19),
+                party_size=party_size,
+                guest_name="Okonkwo",
+                guest_contact="+44 7700 900000",
+            ),
+        )
+        await session.commit()
+        return reservation
+
+
+def a_slot_that_has_already_started() -> datetime:
+    """The most recent quarter-hour boundary — always today's UTC date and never in the future, so a
+    reservation made against it is one whose slot has come and gone."""
+    now = utcnow()
+    return now.replace(minute=now.minute - now.minute % 15, second=0, microsecond=0)
+
+
+async def counters(
+    session: AsyncSession, tenant_id: uuid.UUID, service_date: date
+) -> tuple[int, int]:
+    """``(covers_booked, parties_booked)`` for the service date's single slot row."""
+    row = await stored_slot(session, tenant_id, service_date)
+    assert row is not None, "the booking should have materialised a counter row"
+    return row.covers_booked, row.parties_booked
+
+
+async def slot_rows(
+    session: AsyncSession, tenant_id: uuid.UUID, service_date: date
+) -> dict[int, tuple[int, int]]:
+    """Every counter row of a service date, keyed by the slot's UTC hour — what a test asserts
+    against when a booking has moved BETWEEN slots and both ends have to be checked."""
+    session.expire_all()
+    with tenant_context(tenant_id):
+        found = (
+            await session.execute(
+                select(ServiceSlot).where(ServiceSlot.service_date == service_date)
+            )
+        ).scalars()
+        return {row.slot_start.hour: (row.covers_booked, row.parties_booked) for row in found}
+
+
+async def test_confirming_a_booking_takes_its_covers_and_one_party(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    """Row 1 of the matrix, and the reason there is no TENTATIVE state: passing the gate IS the
+    confirmation, so the counter and the document move in the same transaction."""
+    reservation = await book(db_session, tenant_a, party_size=4)
+    assert reservation.status == ReservationStatus.CONFIRMED
+    assert reservation.reservation_number.startswith("RSV-")
+    assert await counters(db_session, tenant_a, reservation.service_date) == (4, 1)
+
+
+async def test_cancelling_before_the_slot_gives_the_capacity_back(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    """Row 2. The table can still be resold, so it must be — this is the whole point of tracking
+    cancellations rather than just deleting the booking."""
+    reservation = await book(db_session, tenant_a, party_size=4)
+    with tenant_context(tenant_a):
+        await reservations.cancel_reservation(db_session, tenant_a, reservation.id)
+        await db_session.commit()
+    assert await counters(db_session, tenant_a, reservation.service_date) == (0, 0)
+
+
+async def test_cancelling_after_the_slot_has_started_releases_nothing(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    """Row 3. Once the slot has begun there is nothing left to resell, so the counter is frozen: a
+    release here would offer a table that is already occupied or already lost.
+
+    The 24-hour service window is what makes a slot earlier TODAY bookable — which is also the real
+    same-day case (a host taking a party that is walking in in ten minutes).
+    """
+    with tenant_context(tenant_a):
+        await pacing.set_settings(
+            db_session,
+            tenant_a,
+            pacing.ResolvedSettings(service_open=time(0, 0), service_close=time(0, 0)),
+        )
+        await db_session.commit()
+    started = a_slot_that_has_already_started()
+    reservation = await book(
+        db_session, tenant_a, service_date=started.date(), slot_start=started, party_size=4
+    )
+    with tenant_context(tenant_a):
+        await reservations.cancel_reservation(db_session, tenant_a, reservation.id)
+        await db_session.commit()
+    assert await counters(db_session, tenant_a, reservation.service_date) == (4, 1)
+
+
+async def test_a_no_show_releases_nothing(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    """Row 3 again, by the other door — and the rule that must NOT be unified with the hotel's.
+
+    A no-show is bookkeeping: it says the covers were wasted, not that they became available. This
+    is deliberately simpler than Phase 20's rooms, where a no-show keeps its count to feed the
+    overbooking buffer; here there is no buffer and no time left to sell into.
+    """
+    reservation = await book(db_session, tenant_a, party_size=4)
+    with tenant_context(tenant_a):
+        await reservations.mark_no_show(db_session, tenant_a, reservation.id)
+        await db_session.commit()
+    assert reservation.status == ReservationStatus.NO_SHOW
+    assert await counters(db_session, tenant_a, reservation.service_date) == (4, 1)
+
+
+async def test_seating_and_completing_leave_the_counter_alone(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    """Rows 4 and 5. The covers were taken when the booking was confirmed; the party arriving to use
+    them is not a second claim, and neither is their leaving."""
+    reservation = await book(db_session, tenant_a, party_size=4)
+    with tenant_context(tenant_a):
+        await reservations.seat_reservation(
+            db_session, tenant_a, reservation.id, table_code="T12"
+        )
+        await reservations.complete_reservation(db_session, tenant_a, reservation.id)
+        await db_session.commit()
+    assert reservation.status == ReservationStatus.COMPLETED
+    assert await counters(db_session, tenant_a, reservation.service_date) == (4, 1)
+
+
+async def test_growing_a_party_takes_only_the_extra_covers(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    """Row 6. Two becoming four is the commonest change a host makes, and it must take the DELTA on
+    the same locked row: counting a second party would exhaust ``parties_max`` with phantom tables,
+    and a release-then-rebook pair would fail on a slot with exactly the room for the bigger party.
+    """
+    reservation = await book(db_session, tenant_a, party_size=2)
+    with tenant_context(tenant_a):
+        await reservations.amend_reservation(
+            db_session, tenant_a, reservation.id, party_size=4
+        )
+        await db_session.commit()
+    assert await counters(db_session, tenant_a, reservation.service_date) == (4, 1)
+
+
+async def test_shrinking_a_party_gives_the_difference_back(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    """Row 6 downward. Six becoming two frees four covers for the night, and still exactly one
+    party — the table has not gone away."""
+    reservation = await book(db_session, tenant_a, party_size=6)
+    with tenant_context(tenant_a):
+        await reservations.amend_reservation(
+            db_session, tenant_a, reservation.id, party_size=2
+        )
+        await db_session.commit()
+    assert await counters(db_session, tenant_a, reservation.service_date) == (2, 1)
+
+
+async def test_moving_a_booking_to_another_slot_releases_the_old_and_books_the_new(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    """Row 7, in ONE transaction. Two separate calls would leave a window in which the guest holds
+    neither slot, and a full destination would strand them there."""
+    service_date = a_service_date()
+    reservation = await book(
+        db_session, tenant_a, service_date=service_date, slot_start=slot_at(service_date, 19)
+    )
+    with tenant_context(tenant_a):
+        await reservations.amend_reservation(
+            db_session, tenant_a, reservation.id, slot_start=slot_at(service_date, 20)
+        )
+        await db_session.commit()
+
+    by_hour = await slot_rows(db_session, tenant_a, service_date)
+    assert by_hour[19] == (0, 0)
+    assert by_hour[20] == (4, 1)
+
+
+async def test_a_move_into_a_full_slot_leaves_the_original_booking_intact(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    """The reason row 7 is one transaction and not two calls: the destination refusing must roll the
+    release back, or a host trying to help a guest loses the booking they already had."""
+    service_date = a_service_date()
+    with tenant_context(tenant_a):
+        await pacing.set_settings(
+            db_session, tenant_a, pacing.ResolvedSettings(default_covers_max=6)
+        )
+        await db_session.commit()
+    # The id is captured BEFORE the rollback below: a rollback expires every loaded instance, and
+    # reading an attribute back off one afterwards is a lazy refresh, which async SQLAlchemy cannot
+    # do outside an await.
+    reservation_id = (
+        await book(
+            db_session,
+            tenant_a,
+            service_date=service_date,
+            slot_start=slot_at(service_date, 19),
+            party_size=4,
+        )
+    ).id
+    await book(
+        db_session,
+        tenant_a,
+        service_date=service_date,
+        slot_start=slot_at(service_date, 20),
+        party_size=4,
+    )
+
+    with pytest.raises(ValidationFailedError) as excinfo, tenant_context(tenant_a):
+        await reservations.amend_reservation(
+            db_session, tenant_a, reservation_id, slot_start=slot_at(service_date, 20)
+        )
+    assert excinfo.value.code == "hospitality.slot_full"
+    await db_session.rollback()
+
+    with tenant_context(tenant_a):
+        held = await reservations.get_reservation(db_session, tenant_a, reservation_id)
+        assert held.status == ReservationStatus.CONFIRMED
+    by_hour = await slot_rows(db_session, tenant_a, service_date)
+    assert by_hour[19] == (4, 1)
+    assert by_hour[20] == (4, 1)
+
+
+# --- Seating, and the chain it writes -----------------------------------------
+
+
+async def test_seating_opens_a_ticket_linked_to_the_reservation(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    """The reservation -> ticket edge is written AT SEATING, not left to the terminal: it is the
+    chain a dispute is read from, and an edge written later is an edge somebody forgets. The check
+    carries the party as its guest count and the host's free-text table."""
+    reservation = await book(db_session, tenant_a, party_size=5)
+    with tenant_context(tenant_a):
+        await reservations.seat_reservation(
+            db_session, tenant_a, reservation.id, table_code="T12"
+        )
+        await db_session.commit()
+        ticket = await tickets.get_ticket(db_session, tenant_a, reservation.ticket_id)
+        chain = await docflow.get_document_chain(db_session, tenant_a, reservation.document_id)
+
+    assert reservation.status == ReservationStatus.SEATED
+    assert (ticket.table_code, ticket.guest_count) == ("T12", 5)
+    assert {node.doc_type for node in chain.nodes} == {
+        "hospitality.table_reservation",
+        "hospitality.order_ticket",
+    }
+    assert [edge.link_type for edge in chain.edges] == ["seated_as"]
+
+
+# --- Illegal transitions ------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        ("cancel_reservation", "cancel_reservation"),
+        ("mark_no_show", "cancel_reservation"),
+        ("cancel_reservation", "seat_reservation"),
+        ("mark_no_show", "seat_reservation"),
+    ],
+)
+async def test_a_terminal_reservation_cannot_be_moved_again(
+    db_session: AsyncSession, tenant_a: uuid.UUID, first: str, second: str
+) -> None:
+    """CANCELLED and NO_SHOW are terminal, and the second attempt must be a clean 409 rather than a
+    second counter effect — a cancel that ran twice would hand the same covers back twice and
+    oversell the night."""
+    reservation = await book(db_session, tenant_a, party_size=4)
+    kwargs = {"table_code": "T1"} if second == "seat_reservation" else {}
+    with tenant_context(tenant_a):
+        await getattr(reservations, first)(db_session, tenant_a, reservation.id)
+        with pytest.raises(ConflictError) as excinfo:
+            await getattr(reservations, second)(db_session, tenant_a, reservation.id, **kwargs)
+    assert excinfo.value.code == "hospitality.reservation_not_transitionable"
+
+
+async def test_a_seated_party_cannot_be_cancelled(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    """They are at the table eating. The correction that is actually wanted is on their check, and
+    cancelling here would also release covers the room is currently using."""
+    reservation = await book(db_session, tenant_a, party_size=4)
+    with tenant_context(tenant_a):
+        await reservations.seat_reservation(db_session, tenant_a, reservation.id, table_code="T3")
+        with pytest.raises(ConflictError) as excinfo:
+            await reservations.cancel_reservation(db_session, tenant_a, reservation.id)
+    assert excinfo.value.code == "hospitality.reservation_not_transitionable"
+
+
+async def test_a_booking_whose_slot_has_started_cannot_be_amended(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    """Moving a booking is a counter operation, and the counter has stopped meaning anything. What
+    a host actually wants at that point is to seat them, or to mark the no-show."""
+    with tenant_context(tenant_a):
+        await pacing.set_settings(
+            db_session,
+            tenant_a,
+            pacing.ResolvedSettings(service_open=time(0, 0), service_close=time(0, 0)),
+        )
+        await db_session.commit()
+    started = a_slot_that_has_already_started()
+    reservation = await book(
+        db_session, tenant_a, service_date=started.date(), slot_start=started
+    )
+    with pytest.raises(ConflictError) as excinfo, tenant_context(tenant_a):
+        await reservations.amend_reservation(
+            db_session, tenant_a, reservation.id, party_size=6
+        )
+    assert excinfo.value.code == "hospitality.reservation_slot_started"
+
+
+async def test_a_naive_slot_start_is_rejected_at_the_wire(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    """The slot instant is half of the counter's unique key, and the two engines disagree about
+    offsets — SQLite writes the wall clock it is handed, PostgreSQL converts to UTC. A datetime with
+    no offset is therefore ambiguous in a way that silently splits one slot's counter in two, so it
+    is refused rather than guessed at."""
+    service_date = a_service_date()
+    with pytest.raises(ValueError, match="UTC offset"):
+        TableReservationCreate(
+            service_date=service_date,
+            slot_start=datetime.combine(service_date, time(19, 0)),
+            party_size=2,
+            guest_name="Naive",
+        )
+
+
+async def test_an_offset_slot_start_is_normalised_to_the_same_utc_counter(
+    db_session: AsyncSession, tenant_a: uuid.UUID
+) -> None:
+    """19:00+02:00 and 17:00Z are the same instant and must be the same counter row — otherwise a
+    website in Berlin and a terminal in the dining room each fill their own copy of the slot."""
+    service_date = a_service_date()
+    berlin = TableReservationCreate(
+        service_date=service_date,
+        slot_start=datetime.combine(service_date, time(19, 0), tzinfo=timezone(timedelta(hours=2))),
+        party_size=2,
+        guest_name="Berlin",
+    )
+    assert berlin.slot_start == slot_at(service_date, 17)
