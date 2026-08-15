@@ -77,4 +77,35 @@ class TableReservationRead(ApiModel):
     ticket_id: uuid.UUID | None = None
 
 
-__all__ = ["SlotStart", "TableReservationCreate", "TableReservationRead"]
+class SlotOfferRead(ApiModel):
+    """One quarter-hour of a service as the WEBSITE sees it: an instant and a yes/no.
+
+    Deliberately NOT the counter. ``covers_booked``/``covers_max`` are how full the dining room is,
+    which is commercial information a property publishes to nobody; the guest's question is only
+    "can we have 19:15 for four", and the answer is already computed against THEIR party size.
+    """
+
+    slot_start: datetime
+    bookable: bool
+
+
+class ReservationAvailabilityRead(ApiModel):
+    """A whole service date's grid for one party size.
+
+    The party size rides in the response because ``bookable`` is meaningless without it — the same
+    grid says yes to a deuce and no to a twelve-top — and a website rendering a cached payload
+    against the wrong size would offer tables that do not exist.
+    """
+
+    service_date: date
+    party_size: int
+    slots: list[SlotOfferRead]
+
+
+__all__ = [
+    "ReservationAvailabilityRead",
+    "SlotOfferRead",
+    "SlotStart",
+    "TableReservationCreate",
+    "TableReservationRead",
+]
