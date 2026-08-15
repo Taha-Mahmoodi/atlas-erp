@@ -76,24 +76,36 @@ export function MenuAvailabilityPage() {
       render: (row) => (row.source === "AUTO" ? "Countdown" : row.source === "MANUAL" ? "Staff" : "—"),
     },
     { key: "reason", header: "Reason", render: (row) => row.reason ?? "—" },
+    // Explicit per-row buttons rather than a clickable row: a row that is itself a control cannot
+    // also contain controls (nested interactive elements are not operable by keyboard or screen
+    // reader), and 86ing is one of the two things a manager does here, not a detail view.
     ...(canManage
       ? [
           {
             key: "actions",
             header: "",
-            width: "90px",
+            width: "140px",
             render: (row: MenuAvailability) => (
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  void clearRow(row.item_id);
-                }}
-                disabled={clear.isPending}
-                className="text-[12.5px] font-medium text-primary hover:underline disabled:opacity-45"
-              >
-                Clear
-              </button>
+              <span className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreating(false);
+                    setEditing(row);
+                  }}
+                  className="text-[12.5px] font-medium text-primary hover:underline"
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void clearRow(row.item_id)}
+                  disabled={clear.isPending}
+                  className="text-[12.5px] font-medium text-primary hover:underline disabled:opacity-45"
+                >
+                  Clear
+                </button>
+              </span>
             ),
           },
         ]
@@ -152,14 +164,6 @@ export function MenuAvailabilityPage() {
           columns={columns}
           rows={rows}
           rowKey={(row) => row.item_id}
-          {...(canManage
-            ? {
-                onRowClick: (row: MenuAvailability) => {
-                  setCreating(false);
-                  setEditing(row);
-                },
-              }
-            : {})}
           loading={board.isPending}
           emptyMessage="Nothing is 86'd — every dish on the menu is available."
           hasMore={board.hasNextPage}
