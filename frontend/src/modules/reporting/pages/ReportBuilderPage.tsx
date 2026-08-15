@@ -10,6 +10,7 @@ import { useState } from "react";
 
 import { DataGrid, type DataGridColumn } from "@/components/DataGrid";
 import { exportReportCsv } from "@/modules/reporting/api";
+import { resultHeaders } from "@/modules/reporting/components/reportHeaders";
 import { useReportEntities, useRunReport } from "@/modules/reporting/hooks";
 import type {
   ReportAggregation,
@@ -158,10 +159,11 @@ export function ReportBuilderPage() {
   };
 
   const result = run.data;
+  const headers = resultHeaders(result);
   const gridColumns: DataGridColumn<Record<string, unknown>>[] = (result?.columns ?? []).map(
-    (name) => ({
+    (name, index) => ({
       key: name,
-      header: name,
+      header: headers[index],
       render: (row) => String(row[name] ?? ""),
     }),
   );

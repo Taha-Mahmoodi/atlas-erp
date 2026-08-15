@@ -128,12 +128,21 @@ class ReportSpec(ApiModel):
 
 
 class ReportResult(ApiModel):
-    """The report grid payload (D-059): ``columns`` is the ordered result column-name list,
-    ``rows`` is a list of {column → JSON-safe value} dicts (money/qty as exact strings, dates as
-    ISO), ``row_count`` is len(rows), and ``truncated`` is True when the result hit the row cap (the
-    UI then offers the streaming CSV export for the full set, PERFORMANCE §3)."""
+    """The report grid payload (D-059): ``columns`` is the ordered result column-name list — the
+    WIRE names, which are also the keys of each row dict — ``column_labels`` is the matching DISPLAY
+    header for each (same length, same order), ``rows`` is a list of {column → JSON-safe value}
+    dicts (money/qty as exact strings, dates as ISO), ``row_count`` is len(rows), and ``truncated``
+    is True when the result hit the row cap (the UI then offers the streaming CSV export for the
+    full set, PERFORMANCE §3).
+
+    WHY BOTH LISTS (#166). The row dicts must stay keyed by the wire name (that is the client's
+    lookup key, and duplicate labels would collide), so the human header travels beside them rather
+    than replacing them. ``column_labels`` is the SINGLE source both surfaces read: the grid renders
+    it as its headers and the CSV export writes it as its header line, so the two can never drift
+    apart the way they had (issue #166 — both showed ``sum_total_amount``)."""
 
     columns: list[str]
+    column_labels: list[str]
     rows: list[dict[str, Any]]
     row_count: int
     truncated: bool

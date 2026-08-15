@@ -102,7 +102,14 @@ export interface ReportSpec {
 }
 
 export interface ReportResult {
+  /** The WIRE column names — also the keys of every row dict. Not display material (#166). */
   columns: string[];
+  /**
+   * The display header for each column, same order and length (#166). Optional here only so the
+   * grid still renders against a pre-#166 server or a stale cached response; the current backend
+   * always sends it. `resultHeaders` in `reporting/components/reportHeaders.ts` does the pairing.
+   */
+  column_labels?: string[];
   rows: Record<string, unknown>[];
   row_count: number;
   truncated: boolean;

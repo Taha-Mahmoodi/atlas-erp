@@ -1,10 +1,12 @@
 /**
  * Field-definition-driven form (DESIGN.md): native controls only, uniform vocabulary,
  * 1–2 column layout, inline errors wired via aria-invalid/aria-describedby, busy submit.
- * Controlled — values/errors live with the caller; this renders and reports.
+ * Controlled — values and server errors live with the caller; this renders and reports.
+ * The one rule it owns itself: `required` fields are checked before `onSubmit` fires, so an
+ * empty required field costs a field-level message instead of a round-trip and a 422 banner.
  */
 
-import type { FormEvent, ReactNode } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 
 export interface SelectOption {
   value: string;
@@ -15,6 +17,8 @@ export interface FieldDef {
   name: string;
   label: string;
   type: "text" | "password" | "number" | "date" | "select" | "checkbox" | "textarea";
+  /** Blocks submit while empty, and marks the control required for assistive tech. Ignored
+   * on checkboxes (would mean must-be-checked) and on disabled fields (unfixable). */
   required?: boolean;
   placeholder?: string;
   /** For selects. An empty-value placeholder option is always added automatically — even
@@ -67,6 +71,10 @@ function Control({
     id: `field-${field.name}`,
     name: field.name,
     disabled: busy || field.disabled === true,
+    /* Announced to assistive tech, not enforced by the browser (the form is noValidate).
+     * Checkboxes are excluded because there `required` means must-be-checked — a rule the
+     * submit gate deliberately does not enforce, and announcing it would be a lie. */
+    required: field.type === "checkbox" ? undefined : field.required,
     "aria-invalid": error ? true : undefined,
     "aria-describedby": error
       ? `field-${field.name}-error`
@@ -90,7 +98,6 @@ function Control({
     return (
       <select
         {...shared}
-        required={field.required}
         value={String(value ?? "")}
         onChange={(event) => onChange(field.name, event.target.value)}
       >
@@ -143,16 +150,53 @@ export function FormBuilder({
   columns = 2,
   footer,
 }: FormBuilderProps) {
+  /* Required is enforced here rather than by the browser: the form stays `noValidate`
+   * because native bubbles would fight this component's own inline error slot and its
+   * controlled state. Client errors merge under the caller's `errors`, which win on
+   * collision — those carry server truth (a 422 field error) that outranks "this looks
+   * empty". */
+  const [clientErrors, setClientErrors] = useState<Record<string, string>>({});
+  /* A client error is only *shown* while its field is still empty, rather than being cleared
+   * on change: the caller may replace `values` wholesale without going through `onChange`
+   * (an edit record landing, WbsPanel switching from add to edit), and a "X is required."
+   * with aria-invalid sitting over a filled control is a lie to a screen reader. */
+  const shownErrors = {
+    ...Object.fromEntries(
+      Object.entries(clientErrors).filter(([name]) => String(values[name] ?? "").trim() === ""),
+    ),
+    ...errors,
+  };
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!busy) onSubmit();
+    if (busy) return;
+    const missing: Record<string, string> = {};
+    for (const field of fields) {
+      /* Disabled fields are exempt for the same reason the HTML spec bars them from
+       * constraint validation: the user cannot fix what they cannot type in, and an edit
+       * form's immutable key (`required: true, disabled: isEdit`) is empty for the moment
+       * before the record loads. Unchecked checkboxes are not "missing" either — a
+       * must-be-checked rule is a different flag no caller has asked for yet. */
+      if (!field.required || field.disabled === true || field.type === "checkbox") continue;
+      if (String(values[field.name] ?? "").trim() === "") {
+        missing[field.name] = `${field.label} is required.`;
+      }
+    }
+    setClientErrors(missing);
+    const first = Object.keys(missing)[0];
+    if (first !== undefined) {
+      // Move the caret to the first offender so a keyboard user is not left hunting.
+      document.getElementById(`field-${first}`)?.focus();
+      return;
+    }
+    onSubmit();
   };
 
   return (
     <form onSubmit={submit} noValidate>
       <div className={`grid gap-x-6 gap-y-4 ${columns === 2 ? "sm:grid-cols-2" : ""}`}>
         {fields.map((field) => {
-          const error = errors[field.name];
+          const error = shownErrors[field.name];
           const isCheckbox = field.type === "checkbox";
           return (
             <div
