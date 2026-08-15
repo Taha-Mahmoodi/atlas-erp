@@ -103,6 +103,19 @@ class Job(UuidPKMixin, TenantMixin, TimestampMixin, Base):
         sa.Index(
             "ix_core_jobs_tenant_id_job_type_created_at", "tenant_id", "job_type", "created_at"
         ),
+        # The ONE index on this table that does NOT lead with tenant_id, deliberately: the P0
+        # stale-job sweep (core/job_sweeper.py) scans for orphans ACROSS tenants, so a
+        # tenant-leading index cannot serve it. PARTIAL so it covers only the unfinished rows —
+        # COMPLETED/FAILED jobs are the overwhelming majority and never appear in the scan, which
+        # keeps the index tiny however long the table grows. Both dialect kwargs are required
+        # (core/docflow.py precedent).
+        sa.Index(
+            "ix_core_jobs_status_updated_at_unfinished",
+            "status",
+            "updated_at",
+            postgresql_where=sa.text("status IN ('PENDING', 'RUNNING')"),
+            sqlite_where=sa.text("status IN ('PENDING', 'RUNNING')"),
+        ),
     )
 
     job_type: Mapped[str] = mapped_column(sa.String(100), nullable=False)
@@ -113,6 +126,12 @@ class Job(UuidPKMixin, TenantMixin, TimestampMixin, Base):
     result: Mapped[Any] = mapped_column(JSON_VARIANT, nullable=True)
     error: Mapped[str | None] = mapped_column(sa.String(_ERROR_MAX_CHARS), nullable=True)
     submitted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(sa.Uuid, nullable=True)
+    # How many times the P0 sweeper has re-dispatched this job. The ceiling
+    # (job_sweeper.MAX_JOB_ATTEMPTS) is what turns "reclaim forever" into "abandon visibly": a
+    # job that fails, is reclaimed and fails again eventually goes FAILED and stays there.
+    attempts: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, default=0, server_default="0"
+    )
     started_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
 
@@ -275,15 +294,29 @@ async def _execute_job(
 
 
 async def _run_handler(session: AsyncSession, job: Job) -> None:
-    """RUNNING (own commit) -> handler inside run_in_uow with COMPLETED set in the same uow
-    (business writes + terminal status commit atomically) -> on ANY exception the uow has
-    rolled the work back; commit only the FAILED status + truncated error."""
+    """CLAIM the row (PENDING -> RUNNING, own commit) -> handler inside run_in_uow with COMPLETED
+    set in the same uow (business writes + terminal status commit atomically) -> on ANY exception
+    the uow has rolled the work back; commit only the FAILED status + truncated error.
+
+    **The claim is CONDITIONAL** (P0): the transition only applies to a row that is still PENDING,
+    and a runner that does not win it returns without touching the handler. This is what makes
+    re-dispatch safe at all — the P0 sweeper reclaims a stale PENDING row whose original asyncio
+    task may merely have been queued behind ``MAX_CONCURRENT_JOBS``, and without the claim BOTH
+    tasks would run the same payload, concurrently. Reclaiming a RUNNING row still races a runner
+    that is genuinely alive; that is what the much longer ``RUNNING_RECLAIM_AFTER`` window and the
+    per-handler idempotency guards (tests/core/test_job_reruns.py) are for."""
     # Plain locals: a rollback below expires the instance, and expired-attribute access on an
     # async session raises (MissingGreenlet) — never touch job.<col> in the except path.
     tenant_id, job_pk, job_type = job.tenant_id, job.id, job.job_type
-    job.status = JobStatus.RUNNING.value
-    job.started_at = datetime.now(UTC)
+    claimed = await session.execute(
+        sa.update(Job)
+        .where(Job.id == job_pk, Job.status == JobStatus.PENDING.value)
+        .values(status=JobStatus.RUNNING.value, started_at=datetime.now(UTC))
+    )
     await session.commit()
+    if claimed.rowcount != 1:
+        logger.info("Job %s (%s) was already claimed by another runner", job_pk, job_type)
+        return
 
     handler = _registry.get(job_type)
     try:

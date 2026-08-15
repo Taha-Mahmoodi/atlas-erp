@@ -93,7 +93,12 @@ class IdempotencyKey(TenantMixin, Base):
     way; adding one means adding a principal column here instead."""
 
     __tablename__ = "core_idempotency_keys"
-    __table_args__ = (tenant_fk("adm_tenants"),)
+    __table_args__ = (
+        tenant_fk("adm_tenants"),
+        # The retention purge (core/job_sweeper.py) scans by AGE across tenants, so this one does
+        # not lead with tenant_id — expiry is an age question, not a tenancy one (PERFORMANCE §1).
+        sa.Index("ix_core_idempotency_keys_created_at", "created_at"),
+    )
 
     # Override TenantMixin's tenant_id to make it part of the composite PK (the mixin declares it
     # non-PK). All three PK members carry primary_key=True so the mapper's PK matches the
