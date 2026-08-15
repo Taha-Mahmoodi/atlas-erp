@@ -288,7 +288,14 @@ async def test_key_audit_never_records_the_stored_digest(
     assert diffs, "no audit row was written for the key"
     dumped = str(diffs)
     assert "secret_sha256" not in dumped
-    assert response.json()["key"].rsplit("_", 1)[-1] not in dumped
+    # split("_", 2)[2], NOT rsplit("_", 1)[-1]: the key is
+    # ``{prefix}_{tenant_hex}_{secret}`` and ``secrets.token_urlsafe`` emits '_', so
+    # splitting on the LAST underscore lands INSIDE the secret and leaves a fragment —
+    # a single character roughly one run in twenty, which then trivially appears in the
+    # audit row's timestamps and failed this assertion for the wrong reason. maxsplit=2
+    # is how ``parse_api_key`` itself reads the key (core/auth.py), and the same pitfall
+    # is already documented on the minting side (admin/service.py).
+    assert response.json()["key"].split("_", 2)[2] not in dumped
 
 
 async def test_revoking_a_key_is_audited(
