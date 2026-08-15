@@ -18,6 +18,12 @@ from app.core.security_router import router as security_router
 from app.modules.admin.router import router as admin_router
 from app.modules.crm.router import router as crm_router
 from app.modules.finance.router import router as finance_router
+from app.modules.hospitality.reservation_router import (
+    router as hospitality_reservation_router,
+)
+from app.modules.hospitality.reservation_website_router import (
+    website_router as hospitality_reservation_website_router,
+)
 from app.modules.hospitality.router import router as hospitality_router
 from app.modules.hospitality.website_router import router as hospitality_website_router
 from app.modules.hr.router import router as hr_router
@@ -125,6 +131,14 @@ def mount_routers(app: FastAPI) -> None:
     # so a website route can never inherit a staff route's guard by accident. Mounted AFTER the
     # staff router, which owns the more specific /menu/{item_id}/availability and /menu/at-risk.
     app.include_router(hospitality_website_router)
+    # Phase 21's reservation surface, sibling router files for the same reason ap_router.py is one
+    # (D-030/D-031): a second document family in a module whose router.py and website_router.py are
+    # already near the size cap. Split staff/website by PRINCIPAL exactly as the two above are. The
+    # website half runs under its own hospitality.reservation.book scope — narrower than the
+    # menu/order key the site already holds, because the staff BOOK is every guest's name and phone
+    # number for the night (D-069/D-070). Staff first, matching the pair above.
+    app.include_router(hospitality_reservation_router)
+    app.include_router(hospitality_reservation_website_router)
     # Industry module (PLAN 14.1): the INDUSTRY CONFIGURATION LAYER at /api/v1/industry — the YAML
     # template catalog + the idempotent apply endpoint (D-060). Mounted last; it imports core +
     # admin (it applies to a tenant + writes settings) and PUBLISHES IndustryTemplateApplying for
