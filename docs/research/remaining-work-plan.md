@@ -9,11 +9,11 @@ Nothing here is new scope invented in this document.
 
 ---
 
-## P0 — Job-runner reliability — **DONE** (2026-08-15, D-075)
+## P0 — Job-runner reliability — **DONE** (2026-08-15, D-078)
 
 Shipped as `core/job_sweeper.py` + the seven handler idempotency guards. The original statement of
 the problem is kept below unchanged, because the reasoning is what makes the thresholds defensible;
-what changed is that P0.1, P0.2 and P0.3 are all closed. See D-075 in `DECISIONS.md`.
+what changed is that P0.1, P0.2 and P0.3 are all closed. See D-078 in `DECISIONS.md`.
 
 **Why this is first, and why it is first *now*.** Phase 19 deliberately moved ingredient depletion
 off the settle transaction onto the job runner. That was the right call — synchronous depletion
@@ -76,7 +76,18 @@ a status-filtered query, and the at-risk list. Follows the module-UI anatomy the
 
 ---
 
-## P1.5 — Table reservations (added 2026-08-15, owner-directed)
+## P1.5 — Table reservations (added 2026-08-15, owner-directed) — **SHIPPED**
+
+**Done 2026-08-15** as Phase 21 (21.1–21.4): the `hsp_service_slots` pacing counter and its
+per-tenant settings, the `table_reservation` document with the finding-4 counter matrix, the
+website's availability/book/cancel surface under a new `hospitality.reservation.book` scope, and the
+staff book (list, take, amend, seat, no-show, cancel, complete, capacity). Recorded as **D-076** and
+**D-077**; surface and known limits in
+[`docs/modules/hospitality.md`](../modules/hospitality.md#7-table-reservations-phase-21-spec-q3).
+Explicitly NOT taken, and named there: a table master / floor plan, deposits and no-show fees,
+waitlists, multi-slot pacing for long meals, guest notification.
+
+Original entry, kept for provenance:
 
 Not in the original list: Taha directed on 2026-08-15 that the restaurant side needs its
 reservation part. The research already existed — Q3's pacing-counter model and the guest-facing

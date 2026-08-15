@@ -51,7 +51,7 @@ manufacturing are all **older** and import nothing from reporting → **one-dire
 | `open_purchase_orders` | `CountValueKpi` | `procurement/queries.open_purchase_orders` | count + Σ value of APPROVED / SENT / PARTIALLY_RECEIVED POs |
 | `otd_percent` | `OtdKpi` | `sales/queries.on_time_delivery` | simple delivery-vs-requested OTD (see below) |
 | `wip_value` | `MoneyKpi` | `finance/queries.wip_balance` | the WIP-clearing account balance — the authoritative open-WIP figure (D-048) |
-| `failed_jobs` | `FailedJobsKpi` | `core/jobs.Job` (no module `queries`) | count of jobs that ended FAILED in the last `FAILED_JOB_WINDOW_DAYS` (7). The ONE KPI whose source is **core** rather than a module: jobs are cross-cutting platform infrastructure owned by no business module, so there is nothing to read downward from. Gated on `admin.audit.read`, not a new key — same audience, strictly more powerful key, and a new key would leave existing Administrator roles unable to see the card. Drill-down is the existing `GET /api/v1/jobs?status=FAILED`. Added by **D-075** to pay D-072's FAILED-job-visibility clause |
+| `failed_jobs` | `FailedJobsKpi` | `core/jobs.Job` (no module `queries`) | count of jobs that ended FAILED in the last `FAILED_JOB_WINDOW_DAYS` (7). The ONE KPI whose source is **core** rather than a module: jobs are cross-cutting platform infrastructure owned by no business module, so there is nothing to read downward from. Gated on `admin.audit.read`, not a new key — same audience, strictly more powerful key, and a new key would leave existing Administrator roles unable to see the card. Drill-down is the existing `GET /api/v1/jobs?status=FAILED`. Added by **D-078** to pay D-072's FAILED-job-visibility clause |
 
 ### Sanctioned cross-module query additions
 

@@ -128,9 +128,17 @@ async def test_a_lapsing_86_moves_the_validator(
 async def test_a_lapsing_86_moves_the_validator_on_the_real_clock(
     website_api: WebsiteApi, db_session: AsyncSession
 ) -> None:
-    """The same thing with a real boundary and a real sleep — no simulation anywhere."""
+    """The same thing with a real boundary and a real sleep — no simulation anywhere.
+
+    The boundary is 3s rather than 1s, and that is load tolerance, not taste. The first read has
+    to land INSIDE the window or the test fails on its own setup, and at 1s it did: the request is
+    sub-second when this test runs alone but not when it runs behind 2,200 siblings on a busy
+    runner, which is exactly where the old assertion message ("widen the boundary") pointed. The
+    sleep only has to clear the boundary, so the total cost is ~3.3s on one test in exchange for
+    removing a real source of red CI.
+    """
     beer = website_api.kitchen.dishes["BEER"]
-    await _86(website_api, db_session, beer, available_until=utcnow() + timedelta(seconds=1))
+    await _86(website_api, db_session, beer, available_until=utcnow() + timedelta(seconds=3))
 
     live = await website_api.client.get(AVAILABILITY_URL)
     assert _state_of(live.json(), beer) == AvailabilityState.EIGHTY_SIXED.value, (
@@ -138,7 +146,7 @@ async def test_a_lapsing_86_moves_the_validator_on_the_real_clock(
     )
     before = live.headers["etag"]
 
-    await asyncio.sleep(1.2)
+    await asyncio.sleep(3.3)
 
     revalidated = await website_api.client.get(
         AVAILABILITY_URL, headers={"If-None-Match": before}

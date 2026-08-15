@@ -11,7 +11,7 @@ row and ``_run_handler``'s conditional claim means at most one runner ever execu
 They prove nothing about CONCURRENT re-execution: every guard below is read-then-write with no
 lock, so two handlers running at once against one payload would double-post (``run_payment_batch``
 selects bills with ``open_amount > 0`` before either transaction commits). That is precisely why
-the sweeper FAILS a stale RUNNING row for a human instead of re-dispatching it — see D-075(b).
+the sweeper FAILS a stale RUNNING row for a human instead of re-dispatching it — see D-078(b).
 
 **The shared detector.** :func:`ledger_fingerprint` counts the three append-only ledgers a
 double-post can only ever grow — journal entries, journal lines and stock moves. Any handler that

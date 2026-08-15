@@ -16,7 +16,7 @@ block a regression.
 
 import uuid
 from collections.abc import Callable
-from datetime import date
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,7 +25,8 @@ from app.core.events import run_in_uow
 from app.core.tenancy import tenant_context
 from app.main import register_event_handlers
 from app.modules.hospitality.constants import AvailabilityState
-from app.modules.hospitality.service import availability, depletion, tickets
+from app.modules.hospitality.reservation_schemas import TableReservationCreate
+from app.modules.hospitality.service import availability, depletion, reservations, tickets
 from app.modules.inventory import service
 from app.modules.inventory.constants import MoveType
 from app.modules.inventory.schemas import StockMoveCreate
@@ -60,6 +61,37 @@ FIRED_TICKET_CEILING = 14
 # the guard's read appears exactly ONCE, because the property P0 claims is "one query per JOB, not
 # per move" and a guard that drifted inside the per-ingredient loop would still look linear.
 DEPLETION_JOB_CEILING = 140
+
+# Phase 21's ratchet, pinned BEFORE the feature it bounds (the same reason the two above were):
+# the availability burn shipped per-row once and only a flatness assertion caught it.
+#
+# A booking touches EXACTLY ONE ``hsp_service_slots`` counter row — the Q3 pacing model — so its
+# cost must not move with the party size (one row, one integer, whether it is a deuce or a
+# sixteen-top) nor with how full the night already is (the other 47 slots are never read). MEASURED
+# on this branch at 12 statements for a booking that materialises its slot row: the settings read,
+# the locked slot SELECT + its INSERT + the counter UPDATE, the document registry INSERT +
+# read-back, the sequence read and claim, the reservation INSERT, its D-010 audit row and the
+# registry status UPDATE. Headroom for incidental growth only — a ceiling that grows with the book
+# means a per-reservation scan of the night, the grid-maintenance trap Q3 warns about.
+#
+# The very FIRST booking in a tenant costs 2 more (``ensure_sequence`` bootstrapping the RSV- row),
+# which is a one-time cost per tenant and identical on ``create_ticket``; the test warms it so the
+# two measurements differ in nothing but party size and book depth.
+TABLE_BOOKING_CEILING = 16
+
+# The service window a tenant that has never configured one books inside (constants.DEFAULT_*), and
+# the grid step. Spelled here rather than imported so the ratchet keeps measuring the same shape
+# even if a default moves — a settings change must not silently re-point what this test books.
+_RATCHET_SERVICE_OPEN = time(11, 0)
+_RATCHET_SLOT_MINUTES = 15
+
+
+def _slot_at(service_date: date, index: int) -> datetime:
+    """The ``index``-th 15-minute slot of ``service_date``'s service, as the UTC instant the
+    booking gate keys on."""
+    return datetime.combine(service_date, _RATCHET_SERVICE_OPEN, tzinfo=UTC) + timedelta(
+        minutes=_RATCHET_SLOT_MINUTES * index
+    )
 
 
 async def test_single_ingredient_issue_move_stays_within_its_ceiling(
@@ -197,6 +229,73 @@ async def test_firing_does_not_scale_with_countdown_lines(
         f"firing a 24-line countdown ticket costs {counts[24]} statements "
         f"(ceiling {FIRED_TICKET_CEILING})"
     )
+
+
+async def test_booking_a_table_is_flat_in_party_size_and_book_depth(
+    db_session: AsyncSession,
+    tenant_a: uuid.UUID,
+    query_counter: Callable[[], QueryCounter],
+) -> None:
+    """A deuce on a dead Tuesday and an eight-top on a night already holding fifty covers cost the
+    SAME number of statements.
+
+    Q3's whole argument for pacing-by-slot over pacing-by-table is that availability is ONE counter
+    row per (service_date, slot_start): the gate locks that row, reads two integers and writes two
+    integers, and never looks at the other slots or at the reservations already in the book. Two
+    shapes would break that and neither has a behavioural symptom — a gate that re-counted the
+    night's reservations to derive ``covers_booked`` (O(book depth) on the request a guest waits
+    on), and a per-cover write of any kind (O(party size)). Asserting EQUALITY rather than only the
+    ceiling is what catches them: a ceiling alone is satisfied by a shape that still grows.
+
+    Both measured bookings materialise their own slot row and both run after the tenant's RSV-
+    sequence exists, so the two counts differ in nothing but party size and how full the night is.
+    """
+    warm_up_night = datetime.now(UTC).date() + timedelta(days=1)
+    quiet_night = warm_up_night + timedelta(days=1)
+    busy_night = quiet_night + timedelta(days=1)
+
+    async def book(service_date: date, index: int, party_size: int) -> None:
+        await reservations.create_reservation(
+            db_session,
+            tenant_a,
+            TableReservationCreate(
+                service_date=service_date,
+                slot_start=_slot_at(service_date, index),
+                party_size=party_size,
+                guest_name="Ratchet",
+            ),
+        )
+
+    # The tenant's RSV- sequence row is created by its FIRST booking (``ensure_sequence``), a
+    # one-time 2-statement cost that would otherwise land on the quiet measurement alone and read
+    # as the busy night being cheaper.
+    with tenant_context(tenant_a):
+        await run_in_uow(db_session, lambda: book(warm_up_night, 0, 2))
+
+    with query_counter() as quiet, tenant_context(tenant_a):
+        await run_in_uow(db_session, lambda: book(quiet_night, 0, 2))
+
+    # Fifty reservations across the first half of the busy night's grid — two to a slot, so the
+    # book is deep without any slot reaching the default party cap. The measured booking then lands
+    # on slot 40, which no earlier booking has touched: identical work to the quiet night's.
+    for reservation in range(50):
+        with tenant_context(tenant_a):
+            await run_in_uow(db_session, lambda index=reservation: book(busy_night, index // 2, 2))
+
+    with query_counter() as busy, tenant_context(tenant_a):
+        await run_in_uow(db_session, lambda: book(busy_night, 40, 8))
+
+    assert busy.count == quiet.count, (
+        f"booking cost {quiet.count} statements for a party of 2 on an empty night and "
+        f"{busy.count} for a party of 8 on a night holding 50 reservations — the pacing gate "
+        "scales with the party or with the book:\n" + "\n".join(busy.statements)
+    )
+    assert busy.count <= TABLE_BOOKING_CEILING, (
+        f"booking a table now costs {busy.count} statements "
+        f"(ceiling {TABLE_BOOKING_CEILING}):\n" + "\n".join(busy.statements)
+    )
+    print(f"\n[perf] booking a table (party 8, 50 already in the book): {busy.count} statements")
+
 
 
 async def test_the_depletion_job_pays_for_its_rerun_guard_once_per_job(

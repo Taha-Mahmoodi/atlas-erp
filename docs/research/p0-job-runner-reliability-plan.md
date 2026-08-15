@@ -40,7 +40,7 @@ and **nothing in Atlas will ever look at it again**. A restart during service si
 - **D-007** tenancy; the runner already restores tenant context (`core/jobs.py:297-303`) — the
   sweeper must too. *(Outcome: it needed one new `system_context()` site, for the same reason the
   runner already has one — an orphan's tenant is unknowable until its row is read. The sanctioned
-  list in `core/tenancy.py` and `docs/architecture.md` was extended to name it, see D-075.)*
+  list in `core/tenancy.py` and `docs/architecture.md` was extended to name it, see D-078.)*
 - **D-010** audit actor is restored by the runner; a swept re-run must not attribute work to the
   wrong actor.
 - **D-011** handlers run inside `run_in_uow`; that must remain true on the swept path.
@@ -143,7 +143,7 @@ async def test_a_stale_running_job_is_failed_for_a_human_never_re_dispatched(db_
 
 async def test_a_job_that_never_ran_is_retried_indefinitely_not_abandoned(db_session, tenant_a):
     """`attempts` counts sweeps, not executions, so a ceiling on it would kill a job that merely
-    queued behind MAX_CONCURRENT_JOBS. (The plan's original ceiling test was wrong; see D-075(c).)"""
+    queued behind MAX_CONCURRENT_JOBS. (The plan's original ceiling test was wrong; see D-078(c).)"""
 
 
 async def test_the_sweep_is_bounded_per_tick(db_session, tenant_a):
@@ -184,7 +184,7 @@ to remember exists.
       *(Outcome: the drill-down `GET /api/v1/jobs` is deliberately NOT permission-gated — it is a
       pre-existing core endpoint guarded by `get_current_user` only, `core/jobs_router.py`, and
       changing that is outside this work. The KPI's `admin.audit.read` gate is consistency with
-      the other cards, not a confidentiality boundary; D-075(g) records this.)*
+      the other cards, not a confidentiality boundary; D-078(g) records this.)*
 - [x] **Step 2-5:** fail → implement → pass → commit.
 
 ---
@@ -226,8 +226,8 @@ comment, because too short silently breaks replay protection.
 - [x] Every `@register_job` handler has a re-run test proving it does not double-post
 - [x] A killed runner's job is reclaimed and completes
 - [x] A job that started and never finished is FAILED, not re-dispatched under a possibly-live
-      handler; a job that never STARTED is retried, not abandoned (no attempt ceiling — D-075(c))
+      handler; a job that never STARTED is retried, not abandoned (no attempt ceiling — D-078(c))
 - [x] FAILED jobs are visible without knowing an endpoint exists
 - [x] The sweep is indexed, bounded per tick, and does not scan the table
 - [x] A reclaimed job runs under its own tenant, under the ONE new `system_context()` site this
-      work adds — disclosed in D-075, `core/tenancy.py` and `docs/architecture.md`
+      work adds — disclosed in D-078, `core/tenancy.py` and `docs/architecture.md`

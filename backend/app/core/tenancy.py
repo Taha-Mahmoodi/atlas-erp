@@ -55,7 +55,7 @@ def system_context() -> Iterator[None]:
     2. tenant provisioning in modules/admin (PLAN 14.2);
     3. Alembic/seed provisioning phase (seed.py, PLAN 16);
     4. event-bus system-event replay (core/events, PLAN 3.6);
-    5. the background-job runner and its sweeper (core/jobs.py, core/job_sweeper.py, P0/D-075):
+    5. the background-job runner and its sweeper (core/jobs.py, core/job_sweeper.py, P0/D-078):
        a scheduled or orphaned job's tenant is UNKNOWABLE until its row is read, and neither
        runs business logic under the bypass — both restore the job's own tenant first.
     Test fixtures may also use it (D-025 tenant_factory). Writers under system

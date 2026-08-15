@@ -5,6 +5,7 @@ handler registers under.
 A SINGLE file (STRUCTURE §8.4: split into a constants/ package only at the 400-line cap).
 """
 
+from datetime import time
 from enum import StrEnum
 
 from app.core.rbac import register_permissions
@@ -112,11 +113,20 @@ TICKET_PROGRESS_STATES: frozenset[OrderTicketStatus] = frozenset(
 # of the Phase 18 credential is that a website may read the menu and post an order while holding
 # nothing else. It is separate from ``menu.manage`` (86-ing a dish, setting a countdown) so a
 # leaked website key can never take the kitchen's dishes off the menu.
+#
+# ``reservation.book`` is the THIRD reservation key and the only one a website ever holds. It is
+# separate from ``reservation.read`` because the two answer different questions: a website asks "is
+# 19:15 bookable for four" and books it, while ``.read`` is the staff BOOK — every guest's name and
+# contact detail for the night. A leaked website key must not be a guest list (D-069's narrowing
+# rule: a key is mintable at exactly the width it needs, and no wider).
 HOSPITALITY_MENU_READ = "hospitality.menu.read"
 HOSPITALITY_MENU_MANAGE = "hospitality.menu.manage"
 HOSPITALITY_TICKET_READ = "hospitality.ticket.read"
 HOSPITALITY_TICKET_MANAGE = "hospitality.ticket.manage"
 HOSPITALITY_TICKET_SETTLE = "hospitality.ticket.settle"
+HOSPITALITY_RESERVATION_READ = "hospitality.reservation.read"
+HOSPITALITY_RESERVATION_MANAGE = "hospitality.reservation.manage"
+HOSPITALITY_RESERVATION_BOOK = "hospitality.reservation.book"
 
 register_permissions(
     HOSPITALITY_MENU_READ,
@@ -124,12 +134,20 @@ register_permissions(
     HOSPITALITY_TICKET_READ,
     HOSPITALITY_TICKET_MANAGE,
     HOSPITALITY_TICKET_SETTLE,
+    HOSPITALITY_RESERVATION_READ,
+    HOSPITALITY_RESERVATION_MANAGE,
+    HOSPITALITY_RESERVATION_BOOK,
     descriptions={
         HOSPITALITY_MENU_READ: "Read the menu and its availability",
         HOSPITALITY_MENU_MANAGE: "86 a menu item, set a countdown, clear an 86",
         HOSPITALITY_TICKET_READ: "Read order tickets and the kitchen queue",
         HOSPITALITY_TICKET_MANAGE: "Open order tickets, add lines, fire to the kitchen",
         HOSPITALITY_TICKET_SETTLE: "Settle (tender) an order ticket",
+        HOSPITALITY_RESERVATION_READ: "Read the reservation book and the slot grid",
+        HOSPITALITY_RESERVATION_MANAGE: (
+            "Take, amend, seat, cancel and no-show reservations; set pacing capacity"
+        ),
+        HOSPITALITY_RESERVATION_BOOK: "Check reservation availability and book a table",
     },
 )
 
@@ -194,3 +212,82 @@ TICKET_INGREDIENTS_CONSUMED_EVENT_KEY = "hospitality.order_ticket.ingredients_co
 # who does not care gets. Five is roughly one table's worth — enough warning to 86 the dish before
 # a server promises it.
 AT_RISK_DEFAULT_THRESHOLD = 5
+
+
+# --- Table reservations (Phase 21, spec Q3) -----------------------------------
+
+
+class ReservationStatus(StrEnum):
+    """Lifecycle of a TABLE RESERVATION (Phase 21).
+
+    There is deliberately NO ``TENTATIVE``/``REQUESTED`` state: passing the pacing gate IS the
+    confirmation, which is the OpenTable/Resy model and the reason the gate runs inside the create
+    transaction. A "held, pending approval" state would need a sweeper to expire holds, and Atlas
+    has no scheduler (the same argument that makes the 86 time box lazily evaluated).
+
+    Unlike ``OrderTicketStatus`` this is NOT a straight line, so it cannot be an ordered tuple read
+    positionally — a confirmed booking can be seated, no-showed or cancelled, and only the seated
+    one can complete. ``RESERVATION_FLOW`` below is the transition table, declared next to the enum
+    for the same reason ``TICKET_FLOW`` is: the legal moves are the contract, not the membership.
+
+    - **CONFIRMED** — booked and counted. The only state that HOLDS capacity.
+    - **SEATED** — the party is at a table; ``ticket_id`` points at the check opened for them.
+    - **COMPLETED** — they ate and left. Terminal, bookkeeping only.
+    - **NO_SHOW** — they never came. Terminal, and it releases NOTHING: it is recorded at or after
+      the slot, when there is no longer anything to resell.
+    - **CANCELLED** — called off. Releases the capacity IF the slot has not started yet.
+    """
+
+    CONFIRMED = "CONFIRMED"
+    SEATED = "SEATED"
+    COMPLETED = "COMPLETED"
+    NO_SHOW = "NO_SHOW"
+    CANCELLED = "CANCELLED"
+
+
+# The legal moves, one frozenset per state; an empty set is terminal. A branching lifecycle has no
+# "index + 1" rule to lean on, so the table is written out — and written ONCE, here, so the service
+# and the docs cannot disagree about whether a SEATED party can still be cancelled (it cannot: they
+# are eating, and the correction belongs to their check, not to the booking).
+RESERVATION_FLOW: dict[ReservationStatus, frozenset[ReservationStatus]] = {
+    ReservationStatus.CONFIRMED: frozenset(
+        {ReservationStatus.SEATED, ReservationStatus.NO_SHOW, ReservationStatus.CANCELLED}
+    ),
+    ReservationStatus.SEATED: frozenset({ReservationStatus.COMPLETED}),
+    ReservationStatus.COMPLETED: frozenset(),
+    ReservationStatus.NO_SHOW: frozenset(),
+    ReservationStatus.CANCELLED: frozenset(),
+}
+
+# The pacing grid's width in minutes — a CONSTANT, not a setting. OpenTable and Resy both fix it,
+# and it is half of the ``(tenant_id, service_date, slot_start)`` unique key's meaning: making it
+# configurable would silently re-point what an already-stored slot row COUNTS the moment a manager
+# edited it, with no migration able to say what the old rows meant.
+SLOT_MINUTES = 15
+
+# What a tenant that has never written a settings row books against (the MenuAvailability idiom:
+# absence is the default, not an error, so a property can take its first booking without being
+# configured first). A settings row only ever holds overrides of these.
+#
+# TIMES ARE UTC. Atlas stores no per-tenant timezone — nothing in the platform has one — so a bare
+# wall clock here would be a number nobody could resolve to an instant. The property's website knows
+# its own timezone and converts; the staff UI does the same. Named in docs/modules/hospitality.md.
+DEFAULT_SERVICE_OPEN = time(11, 0)
+DEFAULT_SERVICE_CLOSE = time(23, 0)
+DEFAULT_COVERS_MAX = 40
+DEFAULT_PARTIES_MAX = 12
+DEFAULT_MIN_PARTY = 1
+DEFAULT_MAX_PARTY = 12
+DEFAULT_BOOKING_HORIZON_DAYS = 90
+
+# D-012 document type + numbering for the reservation, mirroring the order ticket exactly: the
+# number is claimed AT CREATION because a reservation is referenceable by the guest and by the floor
+# the instant it is confirmed, and there is no draft phase to defer it to.
+TABLE_RESERVATION_DOC_TYPE = "hospitality.table_reservation"
+TABLE_RESERVATION_SEQUENCE_NAME = "hospitality.table_reservation"
+TABLE_RESERVATION_NUMBER_PREFIX = "RSV"
+TABLE_RESERVATION_NUMBER_PADDING = 6
+
+# The docflow link type joining a seated reservation to the check opened for that party, so
+# ``GET /api/v1/documents/{id}/chain`` renders reservation -> ticket -> (Phase 20 folio line).
+RESERVATION_SEATED_AS_TICKET_LINK = "seated_as"

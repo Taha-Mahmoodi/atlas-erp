@@ -25,12 +25,13 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import as_utc
 from app.core.pagination import (
     DEFAULT_LIMIT,
     OrderKey,
@@ -39,8 +40,13 @@ from app.core.pagination import (
     paginate,
 )
 from app.core.schemas import Page
-from app.modules.hospitality.constants import OrderTicketStatus
-from app.modules.hospitality.models import MenuAvailability, OrderTicket
+from app.modules.hospitality.constants import OrderTicketStatus, ReservationStatus
+from app.modules.hospitality.models import (
+    MenuAvailability,
+    OrderTicket,
+    ServiceSlot,
+    TableReservation,
+)
 from app.modules.inventory import queries as inventory_queries
 from app.modules.manufacturing import queries as mfg_queries
 
@@ -167,9 +173,65 @@ async def list_tickets(
     )
 
 
+async def slot_counters(
+    session: AsyncSession, tenant_id: uuid.UUID, service_date: date
+) -> dict[datetime, ServiceSlot]:
+    """Every MATERIALISED pacing counter for one service date, keyed by its UTC slot instant.
+
+    ONE statement whatever the night looks like (PERFORMANCE §2), served by the leading columns of
+    ``uq_hsp_service_slots_tenant_id_service_date_slot_start``. The obvious alternative — asking the
+    counter per slot as the grid is rendered — is 96 queries for a 24-hour service.
+
+    Deliberately returns only what EXISTS. A slot with no row is not "closed", it is untouched, and
+    the caller overlays the settings defaults onto the gaps (finding 3). Keying on ``as_utc`` is
+    what makes the lookup work on both engines: aiosqlite round-trips ``DateTime(timezone=True)``
+    as a naive value, so a raw key would never match the aware instant the caller is holding.
+    """
+    stmt = select(ServiceSlot).where(
+        ServiceSlot.tenant_id == tenant_id, ServiceSlot.service_date == service_date
+    )
+    return {as_utc(row.slot_start): row for row in (await session.execute(stmt)).scalars()}
+
+
+async def list_reservations(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    service_date: date | None = None,
+    status: ReservationStatus | None = None,
+    cursor: str | None = None,
+    limit: int = DEFAULT_LIMIT,
+) -> Page[TableReservation]:
+    """THE BOOK: a service's reservations in slot order (D-014 keyset, never OFFSET).
+
+    Ascending by ``slot_start``, unlike the ticket list's newest-first: a book is read forward
+    through the evening — the host works down it as parties arrive — so the natural first page is
+    the start of service, not the most recent booking taken.
+
+    The date and status filters are the two the floor uses ("tonight", "who has not shown"), and
+    ``ix_hsp_table_reservations_tenant_id_service_date_slot_start`` serves the filter AND the sort.
+    """
+    stmt = select(TableReservation).where(TableReservation.tenant_id == tenant_id)
+    if service_date is not None:
+        stmt = stmt.where(TableReservation.service_date == service_date)
+    if status is not None:
+        stmt = stmt.where(TableReservation.status == status.value)
+    return await paginate(
+        session,
+        stmt,
+        order_by=[OrderKey(TableReservation.slot_start, SortDirection.ASC)],
+        pk=TableReservation.id,
+        cursor=cursor,
+        limit=limit,
+        filters=filter_fingerprint(service_date, status),
+    )
+
+
 __all__ = [
     "MenuItemAtRisk",
     "at_risk_menu_items",
     "list_availability_overrides",
+    "list_reservations",
     "list_tickets",
+    "slot_counters",
 ]

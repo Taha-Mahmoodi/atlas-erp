@@ -71,8 +71,12 @@ Issuing and revoking a key are themselves audited (`entity_table = core_api_keys
 
 A restaurant's own website is the first client Atlas ships a purpose-built surface for. It holds a
 machine API key (above) scoped to `hospitality.menu.read` and `hospitality.ticket.manage` — nothing
-else — and talks to three endpoints. Module behaviour is in
-[`docs/modules/hospitality.md`](modules/hospitality.md); this is the integration contract.
+else — and talks to three endpoints. If the site also takes **table bookings**, mint it a
+**separate** key scoped to `hospitality.reservation.book` (see [the reservation
+contract](#the-reservation-contract)) rather than widening this one: the two surfaces fail
+differently, and a key that can only book cannot also read the menu it has no business changing.
+Module behaviour is in [`docs/modules/hospitality.md`](modules/hospitality.md); this is the
+integration contract.
 
 ### `GET /api/v1/hospitality/menu`
 
@@ -166,3 +170,92 @@ Refusals are the ordinary error envelope: `422 hospitality.item_not_priced` (no 
 prices the item today, or its only price is in a currency that is not the tenant's functional one),
 `422 hospitality.item_unavailable` (86'd, or a countdown with fewer portions left than ordered),
 `401` for a bad key, `403` if the key's scopes do not cover the route, `429` from the edge limiter.
+
+
+## The reservation contract
+
+The same website, a **different key**: scope it to `hospitality.reservation.book` and **nothing
+else**. That key can check availability, book, and cancel on a guest's behalf. It deliberately
+cannot read the book — `hospitality.reservation.read` returns every guest's name and contact detail
+for the night, and a leaked website key must not be a guest list (D-069's narrowing rule; the API
+enforces it, this is just the reason).
+
+**Whose booking is whose is your problem, not Atlas's.** Atlas exposes tenant-scoped operations and
+trusts the caller to have authenticated its guest. Guest identity, notification (email/SMS) and
+guest-facing cancel links are all the website's, exactly as Q1 draws the boundary.
+
+**All times are UTC instants.** `slot_start` must carry an offset — a naive datetime is rejected
+(`422`), because the slot instant is half of the pacing counter's key and guessing at an offset
+silently splits one slot's counter in two. `service_date` is the **business date** the service
+belongs to, which for a service running past midnight is the day it OPENED, not the calendar date of
+the slot.
+
+### `GET /api/v1/hospitality/reservation-availability?service_date=&party_size=`
+
+The whole day's grid for **that party size**, one boolean per 15-minute slot:
+
+```json
+{"service_date": "2026-08-16", "party_size": 4,
+ "slots": [{"slot_start": "2026-08-16T11:00:00Z", "bookable": true},
+           {"slot_start": "2026-08-16T11:15:00Z", "bookable": false}]}
+```
+
+```
+Cache-Control: no-cache, must-revalidate, stale-if-error=300
+ETag: W/"…"
+```
+
+Revalidated on **every** request, like the 86 board and for the same reason: a stale "bookable"
+sells a table that is gone. Send `If-None-Match` and expect `304` when nothing has moved — the
+validator tracks both the day's bookings and the property's capacity settings, so widening capacity
+invalidates it even though no booking changed. `party_size` is echoed back because `bookable` is
+meaningless without it; never render a cached grid against a different party.
+
+A party the property does not seat is `422 hospitality.party_size_not_accepted` rather than a grid
+of `false`, and a date outside the booking window is `422 hospitality.outside_booking_window`. The
+window's floor is the earliest service whose hours have **not yet closed**, not the UTC calendar
+date: a service running past UTC midnight (22:00–05:00 UTC is an ordinary Americas dinner) keeps
+answering for its own `service_date` while it is still being run.
+
+### `POST /api/v1/hospitality/table-reservations`
+
+```http
+POST /api/v1/hospitality/table-reservations
+Authorization: Bearer atk_…
+Idempotency-Key: 9d1a4c77-…          # REQUIRED
+Content-Type: application/json
+
+{"service_date": "2026-08-16", "slot_start": "2026-08-16T19:00:00Z", "party_size": 4,
+ "guest_name": "Okonkwo", "guest_contact": "+44 7700 900000", "notes": "window table if possible"}
+```
+
+Response `201`:
+
+```json
+{"id": "…", "document_id": "…", "reservation_number": "RSV-2026-000001", "status": "CONFIRMED",
+ "service_date": "2026-08-16", "slot_start": "2026-08-16T19:00:00Z", "party_size": 4,
+ "guest_name": "Okonkwo", "guest_contact": "+44 7700 900000", "notes": "…", "ticket_id": null}
+```
+
+**Four rules the client must follow.**
+
+1. **`CONFIRMED` is final — there is no pending state to poll.** Passing the pacing gate *is* the
+   confirmation, so the 201 is the answer. Nothing will later downgrade it.
+2. **A full slot is a NORMAL answer, not an error.** `422 hospitality.slot_full` carries
+   `details.limit` (`covers` or `parties`), `requested`, `available`, **and `alternatives`** — the
+   other slots bookable for this party on this date, in the same `…Z` spelling the grid uses. Offer
+   them; do not re-fetch the grid.
+3. **On `409 idempotency.in_progress`, retry later with the SAME key**, and send the byte-identical
+   body. Minting a new key on a 409 is how a guest ends up holding two tables. Use a **fresh** key
+   per booking: a key is scoped to its endpoint and its request target (D-071).
+4. **Unknown fields are rejected (`422`), not ignored** — including `table_code`. Which table a party
+   sits at is decided by a human at seating and lives on their check, so it is not yours to set.
+
+### `POST /api/v1/hospitality/table-reservations/{id}/cancel`
+
+Returns the reservation at `CANCELLED`. **Before** the slot starts this gives the covers back to the
+night; at or after it, the cancellation is recorded and the counter is untouched, because there is
+nobody left to resell to. Refused with `409 hospitality.reservation_not_transitionable` once the
+party has been SEATED (they are at the table; the correction wanted then is on their check) and for
+a second cancel of the same booking. No idempotency key: it creates no document, and that same 409
+already answers a replay. An unknown id is `404 hospitality.reservation_not_found`.

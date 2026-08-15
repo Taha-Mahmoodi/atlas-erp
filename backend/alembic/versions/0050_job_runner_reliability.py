@@ -1,7 +1,7 @@
 """job runner reliability
 
-Revision ID: 0049
-Revises: 0048
+Revision ID: 0050
+Revises: 0049
 Create Date: 2026-08-15
 
 P0 (docs/research/p0-job-runner-reliability-plan.md) — the schema the stale-job sweeper needs.
@@ -28,8 +28,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "0049"
-down_revision: str | None = "0048"
+revision: str = "0050"
+down_revision: str | None = "0049"
 branch_labels: str | None = None
 depends_on: str | None = None
 
