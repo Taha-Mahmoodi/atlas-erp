@@ -6,7 +6,68 @@ on:
     branches: [dev, main]
 
 jobs:
+  # Which stacks does this change actually touch? A docs-only PR used to pay the full backend
+  # job for nothing — measured on run 31876164689: 18m04s total, of which the SQLite suite is
+  # 17m14s and everything else (Postgres container, migration round-trip, pg guards, ruff)
+  # is 55s. Postgres was never the expensive part; the test suite is.
+  #
+  # THE FILTER LIVES AT THE JOB LEVEL, NEVER ON THE `on:` TRIGGER. `backend` and `frontend`
+  # are REQUIRED status checks on dev and main. GitHub leaves a required check belonging to a
+  # path-skipped WORKFLOW in Pending forever, which makes the PR permanently unmergeable; a
+  # job skipped by an `if:` reports success and satisfies the requirement. So the workflow
+  # must always run, and only its jobs may be skipped.
+  #
+  # The classification is fail-safe BY CONSTRUCTION. Keep both properties if you edit it:
+  #   1. `*.md` is matched FIRST and skips both stacks — markdown cannot break a test, even
+  #      under backend/.
+  #   2. The `*)` catch-all runs BOTH stacks, so anything unanticipated (a new top-level dir,
+  #      a compose file, this workflow itself) is tested rather than silently skipped.
+  # An unreadable file list also runs both. The failure mode is wasted CI, never skipped CI.
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      backend: ${{ steps.classify.outputs.backend }}
+      frontend: ${{ steps.classify.outputs.frontend }}
+    steps:
+      - id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          run_backend=false
+          run_frontend=false
+          files=""
+          if [ "$EVENT" = "pull_request" ]; then
+            files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate --jq '.[].filename' || echo "")
+          fi
+          # A push to dev/main, or a file list we could not read, tests everything.
+          if [ -z "$files" ]; then
+            run_backend=true
+            run_frontend=true
+          else
+            while IFS= read -r f; do
+              [ -z "$f" ] && continue
+              case "$f" in
+                *.md|docs/*) : ;;
+                backend/*)   run_backend=true ;;
+                frontend/*)  run_frontend=true ;;
+                *)           run_backend=true; run_frontend=true ;;
+              esac
+            done <<< "$files"
+          fi
+          echo "backend=$run_backend" >> "$GITHUB_OUTPUT"
+          echo "frontend=$run_frontend" >> "$GITHUB_OUTPUT"
+          echo "backend=$run_backend frontend=$run_frontend"
+          echo "$files" | sed 's/^/  changed: /'
+
   backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     # PostgreSQL is the production runtime; the financial DB guards (triggers,
     # UPDATE...RETURNING, partial indexes) must be validated on it, not only on
@@ -64,6 +125,8 @@ jobs:
   # the 1x Postgres run happens locally (`make perf` + ATLAS_PERF_DATABASE_URL) before each
   # promotion. `-s` keeps the [perf] timing report lines visible in the job log.
   perf-smoke:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -80,6 +143,8 @@ jobs:
           uv run pytest -q -m perf -s
 
   frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
