@@ -33,6 +33,7 @@ vs business date).
   or two events per run, never one per reservation.
 - **D-012** reservations, folios and housekeeping tasks are documents: registered in
   `core_documents`, numbered, doc-flow linked.
+- **Table args**: follow the repo's composite-unique convention — an explicitly NAMED `sa.UniqueConstraint("tenant_id", ...)` **plus** a bare `tenant_unique()` and `tenant_fk("adm_tenants")` in `__table_args__`; `tenant_unique()` takes NO arguments (it is UNIQUE(tenant_id, id) for composite FKs, `core/models.py:104-109`) and any other tenant-leading unique needs its own name or the D-022 naming convention collides. Precedent: `hospitality/models.py:71-84`.
 - **D-013** idempotency keys on every endpoint that creates a financial or stock document — but
   D-013 guards the *transport*; the night audit's data-level dedup is a unique index (Q5).
 - **PERFORMANCE §2/§6** list endpoints ≤3 queries, paginated; write paths ratcheted in
@@ -248,7 +249,7 @@ async def test_partner_ledger_shows_the_unapplied_balance(...):
   the guarantee), `backend/tests/perf/test_write_budgets.py` (booking ceiling)
 
 **Interfaces:**
-- Produces: `hsp_room_type_inventory` — `tenant_unique(room_type_id, stay_date)`, columns
+- Produces: `hsp_room_type_inventory` — unique on `(tenant_id, room_type_id, stay_date)`, columns
   `rooms_sellable`/`rooms_sold`/`overbooking_limit`, `CHECK (rooms_sold >= 0)` and
   `CHECK (rooms_sold <= rooms_sellable + overbooking_limit)`; `Reservation` document —
   `TENTATIVE → CONFIRMED → CHECKED_IN → CHECKED_OUT | NO_SHOW | CANCELLED`, room_type FK, stay
@@ -306,8 +307,9 @@ async def test_a_missing_allotment_row_upserts_rather_than_reading_zero(...):
   `charge_type: ROOM_NIGHT | RESTAURANT | INCIDENTAL | TAX | DEPOSIT_APPLIED`, amount, tax code,
   `source_document_id` doc-flow link, `business_date` (nullable until Task 6 exists, then
   required); partial unique index `(tenant_id, reservation_id, business_date) WHERE charge_type =
-  'ROOM_NIGHT'` — the night audit's idempotency backbone (Q5; partial unique indexes are portable
-  to SQLite, D-003 holds).
+  'ROOM_NIGHT'` — the night audit's idempotency backbone (Q5). Partial indexes are portable and
+  already used here: declare BOTH `postgresql_where=` and `sqlite_where=`, the
+  `core/docflow.py:71-72` precedent.
 - Folio settlement is a **clearing** event (finding 1): cash/card → Dr Bank / Cr Guest Ledger,
   never touching AR; direct-bill → materialise a real `CustomerInvoice` (Dr AR control / Cr Guest
   Ledger) so `ar_aging` and `dunning` see it (Q5's city-ledger transfer). Deposit application at
@@ -333,7 +335,7 @@ async def test_a_missing_allotment_row_upserts_rather_than_reading_zero(...):
   `backend/tests/modules/finance/test_period_close_guard.py`
 
 **Interfaces:**
-- Produces: `hsp_business_dates` — `tenant_unique(business_date)`, `status OPEN|AUDITED`,
+- Produces: `hsp_business_dates` — unique on `(tenant_id, business_date)`, `status OPEN|AUDITED`,
   `journal_entry_id` FK (the audit's grouped entry), AuditMixin. One table, three jobs: current
   business date (the single OPEN row), monotonicity backstop (roll refuses backwards/skip), audit
   run record (Q5's `fin_depreciation_runs` shape).

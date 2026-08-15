@@ -35,6 +35,7 @@ blocked by, Rooms & Folio.
   `test_availability_races.py` harness shape.
 - **D-007** tenancy; **D-011** `run_in_uow`; **D-012** the reservation is a document (numbered,
   doc-flow); **D-013** idempotency key on the booking write.
+- **Table args**: follow the repo's composite-unique convention — an explicitly NAMED `sa.UniqueConstraint("tenant_id", ...)` **plus** a bare `tenant_unique()` and `tenant_fk("adm_tenants")` in `__table_args__`; `tenant_unique()` takes NO arguments (it is UNIQUE(tenant_id, id) for composite FKs, `core/models.py:104-109`) and any other tenant-leading unique needs its own name or the D-022 naming convention collides. Precedent: `hospitality/models.py:71-84`.
 - **Q1 boundary:** the website's *server* is the only client; the guest's browser never talks to
   Atlas. Guest identity, guest notification (email/SMS), and guest-facing cancel links are the
   website's problem — Atlas exposes tenant-scoped operations under the Phase 18 credential and
@@ -115,12 +116,13 @@ pin that before the feature exists to pin it against.
 - Test: `backend/tests/modules/hospitality/test_table_reservations.py` (settings + counter half)
 
 **Interfaces:**
-- `ReservationSettings` — one row per tenant (`tenant_unique()` on tenant alone): `service_open` /
+- `ReservationSettings` — one row per tenant (named `UniqueConstraint("tenant_id")`):
+  `service_open` /
   `service_close` (times), `default_covers_max`, `default_parties_max`, `min_party`, `max_party`,
   `booking_horizon_days`. The 15-minute slot width is a **constant**, not a setting — both vendors
   Q3 cites fix it, and a configurable grid would change the unique key's meaning under existing
   rows.
-- `ServiceSlot` — `tenant_unique(service_date, slot_start)`, `covers_booked`/`covers_max`,
+- `ServiceSlot` — unique on `(tenant_id, service_date, slot_start)`, `covers_booked`/`covers_max`,
   `parties_booked`/`parties_max`, `CHECK (covers_booked >= 0)`,
   `CHECK (covers_booked <= covers_max)`, same pair for parties.
 - `book_into_slot(session, tenant_id, service_date, slot_start, covers)` — THE gate, and its

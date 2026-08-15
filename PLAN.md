@@ -193,7 +193,7 @@ Spec: hospitality plan Q3 (overbooking), Q5 (folio, deposits, business date, nig
 
 Spec: hospitality plan Q3 (the pacing counter) + "The guest-facing surface". Plan: [`docs/research/phase-21-table-reservations-plan.md`](docs/research/phase-21-table-reservations-plan.md). Owner-directed 2026-08-15. Independent of Phase 20 — no finance touch — and sequenced before it.
 
-- [ ] 21.1 `hsp_reservation_settings` + `hsp_service_slot` pacing counter: `tenant_unique(service_date, slot_start)` on a fixed 15-minute grid, covers/parties CHECK pairs, upsert-on-lock from tenant defaults, manager slot overrides
+- [ ] 21.1 `hsp_reservation_settings` + `hsp_service_slot` pacing counter: unique on `(tenant_id, service_date, slot_start)` on a fixed 15-minute grid, covers/parties CHECK pairs, upsert-on-lock from tenant defaults, manager slot overrides
 - [ ] 21.2 `table_reservation` document: CONFIRMED → SEATED → COMPLETED/NO_SHOW/CANCELLED, counter discipline per transition (release only before `slot_start`), seating opens a doc-flow-linked order ticket
 - [ ] 21.3 Website surface: slot-grid availability read with conditional GET, booking write under D-013 returning nearest alternatives on refusal, guest cancel; its own `hospitality.reservation.book` scope (D-069 narrowing)
 - [ ] 21.4 Staff book: list by service date, phone bookings through the same gate, seat/no-show/cancel endpoints
