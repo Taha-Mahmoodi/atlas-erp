@@ -138,10 +138,11 @@ def _binds_tenant(sql: str, table: str) -> bool:
 
 
 def test_phase_18_added_no_system_context_bypass() -> None:
-    """D-007 sanctions exactly four `system_context()` call sites; this phase added none.
+    """D-007 sanctions `system_context()` for a short enumerated list of purposes (tenancy.py);
+    this phase added none.
 
     Asserted on the source of the files the phase put in the auth path — a tree-wide grep
-    would count the four pre-existing sites and need editing for unrelated work.
+    would count the pre-existing sites and need editing for unrelated work.
     """
     backend = Path(__file__).resolve().parents[2]
     for relative in ("app/core/deps.py", "app/core/auth.py"):

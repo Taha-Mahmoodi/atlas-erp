@@ -108,8 +108,10 @@ class IdempotencyKey(TenantMixin, Base):
     request_hash: Mapped[str] = mapped_column(sa.String(64), nullable=False)
     response_status: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
     response_body: Mapped[Any] = mapped_column(JSON_VARIANT, nullable=True)
+    # index=True: the retention purge (core/job_sweeper.py) scans by AGE across tenants, so this
+    # index does not lead with tenant_id — expiry is an age question, not a tenancy one.
     created_at: Mapped[datetime] = mapped_column(
-        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now(), index=True
     )
     completed_at: Mapped[datetime | None] = mapped_column(
         sa.DateTime(timezone=True), nullable=True

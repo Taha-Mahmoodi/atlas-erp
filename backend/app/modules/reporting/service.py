@@ -13,18 +13,22 @@ figures are PROJECTIONS read off existing queries (D-021), never new stored tota
 """
 
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.jobs import Job, JobStatus
 from app.modules.finance import queries as finance_queries
 from app.modules.inventory import queries as inventory_queries
 from app.modules.procurement import queries as procurement_queries
 from app.modules.reporting.constants import (
+    FAILED_JOB_WINDOW_DAYS,
     KPI_AP_AGING,
     KPI_AR_AGING,
     KPI_CASH_POSITION,
+    KPI_FAILED_JOBS,
     KPI_INVENTORY_VALUE,
     KPI_OPEN_PURCHASE_ORDERS,
     KPI_OPEN_SALES_ORDERS,
@@ -36,6 +40,7 @@ from app.modules.reporting.schemas import (
     AgingSummary,
     CountValueKpi,
     DashboardResponse,
+    FailedJobsKpi,
     MoneyKpi,
     OtdKpi,
 )
@@ -120,7 +125,45 @@ async def dashboard_kpis(
         value = await finance_queries.wip_balance(session, tenant_id, as_of=effective_date)
         response.wip_value = MoneyKpi(value=value, currency=currency)
 
+    if _permitted(KPI_FAILED_JOBS, permissions):
+        response.failed_jobs = FailedJobsKpi(
+            count=await _failed_job_count(session, tenant_id, effective_date),
+            window_days=FAILED_JOB_WINDOW_DAYS,
+        )
+
     return response
+
+
+async def _failed_job_count(
+    session: AsyncSession, tenant_id: uuid.UUID, as_of: date
+) -> int:
+    """Jobs that ended FAILED within the window (P0 Task 3). The ONE KPI whose source is core
+    rather than a module ``queries`` file — jobs are cross-cutting platform infrastructure owned by
+    no business module, so there is no module to read downward from (core/jobs_router.py makes the
+    same argument for living in core).
+
+    The window is BOUNDED AT BOTH ENDS, like every other KPI here: ``as_of`` is a user-supplied
+    query parameter, so a lower bound alone would answer ``?as_of=2020-01-01`` with today's
+    failures rendered beside correctly-as-of-2020 figures. The upper bound is the END of the
+    ``as_of`` day, so the default (today) still counts a failure that happened an hour ago.
+
+    ONE aggregate, index-served by ``ix_core_jobs_tenant_id_status``: the (tenant, FAILED) slice is
+    tiny by construction — a tenant with enough failures for the residual ``finished_at`` filter to
+    matter has a much larger problem than a slow dashboard card."""
+    since = datetime.combine(
+        as_of - timedelta(days=FAILED_JOB_WINDOW_DAYS), time.min, tzinfo=UTC
+    )
+    until = datetime.combine(as_of + timedelta(days=1), time.min, tzinfo=UTC)
+    return (
+        await session.execute(
+            select(func.count(Job.id)).where(
+                Job.tenant_id == tenant_id,
+                Job.status == JobStatus.FAILED.value,
+                Job.finished_at >= since,
+                Job.finished_at < until,
+            )
+        )
+    ).scalar_one()
 
 
 def _aging(buckets: finance_queries.AgingBuckets, currency: str) -> AgingSummary:

@@ -107,7 +107,25 @@ async def import_statement(
     """Parse, validate and persist one statement (module docstring): cash-equivalent check,
     CSV parse with per-row errors, the balance check, document registration (D-012, doc_number
     NULL — external document), then ONE bulk executemany insert for the lines (PERFORMANCE §2).
-    Caller commits via uow; serves both the inline path and the background job."""
+    Caller commits via uow; serves both the inline path and the background job.
+
+    IDEMPOTENT ON ``import_job_id`` (P0 Task 1): ``core/job_sweeper.py`` re-dispatches an import
+    whose runner died mid-flight, and the job id the router already stamps into the payload is the
+    natural key — no new column. A re-import under the same job returns the statement that job
+    created, instead of a second statement with a duplicate set of lines that a reconciler would
+    have to spot by eye. The INLINE path passes no job id and is unaffected: importing the same
+    CSV twice by hand stays two statements, which is a human decision, not a lost runner."""
+    if import_job_id is not None:
+        already = (
+            await session.execute(
+                select(BankStatement).where(
+                    BankStatement.tenant_id == tenant_id,
+                    BankStatement.import_job_id == import_job_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if already is not None:
+            return already
     await _require_bank_account(session, tenant_id, bank_account_id)
     parsed = parse_statement_csv(csv_text, currency_code)
 

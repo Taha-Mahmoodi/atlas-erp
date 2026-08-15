@@ -18,7 +18,7 @@ sales role sees sales ones, etc. (the ``KPI_PERMISSIONS`` map + the registry's p
 
 from enum import StrEnum
 
-from app.core.rbac import register_permissions
+from app.core.rbac import ADMIN_AUDIT_READ, register_permissions
 from app.modules.finance.constants import (
     FINANCE_AP_READ,
     FINANCE_AR_READ,
@@ -104,6 +104,16 @@ KPI_OPEN_SALES_ORDERS = "open_sales_orders"
 KPI_OPEN_PURCHASE_ORDERS = "open_purchase_orders"
 KPI_OTD_PERCENT = "otd_percent"
 KPI_WIP_VALUE = "wip_value"
+# P0 Task 3 — the operational card, not a financial one. Phase 19 moved ingredient depletion (which
+# posts COGS) onto the job runner, trading a loud failure at the guest's table for a quiet FAILED
+# row. That trade is only honest if a human sees the row, and nobody polls an endpoint they have to
+# remember exists — so the count appears on the dashboard they already open.
+KPI_FAILED_JOBS = "failed_jobs"
+
+# How far back the failed-jobs card looks. The card answers "is something wrong NOW"; a
+# quarter-old failure that was already dealt with would keep it lit forever and it would stop
+# being read. A week covers a full service cycle plus a weekend.
+FAILED_JOB_WINDOW_DAYS = 7
 
 
 # --- THE KPI → SOURCE-PERMISSION GATING MAP (D-058, the role-based contract) ---
@@ -124,4 +134,11 @@ KPI_PERMISSIONS: dict[str, str] = {
     # WIP is the finance WIP-clearing balance (D-048/D-058 — the authoritative open-WIP figure),
     # so it gates on the finance statements read, NOT a manufacturing key.
     KPI_WIP_VALUE: FINANCE_STATEMENTS_READ,
+    # Failed background jobs gate on the AUDIT read rather than a new admin.job.read key: the
+    # audience is identical (the tenant admin looking at what the system did), the audit key is
+    # strictly MORE powerful than a count of failed jobs plus their error text, and a brand-new key
+    # would leave every existing tenant's Administrator role without it — a card nobody can see is
+    # the same as no card. This is the ONE KPI whose source is core rather than a module: jobs are
+    # cross-cutting platform infrastructure owned by no business module (core/jobs_router.py).
+    KPI_FAILED_JOBS: ADMIN_AUDIT_READ,
 }

@@ -38,7 +38,9 @@ and **nothing in Atlas will ever look at it again**. A restart during service si
 
 - **D-003** portable constraints (SQLite tests, PostgreSQL runtime).
 - **D-007** tenancy; the runner already restores tenant context (`core/jobs.py:297-303`) — the
-  sweeper must too, and must add **no** new `system_context()` site beyond the sanctioned ones.
+  sweeper must too. *(Outcome: it needed one new `system_context()` site, for the same reason the
+  runner already has one — an orphan's tenant is unknowable until its row is read. The sanctioned
+  list in `core/tenancy.py` and `docs/architecture.md` was extended to name it, see D-078.)*
 - **D-010** audit actor is restored by the runner; a swept re-run must not attribute work to the
   wrong actor.
 - **D-011** handlers run inside `run_in_uow`; that must remain true on the swept path.
@@ -63,7 +65,7 @@ run twice **before** anything re-dispatches it. This ordering is the whole safet
 **Interfaces:**
 - Produces: each registered handler is idempotent; a shared assertion helper for the tests.
 
-- [ ] **Step 1: Write the failing tests — one per registered handler**
+- [x] **Step 1: Write the failing tests — one per registered handler**
 
 ```python
 async def test_depletion_run_twice_issues_stock_once(db_session, tenant_a, fired_ticket):
@@ -81,11 +83,11 @@ async def test_depletion_run_twice_issues_stock_once(db_session, tenant_a, fired
 Write the equivalent for `count_post_job` and the MRP run job. **Find every handler first** with
 `grep -rn "@register_job" backend/app/` — do not assume the list is the three above.
 
-- [ ] **Step 2: Run to verify they fail.** Expected: at least one handler double-posts.
-- [ ] **Step 3: Add the guard to each handler.** Prefer a natural-key check over a new flag: for
+- [x] **Step 2: Run to verify they fail.** Expected: at least one handler double-posts.
+- [x] **Step 3: Add the guard to each handler.** Prefer a natural-key check over a new flag: for
       depletion, "does this ticket already have issue moves?" is the real question and needs no new
       column. Where a natural key does not exist, say so in the commit rather than inventing state.
-- [ ] **Step 4: Run to verify they pass.** **Step 5: Commit.**
+- [x] **Step 4: Run to verify they pass.** **Step 5: Commit.**
 
 ---
 
@@ -113,7 +115,7 @@ Write the equivalent for `count_post_job` and the MRP run job. **Find every hand
 - The sweep runs **on startup** (catching everything the last shutdown orphaned) and then
   **periodically** on the app lifespan. There is no cron in Atlas and this plan does not add one.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 async def test_a_pending_job_older_than_the_threshold_is_reclaimed(db_session, tenant_a):
@@ -134,12 +136,14 @@ async def test_a_fresh_pending_job_is_left_alone(db_session, tenant_a):
     assert result.reclaimed_pending == 0
 
 
-async def test_a_running_job_is_given_a_longer_grace_than_a_pending_one(db_session, tenant_a):
-    """A legitimately slow MRP run must not be reclaimed out from under itself."""
+async def test_a_stale_running_job_is_failed_for_a_human_never_re_dispatched(db_session, tenant_a):
+    """A legitimately slow MRP run must not be touched at all; past the window the row goes FAILED
+    rather than being re-dispatched alongside a handler that may still be alive."""
 
 
-async def test_a_job_that_keeps_failing_is_abandoned_not_looped(db_session, tenant_a):
-    """Reclaim has a ceiling; past it the row goes FAILED and stays there."""
+async def test_a_job_that_never_ran_is_retried_indefinitely_not_abandoned(db_session, tenant_a):
+    """`attempts` counts sweeps, not executions, so a ceiling on it would kill a job that merely
+    queued behind MAX_CONCURRENT_JOBS. (The plan's original ceiling test was wrong; see D-078(c).)"""
 
 
 async def test_the_sweep_is_bounded_per_tick(db_session, tenant_a):
@@ -156,7 +160,7 @@ async def test_a_reclaimed_job_runs_under_its_own_tenant(db_session, tenant_a, t
     ITS OWN tenant context, never the sweeper's or the previous job's."""
 ```
 
-- [ ] **Step 2: Run to verify they fail.** **Step 3: Implement** the sweeper, the attempt column and
+- [x] **Step 2: Run to verify they fail.** **Step 3: Implement** the sweeper, the attempt column and
       its migration, and the lifespan hook. **Step 4: Verify.** **Step 5: Commit.**
 
 ---
@@ -175,9 +179,13 @@ stale jobs for the tenant with their error text, and a dashboard KPI so it appea
 person already looks. The KPI matters more than the endpoint — nobody polls an endpoint they have
 to remember exists.
 
-- [ ] **Step 1: Write the failing tests** — the list endpoint is permission-gated, tenant-scoped,
-      paginated (D-014), returns the error text, and the KPI counts FAILED-in-window.
-- [ ] **Step 2-5:** fail → implement → pass → commit.
+- [x] **Step 1: Write the failing tests** — the list endpoint is tenant-scoped, paginated
+      (D-014), returns the error text, and the KPI counts FAILED-in-window (and respects `as_of`).
+      *(Outcome: the drill-down `GET /api/v1/jobs` is deliberately NOT permission-gated — it is a
+      pre-existing core endpoint guarded by `get_current_user` only, `core/jobs_router.py`, and
+      changing that is outside this work. The KPI's `admin.audit.read` gate is consistency with
+      the other cards, not a confidentiality boundary; D-078(g) records this.)*
+- [x] **Step 2-5:** fail → implement → pass → commit.
 
 ---
 
@@ -193,9 +201,9 @@ traffic. Add a retention window and purge it on the same sweep as Task 2 — one
 The window must exceed any realistic client retry horizon; state the number and its reasoning in a
 comment, because too short silently breaks replay protection.
 
-- [ ] **Step 1: Write the failing tests** — a key inside the window still replays; one outside is
+- [x] **Step 1: Write the failing tests** — a key inside the window still replays; one outside is
       purged; the purge is bounded per tick; purging never touches another tenant's rows.
-- [ ] **Step 2-5:** fail → implement → pass → commit.
+- [x] **Step 2-5:** fail → implement → pass → commit.
 
 ---
 
@@ -203,21 +211,23 @@ comment, because too short silently breaks replay protection.
 
 **Files:** `DECISIONS.md`, `docs/architecture.md`, `PROGRESS.md`, `docs/research/remaining-work-plan.md`
 
-- [ ] Record the sweeper as a DECISIONS entry: the two thresholds and why they differ, the attempt
+- [x] Record the sweeper as a DECISIONS entry: the two thresholds and why they differ, the attempt
       ceiling, the per-tick budget, and **that handler idempotency is a precondition of reclaim,
       not a nice-to-have**.
-- [ ] Note in the Phase 19 depletion decision that its "bought back with alerting" clause is now
+- [x] Note in the Phase 19 depletion decision that its "bought back with alerting" clause is now
       satisfied, with a pointer.
-- [ ] Tick P0 in the remaining-work plan; log `PROGRESS.md`.
+- [x] Tick P0 in the remaining-work plan; log `PROGRESS.md`.
 
 ---
 
 ## Done when
 
-- [ ] Full suite green; `ruff` clean
-- [ ] Every `@register_job` handler has a re-run test proving it does not double-post
-- [ ] A killed runner's job is reclaimed and completes
-- [ ] A permanently failing job is abandoned, not looped
-- [ ] FAILED jobs are visible without knowing an endpoint exists
-- [ ] The sweep is indexed, bounded per tick, and does not scan the table
-- [ ] A reclaimed job runs under its own tenant, with no new `system_context()` site
+- [x] Full suite green; `ruff` clean
+- [x] Every `@register_job` handler has a re-run test proving it does not double-post
+- [x] A killed runner's job is reclaimed and completes
+- [x] A job that started and never finished is FAILED, not re-dispatched under a possibly-live
+      handler; a job that never STARTED is retried, not abandoned (no attempt ceiling — D-078(c))
+- [x] FAILED jobs are visible without knowing an endpoint exists
+- [x] The sweep is indexed, bounded per tick, and does not scan the table
+- [x] A reclaimed job runs under its own tenant, under the ONE new `system_context()` site this
+      work adds — disclosed in D-078, `core/tenancy.py` and `docs/architecture.md`

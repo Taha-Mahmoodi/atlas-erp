@@ -12,6 +12,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.docflow import DocumentLink
 from app.core.exceptions import NotFoundError
 from app.core.pagination import (
     DEFAULT_LIMIT,
@@ -169,3 +170,35 @@ async def list_cost_layers(
         limit=limit,
         filters=filter_fingerprint(item_id, warehouse_id, include_exhausted),
     )
+
+
+async def items_already_moved_for_document(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    predecessor_document_id: uuid.UUID,
+    link_type: str,
+) -> set[uuid.UUID]:
+    """The item ids a driving document has ALREADY moved through ``link_type`` edges (P0 Task 1).
+
+    The natural idempotency key for a goods movement a background job may re-dispatch, and the
+    reason it is per ITEM rather than per document: one driving document may be moved by SEVERAL
+    jobs over disjoint item sets (a fired restaurant ticket is chunked at
+    ``DEPLETE_MAX_COMPONENTS_PER_JOB``), so a document-level "already moved?" flag would silently
+    skip every chunk after the first and lose most of the movement. Reading the moves themselves
+    needs no new column and no new status.
+
+    ONE query: the document's outgoing links of this type, joined to the moves whose registry
+    entry they point at. Index-served — the doc-link unique constraint leads with
+    ``(tenant_id, predecessor_document_id)`` and a move is unique on ``(tenant_id, document_id)``.
+    """
+    successors = select(DocumentLink.successor_document_id).where(
+        DocumentLink.tenant_id == tenant_id,
+        DocumentLink.predecessor_document_id == predecessor_document_id,
+        DocumentLink.link_type == link_type,
+    )
+    rows = await session.execute(
+        select(StockMove.item_id).where(
+            StockMove.tenant_id == tenant_id, StockMove.document_id.in_(successors)
+        )
+    )
+    return set(rows.scalars().all())
