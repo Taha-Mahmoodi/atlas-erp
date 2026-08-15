@@ -20,11 +20,12 @@ real one. Converting here means every reader, writer and lookup below sees the s
 """
 
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from typing import Annotated
 
-from pydantic import AfterValidator, ConfigDict, Field
+from pydantic import AfterValidator, ConfigDict, Field, model_validator
 
+from app.core.auth import as_utc
 from app.core.schemas import ApiModel
 from app.modules.hospitality.constants import ReservationStatus
 
@@ -37,6 +38,13 @@ def _utc_instant(value: datetime) -> datetime:
 
 
 SlotStart = Annotated[datetime, AfterValidator(_utc_instant)]
+
+# The READ-side twin. aiosqlite round-trips ``DateTime(timezone=True)`` as a NAIVE datetime
+# (``core/auth.as_utc``), so a slot loaded from the database serializes without an offset on SQLite
+# and WITH one on PostgreSQL — the same endpoint answering in two different shapes depending on the
+# engine, which a website parsing instants has no way to survive. Normalising here makes every
+# rendered slot an explicit UTC instant on both.
+StoredSlotStart = Annotated[datetime, AfterValidator(as_utc)]
 
 
 class TableReservationCreate(ApiModel):
@@ -69,7 +77,7 @@ class TableReservationRead(ApiModel):
     reservation_number: str
     status: ReservationStatus
     service_date: date
-    slot_start: datetime
+    slot_start: StoredSlotStart
     party_size: int
     guest_name: str
     guest_contact: str | None = None
@@ -85,7 +93,7 @@ class SlotOfferRead(ApiModel):
     "can we have 19:15 for four", and the answer is already computed against THEIR party size.
     """
 
-    slot_start: datetime
+    slot_start: StoredSlotStart
     bookable: bool
 
 
@@ -102,10 +110,100 @@ class ReservationAvailabilityRead(ApiModel):
     slots: list[SlotOfferRead]
 
 
+class TableReservationAmend(ApiModel):
+    """Move a booking: a bigger party, a different time, or both. Every field is optional and an
+    omitted one is UNCHANGED — a host correcting the party size must not have to restate the slot
+    and risk retyping it wrong."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    party_size: int | None = Field(default=None, gt=0)
+    service_date: date | None = None
+    slot_start: SlotStart | None = None
+
+
+class TableReservationSeat(ApiModel):
+    """Sit the party down. ``table_code`` is the floor's own free text ("T12", "BAR-3") and lands on
+    the check opened for them — Phase 19 already litigated why a table master nothing else
+    references would be config for its own sake, and pacing does not reference tables either."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    table_code: str | None = Field(default=None, max_length=20)
+
+
+class ReservationSettingsWrite(ApiModel):
+    """The property's pacing configuration. A full REPLACEMENT (PUT), not a patch: the seven values
+    are one policy and a manager reasons about them together — a partial update that widened
+    ``max_party`` while leaving ``default_covers_max`` behind is a booking the room cannot seat.
+
+    The 15-minute slot width is deliberately absent: it is a constant, because it is half the
+    meaning of every stored counter row (``constants.SLOT_MINUTES``).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    service_open: time
+    service_close: time
+    default_covers_max: int = Field(ge=0)
+    default_parties_max: int = Field(ge=0)
+    min_party: int = Field(gt=0)
+    max_party: int = Field(gt=0)
+    booking_horizon_days: int = Field(gt=0)
+
+    @model_validator(mode="after")
+    def _party_range_is_sane(self) -> "ReservationSettingsWrite":
+        # Checked here as well as by the CHECK constraint so a typo comes back as a 422 body error
+        # rather than as an IntegrityError (the MenuAvailabilitySet precedent).
+        if self.max_party < self.min_party:
+            raise ValueError("max_party must not be below min_party")
+        return self
+
+
+class ReservationSettingsRead(ReservationSettingsWrite):
+    """What the property is configured to sell — the same seven values, plus the slot width so a
+    client never has to hard-code the grid step it renders against."""
+
+    slot_minutes: int
+
+
+class ServiceSlotCapacityWrite(ApiModel):
+    """A manager's capacity override for ONE slot, identified in the BODY because a slot's identity
+    is the pair ``(service_date, slot_start)`` and a two-segment path would read as a hierarchy that
+    does not exist. ``covers_max = 0`` is how a slot is CLOSED — there is no separate flag, because
+    a closed slot and a full one answer a guest identically."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    service_date: date
+    slot_start: SlotStart
+    covers_max: int = Field(ge=0)
+    parties_max: int = Field(ge=0)
+
+
+class ServiceSlotRead(ApiModel):
+    """One slot's counter as STAFF see it — the numbers the website is deliberately never given,
+    because how full the dining room is, is commercial information."""
+
+    service_date: date
+    slot_start: StoredSlotStart
+    covers_booked: int
+    covers_max: int
+    parties_booked: int
+    parties_max: int
+
+
 __all__ = [
     "ReservationAvailabilityRead",
+    "ReservationSettingsRead",
+    "ReservationSettingsWrite",
+    "ServiceSlotCapacityWrite",
+    "ServiceSlotRead",
     "SlotOfferRead",
     "SlotStart",
+    "StoredSlotStart",
+    "TableReservationAmend",
     "TableReservationCreate",
     "TableReservationRead",
+    "TableReservationSeat",
 ]
