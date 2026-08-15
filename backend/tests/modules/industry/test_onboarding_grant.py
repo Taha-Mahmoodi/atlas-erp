@@ -73,6 +73,17 @@ _CLASSIFIED_KEYS = frozenset(
         "finance.tax.read",
         "hospitality.menu.manage",
         "hospitality.menu.read",
+        # Phase 21. GRANTED to the Owner, not withheld: a reservation book is operational data the
+        # property's owner runs the floor from, the same standing as the CRM customer records and
+        # the HR employee rows the Owner already holds. The withheld set is narrower on purpose —
+        # it is the D-009 masking gate (pay, national id, bank account) plus the platform's own
+        # provisioning key, and guest contact detail is not behind that gate. Note the asymmetry
+        # this preserves: `.read` is the whole night's guest list and stays a STAFF key, while
+        # `.book` is the width a website credential is minted at (D-077), so the Owner holding all
+        # three does not widen what a leaked website key can reach.
+        "hospitality.reservation.book",
+        "hospitality.reservation.manage",
+        "hospitality.reservation.read",
         "hospitality.ticket.manage",
         "hospitality.ticket.read",
         "hospitality.ticket.settle",
