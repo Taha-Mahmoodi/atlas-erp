@@ -28,6 +28,16 @@ from app.modules.hospitality.service.depletion import (
     deplete_ticket_job,
     take_depletion_jobs,
 )
+from app.modules.hospitality.service.pacing import (
+    ResolvedSettings,
+    SlotFullError,
+    book_into_slot,
+    get_settings,
+    override_slot,
+    release_from_slot,
+    require_bookable_slot,
+    set_settings,
+)
 from app.modules.hospitality.service.tickets import (
     add_lines,
     advance_ticket,
@@ -41,10 +51,13 @@ from app.modules.hospitality.service.tickets import (
 __all__ = [
     "ComponentDemand",
     "MenuItemAvailability",
+    "ResolvedSettings",
+    "SlotFullError",
     "add_lines",
     "advance_ticket",
     "aggregate_components",
     "availability_for_items",
+    "book_into_slot",
     "clear_86",
     "create_ticket",
     "decrement_remaining",
@@ -52,10 +65,15 @@ __all__ = [
     "deplete_ticket",
     "deplete_ticket_job",
     "fire_ticket",
+    "get_settings",
     "get_ticket",
     "get_ticket_lines",
+    "override_slot",
+    "release_from_slot",
+    "require_bookable_slot",
     "resolve",
     "set_availability",
+    "set_settings",
     "take_depletion_jobs",
     "settle_ticket",
 ]
