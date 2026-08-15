@@ -261,3 +261,42 @@ Every one of these is a read seam or a core primitive, never a service import (S
     STRUCTURE §4's 400-line cap, as is `hospitality/service/tickets.py` (407). Split-only refactors
     belong in commits of their own (STRUCTURE §8.10) — tracked as tech debt, fixed before the next
     promotion per STRUCTURE §9.
+
+## 7. The staff UI (PLAN 22.2)
+
+`frontend/src/modules/hospitality/` — the first module guide to document its UI, because this
+module's screens carry two limits the API alone does not make visible (the pre-tax total, and the
+one screen in Atlas that refreshes itself).
+
+| Route | Page | Needs |
+|---|---|---|
+| `/hospitality` | module home; tiles are filtered by permission, because a chef holds `menu.*` and a server holds `ticket.*` | any `hospitality.*` |
+| `/hospitality/menu` | the 86 board + the set-availability editor | `menu.read`; the editor and Clear need `menu.manage` |
+| `/hospitality/at-risk` | the advisory coverage list, read-only | `menu.read` |
+| `/hospitality/tickets` · `/tickets/new` · `/tickets/{id}` | checks: list, open, lines, the status flow | `ticket.read`; New/lines/fire/advance need `ticket.manage`; Settle needs `ticket.settle`. Dish NAMES and the price prefill also need `menu.read` — without it the check still opens, with item ids and an empty dish picker |
+| `/hospitality/kitchen` | the kitchen display | `ticket.read`; dragging a card needs `ticket.manage` |
+
+Four things about it are decisions rather than styling:
+
+1. **The kitchen display polls, and it is the only thing in the frontend that does.** Three
+   `useKdsColumn` queries on a 10 s `refetchInterval` with `staleTime: 0` — the global 30 s
+   staleTime (`lib/queryClient.ts`) would otherwise freeze the board between navigations. One query
+   per column because `GET /tickets` takes a single `status`; the three can land a beat apart, and
+   widening the endpoint to a repeated parameter is the fix if that ever shows.
+2. **Every total is labelled pre-tax**, on the list and on the check — §6 limit 3 is a limit a user
+   can see, not only a documented one.
+3. **The availability editor offers EIGHTY_SIXED and LIMITED only.** AVAILABLE is spelled by the
+   absence of a row (`clear_86` deletes), so a third dropdown entry would give "back on the menu"
+   two spellings, one of which leaves a row behind. Clear is the other half.
+4. **Ticket line prices are typed, prefilled from the menu read.** The staff service trusts a
+   caller-supplied `unit_price` by contract, and there is no staff-side price-resolution endpoint —
+   `/sales/price-quote` needs a customer id and a walk-in table has none. The website surface
+   resolves price server-side instead, because that caller is untrusted. That menu read is the one
+   query in the module with `throwOnError: false`: it is a label lookup, not the record the page is
+   for, and a server holding only `ticket.*` must not be handed a full-page 403 for it.
+
+Known UI gaps, recorded not hidden: a kitchen card shows the check, the table, the covers and the
+time since it fired but **no line summary** (that would cost one `GET /tickets/{id}/lines` per card
+per poll); there is **no prep-station filter**, because nothing in Phase 19 stores a station; and
+`available_until` is entered as a date and sent as the end of that day, because the shared
+FormBuilder has no datetime control.

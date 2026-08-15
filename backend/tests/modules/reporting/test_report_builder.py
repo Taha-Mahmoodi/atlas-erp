@@ -267,3 +267,63 @@ async def test_result_is_tenant_scoped(
     assert result_b.row_count == setup_b_orders.confirmed_count + setup_b_orders.draft_count
     # Neither leaks the other's rows: each equals its OWN tenant's seeded population, not the sum.
     assert result_a.row_count == total
+
+
+async def test_result_carries_human_labels_aligned_with_columns(
+    db_session: AsyncSession, rb_setup: ReportBuilderSetup
+) -> None:
+    """#166: a grouped+aggregated run returns ``column_labels`` from the registry, aligned
+    index-for-index with the wire ``columns`` — so the grid and the CSV can both show
+    "Status" / "Sum of Total" instead of "status" / "sum_total_amount".
+
+    ``COUNT(order_number)`` is in here on purpose. The builder lets COUNT target ANY whitelisted
+    column (only SUM/AVG/MIN/MAX need the ``is_aggregatable`` flag) and ``order_number`` carries no
+    such flag, so this row pins both halves of that path at once: the COUNT exemption stays (a
+    regression 400s a shape the UI offers — its aggregation picker lists real columns for `count`,
+    not just "rows (*)") and COUNT-with-a-column keeps its composed label."""
+    result = await _run(
+        db_session,
+        rb_setup.tenant_id,
+        ReportSpec(
+            entity="sales.orders",
+            group_by=["status"],
+            aggregations=[
+                ReportAggregation(func=Aggregation.COUNT),
+                ReportAggregation(column="order_number", func=Aggregation.COUNT),
+                ReportAggregation(column="total_amount", func=Aggregation.SUM),
+            ],
+        ),
+    )
+    assert result.columns == ["status", "count", "count_order_number", "sum_total_amount"]
+    assert result.column_labels == ["Status", "Count", "Count of Order Number", "Sum of Total"]
+
+
+async def test_flat_result_labels_come_from_the_registry(
+    db_session: AsyncSession, rb_setup: ReportBuilderSetup
+) -> None:
+    """#166: a flat report labels each selected column with the registry's display label."""
+    result = await _run(
+        db_session,
+        rb_setup.tenant_id,
+        ReportSpec(entity="sales.orders", columns=["order_number", "total_amount"]),
+    )
+    assert result.columns == ["order_number", "total_amount"]
+    assert result.column_labels == ["Order Number", "Total"]
+
+
+async def test_explicit_alias_is_its_own_label(
+    db_session: AsyncSession, rb_setup: ReportBuilderSetup
+) -> None:
+    """#166: when the caller NAMES an aggregate with ``alias`` that name is the label — the builder
+    does not override a display name the caller chose deliberately."""
+    result = await _run(
+        db_session,
+        rb_setup.tenant_id,
+        ReportSpec(
+            entity="sales.orders",
+            group_by=["status"],
+            aggregations=[ReportAggregation(func=Aggregation.COUNT, alias="Orders")],
+        ),
+    )
+    assert result.columns == ["status", "Orders"]
+    assert result.column_labels == ["Status", "Orders"]

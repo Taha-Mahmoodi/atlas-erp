@@ -49,6 +49,13 @@ const TONE_BY_STATUS: Record<string, StatusTone> = {
   QUALIFIED: "ok",
   WON: "ok",
   INSERT: "ok",
+  // Hospitality. A dish with no override is AVAILABLE — the healthy default. READY is the
+  // kitchen's own lifecycle ending well (the FINISHED precedent), SERVED is DELIVERED one noun
+  // over, and SETTLED is PAID: the check is tendered and terminal.
+  AVAILABLE: "ok",
+  READY: "ok",
+  SERVED: "ok",
+  SETTLED: "ok",
 
   // info — acknowledged, in motion, nothing owed
   SENT: "info",
@@ -62,6 +69,8 @@ const TONE_BY_STATUS: Record<string, StatusTone> = {
   NEW: "info",
   CONTACTED: "info",
   UPDATE: "info",
+  // A fired check the kitchen has received: acknowledged and moving, nothing owed by the floor.
+  SENT_TO_KITCHEN: "info",
 
   // warn — waiting on a person, or partially done
   PENDING_APPROVAL: "warn",
@@ -82,6 +91,10 @@ const TONE_BY_STATUS: Record<string, StatusTone> = {
   ON_LEAVE: "warn",
   // A bank line nobody has reconciled yet is work outstanding, not a failure.
   UNMATCHED: "warn",
+  // Hospitality: a dish on a countdown is still sellable but is running out, and a check being
+  // cooked is IN_PROGRESS under a kitchen's name.
+  LIMITED: "warn",
+  IN_PREP: "warn",
 
   // bad — failed, blocked, or past due
   REJECTED: "bad",
@@ -95,6 +108,8 @@ const TONE_BY_STATUS: Record<string, StatusTone> = {
   TERMINATED: "bad",
   OVERDUE: "bad",
   DELETE: "bad",
+  // 86'd: off the menu. Not "void" — the dish exists and the kitchen wants it back.
+  EIGHTY_SIXED: "bad",
 
   // mute — not yet real, or deliberately void
   DRAFT: "mute",
