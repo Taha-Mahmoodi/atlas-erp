@@ -4,7 +4,9 @@
  * The total is labelled PRE-TAX because it is (docs/modules/hospitality.md §6 limit 3): Phase 19
  * posts no tax and takes no payment, while the hospitality template seeds F&B tax codes — so a
  * screen presenting this number as the amount due would understate it. Saying so is the honest
- * fix until the folio lands; hiding it is not.
+ * fix until the folio lands; hiding it is not — including on the printed check (#211), which is
+ * why `Print` sends this page's own markup through the print stylesheet rather than a second,
+ * prettier rendering of the same numbers that could drift from it.
  */
 
 import { Link, useParams } from "@tanstack/react-router";
@@ -34,9 +36,9 @@ export function TicketDetailPage() {
   const data = ticket.data;
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div className="mx-auto max-w-4xl" data-print-region>
       <header className="mb-6">
-        <p className="text-[12px] text-ink-muted">
+        <p className="text-[12px] text-ink-muted" data-print-hide>
           <Link to="/hospitality/tickets" className="hover:underline">
             Tickets
           </Link>{" "}
@@ -46,12 +48,21 @@ export function TicketDetailPage() {
           <h1 className="text-[22px] font-[650] tracking-[-0.01em] text-ink">
             {data.ticket_number}
           </h1>
-          <TicketStatusFlow ticket={data} onError={setError} />
+          <div className="flex items-center gap-2" data-print-hide>
+            <TicketStatusFlow ticket={data} onError={setError} />
+            <button type="button" onClick={() => window.print()} className="btn-chip">
+              Print
+            </button>
+          </div>
         </div>
       </header>
 
       {error && (
-        <p role="alert" className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger">
+        <p
+          role="alert"
+          data-print-hide
+          className="mt-4 rounded-control bg-danger-tint px-3 py-2 text-xs text-danger"
+        >
           {error}
         </p>
       )}
@@ -93,6 +104,15 @@ export function TicketDetailPage() {
             {formatMoney(data.total_amount, currencyCode)}
           </dd>
         </div>
+        {data.cancelled_at !== null && (
+          <div>
+            <dt className="mono-caps text-ink-muted">Cancelled</dt>
+            <dd className="mt-1.5 text-[13px] text-ink">
+              {formatDateTime(data.cancelled_at)}
+              {data.cancel_reason ? ` — ${data.cancel_reason}` : ""}
+            </dd>
+          </div>
+        )}
         <div>
           <dt className="mono-caps text-ink-muted">Notes</dt>
           <dd className="mt-1.5 text-[13px] text-ink">{data.notes ?? "—"}</dd>

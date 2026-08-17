@@ -3,6 +3,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import {
   addTicketLines,
   advanceTicket,
+  cancelTicket,
   createTicket,
   fireTicket,
   getTicket,
@@ -114,6 +115,15 @@ export function useAdvanceTicket() {
     mutationFn: ({ ticketId, status }: { ticketId: string; status: OrderTicketStatus }) =>
       advanceTicket(ticketId, status),
     onSettled: (_data, _error, { ticketId }) => invalidateTicket(queryClient, ticketId),
+  });
+}
+
+export function useCancelTicket() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ticketId, reason }: { ticketId: string; reason: string }) =>
+      cancelTicket(ticketId, reason),
+    onSuccess: (_data, { ticketId }) => invalidateTicket(queryClient, ticketId),
   });
 }
 

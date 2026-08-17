@@ -77,6 +77,14 @@ class OrderTicketAdvance(ApiModel):
     status: OrderTicketStatus
 
 
+class OrderTicketCancel(ApiModel):
+    """Close an OPEN check that should never have been opened (D-080). The reason is REQUIRED and
+    non-empty: cancelling is the one terminal state a human picks for a reason nothing else on the
+    check records, and "why is this table's check gone" is the question it exists to answer."""
+
+    reason: str = Field(min_length=1, max_length=200)
+
+
 class MenuAvailabilitySet(ApiModel):
     """86 a dish, start a countdown, or time-box either (spec Q2).
 
@@ -158,6 +166,8 @@ class OrderTicketRead(ApiModel):
     guest_count: int | None = None
     fired_at: datetime | None = None
     settled_at: datetime | None = None
+    cancelled_at: datetime | None = None
+    cancel_reason: str | None = None
     total_amount: Decimal
     notes: str | None = None
 
@@ -264,6 +274,7 @@ __all__ = [
     "MenuItemAtRiskRead",
     "MenuItemRead",
     "OrderTicketAdvance",
+    "OrderTicketCancel",
     "OrderTicketCreate",
     "OrderTicketLineCreate",
     "OrderTicketLineRead",

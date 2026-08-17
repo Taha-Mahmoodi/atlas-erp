@@ -382,6 +382,10 @@ EXPECTED_ROUTES = {
     ("POST", "/api/v1/hospitality/tickets/{ticket_id}/fire"),
     ("POST", "/api/v1/hospitality/tickets/{ticket_id}/advance"),
     ("POST", "/api/v1/hospitality/tickets/{ticket_id}/settle"),
+    # Added post-Phase-19 (#206, D-080): closing an OPEN check that should never have been
+    # opened. Not on the exclusion list this test guards — it takes no payment, reverses no
+    # depletion and touches no folio; it only refuses to exist after the fire.
+    ("POST", "/api/v1/hospitality/tickets/{ticket_id}/cancel"),
     ("GET", "/api/v1/hospitality/menu"),
     ("GET", "/api/v1/hospitality/menu/availability"),
     ("POST", "/api/v1/hospitality/orders"),

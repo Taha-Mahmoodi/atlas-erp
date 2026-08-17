@@ -20,7 +20,10 @@ export type OrderTicketStatus =
   | "IN_PREP"
   | "READY"
   | "SERVED"
-  | "SETTLED";
+  | "SETTLED"
+  /** Terminal, reachable only from OPEN (D-080) — a check opened by mistake. Deliberately NOT a
+   * step in `TICKET_FLOW`: see `ticketFlow.ts`. */
+  | "CANCELLED";
 
 // --- Menu availability --------------------------------------------------------
 
@@ -116,6 +119,8 @@ export interface OrderTicket {
   guest_count: number | null;
   fired_at: string | null;
   settled_at: string | null;
+  cancelled_at: string | null;
+  cancel_reason: string | null;
   total_amount: string;
   notes: string | null;
 }

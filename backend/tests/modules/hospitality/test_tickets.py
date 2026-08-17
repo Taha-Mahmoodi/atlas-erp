@@ -363,3 +363,107 @@ async def test_another_tenant_cannot_read_the_ticket(
     ticket_id = await _open_ticket(db_session, tenant_a, [_line(dish_id)])
     with pytest.raises(NotFoundError), tenant_context(tenant_b):
         await tickets.get_ticket(db_session, tenant_b, ticket_id)
+
+
+# --- Cancelling an OPEN check (#206, D-080) ------------------------------------
+
+
+async def test_an_open_check_can_be_cancelled_with_a_reason(
+    db_session: AsyncSession, tenant_a: uuid.UUID, dish_id: uuid.UUID
+) -> None:
+    """A check opened on the wrong table has cooked nothing and moved no money, so it closes —
+    and says why. Without this the floor's live list fills with dead checks it cannot tell from
+    live ones."""
+    ticket_id = await _open_ticket(db_session, tenant_a, [_line(dish_id)])
+
+    await _run(
+        db_session,
+        tenant_a,
+        lambda: tickets.cancel_ticket(db_session, tenant_a, ticket_id, "opened on the wrong table"),
+    )
+
+    ticket = await _read(db_session, tenant_a, ticket_id)
+    assert ticket.status == OrderTicketStatus.CANCELLED
+    assert ticket.cancel_reason == "opened on the wrong table"
+    assert ticket.cancelled_at is not None
+
+
+async def test_a_fired_check_cannot_be_cancelled(
+    db_session: AsyncSession, tenant_a: uuid.UUID, dish_id: uuid.UUID
+) -> None:
+    """The line the cancel stops at: past the fire the ingredients have left the storeroom, so a
+    walk-out is a money correction the folio owns, not a status a server can pick."""
+    ticket_id = await _open_ticket(db_session, tenant_a, [_line(dish_id)])
+    await _run(db_session, tenant_a, lambda: tickets.fire_ticket(db_session, tenant_a, ticket_id))
+
+    with pytest.raises(ConflictError) as excinfo:
+        await _run(
+            db_session,
+            tenant_a,
+            lambda: tickets.cancel_ticket(db_session, tenant_a, ticket_id, "party walked"),
+        )
+
+    assert excinfo.value.code == "hospitality.ticket_not_open"
+    ticket = await _read(db_session, tenant_a, ticket_id)
+    assert ticket.status == OrderTicketStatus.SENT_TO_KITCHEN
+
+
+async def test_a_cancelled_check_is_terminal(
+    db_session: AsyncSession, tenant_a: uuid.UUID, dish_id: uuid.UUID
+) -> None:
+    """CANCELLED is a branch off OPEN, not a step in TICKET_FLOW: nothing may follow it, and it
+    cannot be cancelled twice."""
+    ticket_id = await _open_ticket(db_session, tenant_a, [_line(dish_id)])
+    await _run(
+        db_session,
+        tenant_a,
+        lambda: tickets.cancel_ticket(db_session, tenant_a, ticket_id, "walked"),
+    )
+
+    with pytest.raises(ConflictError):
+        await _run(
+            db_session, tenant_a, lambda: tickets.fire_ticket(db_session, tenant_a, ticket_id)
+        )
+    with pytest.raises(ConflictError):
+        await _run(
+            db_session,
+            tenant_a,
+            lambda: tickets.cancel_ticket(db_session, tenant_a, ticket_id, "again"),
+        )
+
+
+# --- The 86 refusal names the dish (#205) --------------------------------------
+
+
+async def test_the_86_refusal_names_every_offending_dish(
+    db_session: AsyncSession,
+    tenant_a: uuid.UUID,
+    dish_id: uuid.UUID,
+    make_dish: Callable[..., Awaitable[uuid.UUID]],
+) -> None:
+    """A server holding a multi-line check cannot act on "one of these is 86'd" and a UUID. The
+    message names the dishes, and the details carry them for the UI."""
+    second = await make_dish(item_code="DISH-SOUP", name="Onion Soup")
+    third = await make_dish(item_code="DISH-TART", name="Apple Tart")
+    ticket_id = await _open_ticket(
+        db_session, tenant_a, [_line(dish_id), _line(second), _line(third)]
+    )
+    with tenant_context(tenant_a):
+        for item_id, reason in ((second, "no onions"), (third, "no apples")):
+            await availability.set_availability(
+                db_session, tenant_a, item_id, state=AvailabilityState.EIGHTY_SIXED, reason=reason
+            )
+        await db_session.commit()
+
+    with pytest.raises(ValidationFailedError) as excinfo:
+        await _run(
+            db_session, tenant_a, lambda: tickets.fire_ticket(db_session, tenant_a, ticket_id)
+        )
+
+    error = excinfo.value
+    assert error.code == "hospitality.item_unavailable"
+    assert "DISH-SOUP — Onion Soup" in error.message
+    assert "DISH-TART — Apple Tart" in error.message
+    # The available dish is not named, and the raw ids stay for machine callers.
+    assert "DISH-TART" in str(error.details["items"])
+    assert len(error.details["item_ids"]) == 2

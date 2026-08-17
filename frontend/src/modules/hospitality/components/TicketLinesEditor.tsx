@@ -15,13 +15,17 @@
  *
  * The menu read is `hospitality.menu.read`, which a server may not hold — so it degrades to raw
  * item ids and a note rather than taking the whole check down (see `useMenu`'s `throwOnError`).
+ *
+ * The picker offers only what can be SOLD (#208): priced dishes, never the raw ingredients the
+ * unfiltered menu read also returns, and an 86'd dish is disabled with its reason on the option
+ * rather than left selectable until the whole check is refused at fire time.
  */
 
 import { useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
 import { formatMoney, formatQuantity } from "@/lib/format";
-import { useAddTicketLines, useMenu } from "@/modules/hospitality/hooks";
+import { useAddTicketLines, useAvailabilityBoard, useMenu } from "@/modules/hospitality/hooks";
 import type { OrderTicketLine } from "@/modules/hospitality/types";
 
 const CONTROL =
@@ -40,6 +44,7 @@ export function TicketLinesEditor({
   editable: boolean;
 }) {
   const menu = useMenu();
+  const board = useAvailabilityBoard();
   const addLines = useAddTicketLines(ticketId);
   const [itemId, setItemId] = useState("");
   const [quantity, setQuantity] = useState("1");
@@ -56,6 +61,25 @@ export function TicketLinesEditor({
   const pickItem = (id: string) => {
     setItemId(id);
     setUnitPrice(menu.data?.items.find((entry) => entry.item_id === id)?.price ?? "");
+  };
+
+  /** Only what a guest can actually be sold. `GET /menu` unfiltered returns every ACTIVE item in
+   * the tenant — raw ingredients included, which is honest for the website read and useless on a
+   * POS picker (#208) — and a dish with no price cannot be ordered without inventing one. */
+  const sellable = (menu.data?.items ?? []).filter((item) => item.price !== null);
+
+  /** The 86 board keyed by item, so a dish that is off is DISABLED here rather than discovered at
+   * fire time with the whole check refused. Only overridden items are on the board; everything
+   * absent is available. */
+  const availability = new Map(
+    (board.data?.pages ?? []).flatMap((page) => page.items).map((row) => [row.item_id, row]),
+  );
+
+  const optionLabel = (itemId: string, label: string) => {
+    const row = availability.get(itemId);
+    if (row?.state === "EIGHTY_SIXED") return `${label} — 86'd${row.reason ? `: ${row.reason}` : ""}`;
+    if (row?.state === "LIMITED") return `${label} — ${formatQuantity(row.remaining_qty ?? "0")} left`;
+    return label;
   };
 
   const add = async () => {
@@ -95,7 +119,7 @@ export function TicketLinesEditor({
         </p>
       )}
       {menu.isError && (
-        <p className="mb-3 text-xs text-ink-muted">
+        <p data-print-hide className="mb-3 text-xs text-ink-muted">
           Dishes show as ids: this account cannot read the menu (hospitality.menu.read).
         </p>
       )}
@@ -136,7 +160,10 @@ export function TicketLinesEditor({
       </table>
 
       {editable && (
-        <div className="mt-4 grid grid-cols-2 items-end gap-3 rounded-card border border-line bg-panel p-3 sm:grid-cols-12">
+        <div
+          data-print-hide
+          className="mt-4 grid grid-cols-2 items-end gap-3 rounded-card border border-line bg-panel p-3 sm:grid-cols-12"
+        >
           <div className="sm:col-span-1">
             <label htmlFor="line-seat" className="mb-1 block text-xs font-medium text-ink-muted">
               Seat
@@ -161,9 +188,13 @@ export function TicketLinesEditor({
               className={CONTROL}
             >
               <option value="">Select…</option>
-              {(menu.data?.items ?? []).map((item) => (
-                <option key={item.item_id} value={item.item_id}>
-                  {item.item_code} — {item.name}
+              {sellable.map((item) => (
+                <option
+                  key={item.item_id}
+                  value={item.item_id}
+                  disabled={availability.get(item.item_id)?.state === "EIGHTY_SIXED"}
+                >
+                  {optionLabel(item.item_id, `${item.item_code} — ${item.name}`)}
                 </option>
               ))}
             </select>
