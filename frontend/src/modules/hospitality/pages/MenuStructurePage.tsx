@@ -16,7 +16,7 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
-import { useItems } from "@/modules/inventory/hooks";
+import { useItemCategories, useItems } from "@/modules/inventory/hooks";
 import { MenuSectionTree } from "@/modules/hospitality/components/MenuSectionTree";
 import { MenuDishRow } from "@/modules/hospitality/components/MenuDishRow";
 import {
@@ -29,7 +29,12 @@ export function MenuStructurePage() {
   const sections = useMenuSections();
   const placements = useMenuPlacements();
   const tags = useMenuTags();
-  const items = useItems();
+  const categories = useItemCategories();
+  // The table is every inventory item, ingredients included — a menu page that hid them would be
+  // guessing which categories a property sells from. The category filter is the honest way to cut
+  // the list down, because the property already told Atlas which category its dishes are in.
+  const [categoryId, setCategoryId] = useState("");
+  const items = useItems(categoryId ? { category_id: categoryId } : {});
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,9 +78,26 @@ export function MenuStructurePage() {
         />
 
         <div>
-          <h2 className="mb-2 mono-caps text-ink-muted">
-            Dishes{selectedSection !== null && " in this section"}
-          </h2>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="mono-caps text-ink-muted">
+              Dishes{selectedSection !== null && " in this section"}
+            </h2>
+            <label className="flex items-center gap-2 text-[12px] text-ink-muted">
+              Category
+              <select
+                value={categoryId}
+                onChange={(event) => setCategoryId(event.target.value)}
+                className="rounded-control border border-line bg-surface px-2 py-1 text-[13px] text-ink"
+              >
+                <option value="">All items</option>
+                {(categories.data?.pages.flatMap((page) => page.items) ?? []).map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.code} — {category.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr className="border-b border-line text-left mono-caps text-ink-muted">
