@@ -39,3 +39,6 @@ frontend/dist/
 
 # Third-party reference/mood-board images collected during design runs — not ours to publish
 runs/*/references/
+
+# Local agent scratch (worktrees, session state) — never part of the build.
+.claude/

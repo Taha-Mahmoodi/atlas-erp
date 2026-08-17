@@ -77,11 +77,16 @@ so filtered reads seek rather than scan.
 
 ### Number-sequence viewer (read-only)
 
-`GET /number-sequences` — guarded by `admin.numbering.read`. Lists the tenant's `NumberSequence` rows
-(name, prefix, padding, `next_value`, `year_reset`, `current_year`), keyset-paginated by name.
+`GET /number-sequences` — guarded by `admin.numbering.read`. Lists the tenant's `NumberSequence`
+config rows (name, prefix, padding, `year_reset`), keyset-paginated by name, each carrying its
+`counters` — one `{year, next_value}` per year the tenant has actually claimed in, newest first
+(D-079). Two statements for the whole page: the sequences, then their counters batched.
+
+Showing every year rather than one "current" position is deliberate: a stray old year sitting next
+to the live one is how a mis-dated document becomes visible (#209).
 
 **Read-only by design (ponytail):** there is deliberately **no** reset/adjust-current-value write.
-Mutating `next_value` out of band would open a gap (or a duplicate) in the gapless numbering D-012
+Mutating a counter out of band would open a gap (or a duplicate) in the gapless numbering D-012
 guarantees, so exposing it is a foot-gun with no v1 need (YAGNI). A guarded, audited adjust endpoint
 can be added later if a real correction workflow demands it.
 

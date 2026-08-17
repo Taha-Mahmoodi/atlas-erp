@@ -24,6 +24,7 @@ from datetime import date
 
 import sqlalchemy as sa
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -38,15 +39,14 @@ from app.core.models import (
 
 
 class NumberSequence(UuidPKMixin, TenantMixin, TimestampMixin, Base):
-    """Per-tenant gapless counter for one document kind (D-012).
+    """Per-tenant CONFIGURATION for one document kind's numbering (D-012).
 
     ``name`` is the namespaced sequence key (e.g. ``'finance.invoice'``); a claim formats
-    ``{prefix}-{year?}-{padded next_value}`` (e.g. ``INV-2026-00001``). When ``year_reset``
-    is set the running number restarts at 1 each calendar year and the year segment is
-    rendered; ``current_year`` records which year the counter currently belongs to so the
-    first claim of a new year resets it on demand (no rollover job, per D-012). Not
-    AuditMixin: sequence rows are infrastructure counters mutated on every claim, not
-    business state — auditing every increment would be noise (documented exclusion)."""
+    ``{prefix}-{year?}-{padded value}`` (e.g. ``INV-2026-00001``). The running counters live
+    in :class:`NumberSequenceCounter`, one row per year — see that class for why the year is
+    part of the counter's identity rather than a stamp on this row. Not AuditMixin: sequence
+    rows are infrastructure, not business state — auditing every increment would be noise
+    (documented exclusion)."""
 
     __tablename__ = "core_number_sequences"
     __table_args__ = (
@@ -54,7 +54,8 @@ class NumberSequence(UuidPKMixin, TenantMixin, TimestampMixin, Base):
         # column 0 (tenant_id) only and would collide with tenant_unique() below.
         sa.UniqueConstraint("tenant_id", "name", name="uq_core_number_sequences_tenant_id_name"),
         # UNIQUE(tenant_id, id) so other tenant-scoped tables could reference a sequence via
-        # the composite-FK backstop if ever needed (D-007 item 4).
+        # the composite-FK backstop if ever needed (D-007 item 4) — the counter table below
+        # does exactly that.
         sa.UniqueConstraint("tenant_id", "id", name="uq_core_number_sequences_tenant_id"),
         tenant_fk("adm_tenants"),
     )
@@ -62,16 +63,60 @@ class NumberSequence(UuidPKMixin, TenantMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(sa.String(100), nullable=False)
     prefix: Mapped[str] = mapped_column(sa.String(20), nullable=False)
     padding: Mapped[int] = mapped_column(sa.Integer, nullable=False)
-    # Next number to hand out. The atomic claim does next_value = next_value + 1 RETURNING
-    # the post-increment value, so the FIRST claim of a sequence at next_value=1 returns 1.
-    next_value: Mapped[int] = mapped_column(
-        sa.Integer, nullable=False, default=1, server_default=sa.text("1")
-    )
     year_reset: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, default=False, server_default=sa.false()
     )
-    # The year the running counter belongs to (NULL when year_reset is off).
-    current_year: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+
+
+class NumberSequenceCounter(UuidPKMixin, TenantMixin, TimestampMixin, Base):
+    """The running counter for one sequence in one year (D-012, issue #209).
+
+    **The year is part of the counter's identity, not a stamp on the sequence.** The original
+    shape kept one counter with a ``current_year`` and reset it whenever a claim's year differed
+    from the stored one — which meant a document dated in a PAST year (entering December's paper
+    invoice in January, a backdated restaurant check) reset the live counter to 1 and stamped it
+    with the old year. Every later document in the real year then re-claimed a number that already
+    existed and died on its table's unique index, with no in-app recovery. Refusing past-dated
+    claims instead was rejected: backdating across a year boundary is ordinary, sanctioned
+    accounting work, and the year segment exists precisely so each year carries its own series.
+
+    So each year gets its own gapless counter, created on first claim (no rollover job, per D-012),
+    and a claim can never disturb another year's numbers. ``year`` is 0 — never NULL — for a
+    sequence that does not year-reset, so the unique constraint below stays meaningful on both
+    dialects (NULLs compare distinct in a UNIQUE index, which would let duplicate counters exist).
+    """
+
+    __tablename__ = "core_number_sequence_counters"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "tenant_id",
+            "sequence_id",
+            "year",
+            name="uq_core_number_sequence_counters_tenant_sequence_year",
+        ),
+        tenant_fk("adm_tenants"),
+        # Composite FK (D-007 item 4): a counter can only ever point at a sequence in its own
+        # tenant, enforced by the database rather than by the query author.
+        sa.ForeignKeyConstraint(
+            ["tenant_id", "sequence_id"],
+            ["core_number_sequences.tenant_id", "core_number_sequences.id"],
+            name="fk_core_number_sequence_counters_sequence",
+        ),
+    )
+
+    sequence_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, nullable=False)
+    # 0 for a sequence that does not year-reset; the calendar year otherwise.
+    year: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    # Next number to hand out. The atomic claim does next_value = next_value + 1 RETURNING
+    # the post-increment value, so the FIRST claim of a counter at next_value=1 returns 1.
+    next_value: Mapped[int] = mapped_column(
+        sa.Integer, nullable=False, default=1, server_default=sa.text("1")
+    )
+
+
+# The counter bucket for a sequence that does not year-reset. A real year, never NULL, so the
+# uniqueness of (tenant, sequence, year) holds on every dialect (see NumberSequenceCounter).
+_NO_YEAR = 0
 
 
 def _format_number(prefix: str, padding: int, value: int, year: int | None) -> str:
@@ -92,8 +137,14 @@ async def ensure_sequence(
     year_reset: bool,
 ) -> NumberSequence:
     """Idempotent creator for provisioning/seed (D-012: year rollover and sequence setup
-    need no job — the row is created on demand). Returns the existing row unchanged if the
-    (tenant, name) sequence already exists, otherwise inserts it at next_value=1.
+    need no job — rows are created on demand). Returns the existing row unchanged if the
+    (tenant, name) sequence already exists, otherwise inserts the CONFIG row plus the counter
+    for the CURRENT year.
+
+    Opening the current year's counter here is a cost optimisation, not a rule: any year's
+    counter is created on demand by its first claim (see :class:`NumberSequenceCounter`), but
+    the overwhelmingly common case is documents dated in the year the tenant was provisioned,
+    and having that row already there keeps the steady-state claim at exactly ONE statement.
 
     A Core insert is used (not an ORM add) so the tenant_id is set explicitly and the row
     is not subject to ORM tenant stamping — consistent with the D-007 sanction that core/
@@ -109,18 +160,22 @@ async def ensure_sequence(
     if existing is not None:
         return existing
 
-    current_year = date.today().year if year_reset else None
+    sequence_id = uuid.uuid4()
     await session.execute(
         sa.insert(NumberSequence.__table__).values(
-            id=uuid.uuid4(),
+            id=sequence_id,
             tenant_id=tenant_id,
             name=name,
             prefix=prefix,
             padding=padding,
-            next_value=1,
             year_reset=year_reset,
-            current_year=current_year,
         )
+    )
+    await _create_counter(
+        session,
+        tenant_id,
+        sequence_id,
+        date.today().year if year_reset else _NO_YEAR,
     )
     return (
         await session.execute(
@@ -144,15 +199,17 @@ async def claim_number(
     next committed claim reuses it (gaplessness for committed documents).
 
     Mechanism — one portable atomic statement per claim:
-    ``UPDATE core_number_sequences SET next_value = next_value + 1
-      WHERE tenant_id=:t AND name=:n RETURNING next_value`` — the RETURNING value is the
-    post-increment counter; the row lock the UPDATE takes serializes concurrent claimers so
-    two claims can never read the same number (verified on aiosqlite >= 3.35 and Postgres).
+    ``UPDATE core_number_sequence_counters SET next_value = next_value + 1
+      WHERE tenant_id=:t AND sequence_id=:s AND year=:y RETURNING next_value`` — the RETURNING
+    value is the post-increment counter; the row lock the UPDATE takes serializes concurrent
+    claimers so two claims can never read the same number (verified on aiosqlite >= 3.35 and
+    Postgres).
 
-    Year reset (when ``year_reset``): if ``on_date.year`` differs from the stored
-    ``current_year``, the counter is reset to 1 for the new year FIRST (a guarded UPDATE
-    that only fires while current_year is still the old value, so a concurrent claimer that
-    reset it already cannot double-reset), then the normal atomic increment claims 1.
+    ``on_date`` selects WHICH counter, and that is the whole year-reset rule: each year owns an
+    independent counter, created on its first claim. A backdated document therefore numbers
+    correctly in its own year and cannot disturb the current year's series — the failure mode
+    issue #209 documents, where a past-dated claim reset the live counter and every subsequent
+    document collided on its table's unique index.
 
     A Core UPDATE is used (bypasses the ORM tenant filter by design — core/ numbering is a
     D-007 sanctioned raw-SQL site with explicit tenant_id)."""
@@ -169,35 +226,70 @@ async def claim_number(
             code="core.number_sequence_missing",
         )
 
-    table = NumberSequence.__table__
-    claim_year: int | None = None
-    if sequence.year_reset:
-        claim_year = on_date.year
-        if sequence.current_year != claim_year:
-            # Reset to 1 for the new year, guarded on the OLD current_year so a racing
-            # claimer that already rolled the year over does not reset a second time.
-            await session.execute(
-                sa.update(table)
-                .where(
-                    table.c.tenant_id == tenant_id,
-                    table.c.name == sequence_name,
-                    table.c.current_year.is_not_distinct_from(sequence.current_year),
-                )
-                .values(next_value=1, current_year=claim_year)
+    claim_year: int | None = on_date.year if sequence.year_reset else None
+    bucket = claim_year if claim_year is not None else _NO_YEAR
+
+    # ONE statement in the steady state: increment optimistically and only fall back to creating
+    # the counter when the UPDATE matched nothing, which happens exactly once per year per
+    # sequence. Checking existence first would have cost every claim an extra SELECT forever to
+    # serve a case that arises once a year (it broke the depreciation run's query budget).
+    claimed_value = await _increment(session, tenant_id, sequence.id, bucket)
+    if claimed_value is None:
+        await _create_counter(session, tenant_id, sequence.id, bucket)
+        claimed_value = await _increment(session, tenant_id, sequence.id, bucket)
+    if claimed_value is None:  # pragma: no cover — the row was just created or already existed
+        raise NotFoundError(
+            message=f"Number sequence '{sequence_name}' lost its counter mid-claim",
+            code="core.number_sequence_missing",
+        )
+
+    return _format_number(sequence.prefix, sequence.padding, claimed_value, claim_year)
+
+
+async def _increment(
+    session: AsyncSession, tenant_id: uuid.UUID, sequence_id: uuid.UUID, year: int
+) -> int | None:
+    """The atomic claim: ``UPDATE ... SET next_value = next_value + 1 RETURNING next_value``,
+    returning the value claimed (the pre-increment counter), or None when this (sequence, year)
+    has no counter row yet. The row lock the UPDATE takes is what serializes concurrent claimers,
+    exactly as before — the counter simply lives in its own table now."""
+    counters = NumberSequenceCounter.__table__
+    row = (
+        await session.execute(
+            sa.update(counters)
+            .where(
+                counters.c.tenant_id == tenant_id,
+                counters.c.sequence_id == sequence_id,
+                counters.c.year == year,
             )
+            .values(next_value=counters.c.next_value + 1)
+            .returning(counters.c.next_value)
+        )
+    ).first()
+    return None if row is None else row[0] - 1
 
-    result = await session.execute(
-        sa.update(table)
-        .where(table.c.tenant_id == tenant_id, table.c.name == sequence_name)
-        .values(next_value=table.c.next_value + 1)
-        .returning(table.c.next_value)
-    )
-    next_after = result.scalar_one()
-    claimed_value = next_after - 1
 
-    # The Core UPDATE changed the row out from under the loaded ORM object; expire it so its
-    # attributes reload from the DB on next access rather than being marked dirty (which
-    # would trigger a redundant ORM UPDATE on the next flush).
-    formatted = _format_number(sequence.prefix, sequence.padding, claimed_value, claim_year)
-    session.expire(sequence)
-    return formatted
+async def _create_counter(
+    session: AsyncSession, tenant_id: uuid.UUID, sequence_id: uuid.UUID, year: int
+) -> None:
+    """Open this year's counter, without ever losing a race.
+
+    A plain INSERT inside a SAVEPOINT rather than an upsert: ``ON CONFLICT`` spells differently on
+    Postgres and SQLite and this module stays dialect-portable (D-012). The savepoint matters —
+    on Postgres a raw IntegrityError poisons the whole transaction, and the caller's business
+    writes are in it. The loser of a race rolls back only the nested block and re-runs the atomic
+    increment against the winner's row.
+    """
+    try:
+        async with session.begin_nested():
+            await session.execute(
+                sa.insert(NumberSequenceCounter.__table__).values(
+                    id=uuid.uuid4(),
+                    tenant_id=tenant_id,
+                    sequence_id=sequence_id,
+                    year=year,
+                    next_value=1,
+                )
+            )
+    except IntegrityError:
+        pass  # a concurrent claimer created it first; its row is the one we increment

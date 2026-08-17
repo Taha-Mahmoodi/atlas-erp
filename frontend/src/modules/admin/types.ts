@@ -66,14 +66,20 @@ export interface AuditLog {
 
 // --- Number sequences (read-only viewer) ----------------------------------------
 
+export interface NumberSequenceCounter {
+  /** null for a sequence that does not year-reset. */
+  year: number | null;
+  next_value: number;
+}
+
 export interface NumberSequence {
   id: string;
   name: string;
   prefix: string;
   padding: number;
-  next_value: number;
   year_reset: boolean;
-  current_year: number | null;
+  /** One running counter per year the tenant has claimed in, newest year first. */
+  counters: NumberSequenceCounter[];
 }
 
 // --- Onboarding wizard (industry router, PLAN 14.2) -----------------------------
