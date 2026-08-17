@@ -18,6 +18,7 @@ from app.core.security_router import router as security_router
 from app.modules.admin.router import router as admin_router
 from app.modules.crm.router import router as crm_router
 from app.modules.finance.router import router as finance_router
+from app.modules.hospitality.menu_router import router as hospitality_menu_router
 from app.modules.hospitality.reservation_router import (
     router as hospitality_reservation_router,
 )
@@ -131,6 +132,12 @@ def mount_routers(app: FastAPI) -> None:
     # so a website route can never inherit a staff route's guard by accident. Mounted AFTER the
     # staff router, which owns the more specific /menu/{item_id}/availability and /menu/at-risk.
     app.include_router(hospitality_website_router)
+    # The property SETTING UP its menu (#212): the section tree, a dish's placement in it and the
+    # tags it carries. A third router on the same prefix for the third audience — a manager
+    # arranging the menu, not the floor mid-service and not a machine. Mounted after both, so the
+    # more specific /menu/{item_id}/availability and /menu/at-risk keep their routes; its own
+    # /menu/sections and /menu/tags cannot be shadowed because neither of those is a UUID.
+    app.include_router(hospitality_menu_router)
     # Phase 21's reservation surface, sibling router files for the same reason ap_router.py is one
     # (D-030/D-031): a second document family in a module whose router.py and website_router.py are
     # already near the size cap. Split staff/website by PRINCIPAL exactly as the two above are. The
