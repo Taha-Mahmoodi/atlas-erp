@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { isNextStatus, nextTicketStatus } from "@/modules/hospitality/components/ticketFlow";
+import {
+  canCancelTicket,
+  isNextStatus,
+  nextTicketStatus,
+} from "@/modules/hospitality/components/ticketFlow";
 
 describe("ticketFlow", () => {
   it("offers exactly one next state, and nothing after SETTLED", () => {
@@ -28,5 +32,21 @@ describe("ticketFlow", () => {
     expect(isNextStatus("SENT_TO_KITCHEN", "IN_PREP")).toBe(true);
     expect(isNextStatus("IN_PREP", "READY")).toBe(true);
     expect(isNextStatus("READY", "SERVED")).toBe(true);
+  });
+});
+
+describe("cancellation (#206, D-080)", () => {
+  it("offers cancel only while the check is OPEN", () => {
+    expect(canCancelTicket("OPEN")).toBe(true);
+    for (const status of ["SENT_TO_KITCHEN", "IN_PREP", "READY", "SERVED", "SETTLED"] as const) {
+      expect(canCancelTicket(status)).toBe(false);
+    }
+  });
+
+  it("offers nothing after a check is cancelled", () => {
+    // CANCELLED is not in TICKET_FLOW, so indexOf returns -1; without the guard the +1 lands on
+    // TICKET_FLOW[0] and the UI would offer to fire a cancelled check.
+    expect(nextTicketStatus("CANCELLED")).toBeNull();
+    expect(canCancelTicket("CANCELLED")).toBe(false);
   });
 });

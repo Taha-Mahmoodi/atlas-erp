@@ -274,3 +274,45 @@ body {
     animation-duration: 0.01ms !important;
   }
 }
+
+/* ── Print ───────────────────────────────────────────────────────────────────────────── */
+
+/* Print the DOCUMENT, not a screenshot of the app. A restaurant needs paper in two places — the
+   guest's check and the kitchen's chit (#211) — and the default print of any screen here is the
+   sidebar, the nav and the buttons. Any page can opt in by marking its printable subtree
+   `data-print-region` and anything inside it that is screen-only `data-print-hide`.
+
+   The visibility (rather than display) trick is deliberate: `display: none` on an ancestor would
+   take the region down with it, so everything is hidden and the region is made visible again and
+   lifted to the top of the sheet. */
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  [data-print-region],
+  [data-print-region] * {
+    visibility: visible !important;
+  }
+  [data-print-region] {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    background: #fff;
+    color: #000;
+    box-shadow: none;
+  }
+  [data-print-hide] {
+    display: none !important;
+  }
+  /* Cards and rules carry screen chrome that wastes toner and reads as noise on paper. */
+  [data-print-region] .shadow-card,
+  [data-print-region] [class*="rounded-card"] {
+    box-shadow: none !important;
+    border-color: #999 !important;
+    background: #fff !important;
+  }
+}

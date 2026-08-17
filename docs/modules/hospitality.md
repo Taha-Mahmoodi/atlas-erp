@@ -92,6 +92,8 @@ ships no menu-membership entity; `limit` bounds the response, not the scan.
 ```
 OPEN ──fire──> SENT_TO_KITCHEN ──> IN_PREP ──> READY ──> SERVED ──> SETTLED
  │                    │                                              │
+ └──cancel──> CANCELLED (terminal; OPEN only, reason required — D-080)
+ │                    │
  │ lines may be       │ event RestaurantOrderFired                   │ event RestaurantOrderSettled
  │ added ONLY here    │   └─> depletion job(s) submitted             │   (no subscriber until 20.6)
  │                    │        └─> TicketIngredientsConsumed
@@ -112,7 +114,12 @@ skip is revenue with no depletion. The cost is that a counter-service property t
 - Tickets carry **no `currency_code`**: every check is in the tenant's functional currency (D-019),
   the ticket trades no FX and posts no journal of its own. The website order response labels the
   currency it resolved.
-- There is **no VOID/CANCELLED**: a comp or a walk-out is a money correction the Phase 20 folio owns.
+- **`CANCELLED` is reachable only from OPEN** (D-080, #206), with a required reason. A check opened
+  on the wrong table has cooked nothing and moved no money, so closing it costs nothing — while
+  leaving it OPEN forever is what makes the floor's live list unreadable. It is deliberately NOT a
+  step in `TICKET_FLOW`: it is a branch, so the "index + 1" arithmetic the kanban and the status
+  button share is untouched and nothing may follow it. Past the fire there is still **no void**: a
+  comp or a walk-out on a cooked check is a money correction the Phase 20 folio owns.
 
 Firing an 8-line ticket costs **10 statements**, and the count does not grow with the line count or
 with countdown lines (`tests/perf/test_write_budgets.py`, `FIRED_TICKET_CEILING = 14`). It rises by
@@ -189,6 +196,7 @@ for the whole ticket), because a ticket has no warehouse concept; bin-level spli
 | POST | `/tickets/{id}/lines` | `hospitality.ticket.manage` | OPEN only (`hospitality.ticket_not_open`) |
 | POST | `/tickets/{id}/fire` | `hospitality.ticket.manage` | **idempotent**; refuses an 86'd dish; burns countdowns; submits depletion |
 | POST | `/tickets/{id}/advance` | `hospitality.ticket.manage` | IN_PREP / READY / SERVED only |
+| POST | `/tickets/{id}/cancel` | `hospitality.ticket.manage` | OPEN only, `reason` required. Not `.settle`: nothing was cooked and no money moved |
 | POST | `/tickets/{id}/settle` | `hospitality.ticket.settle` | its own key: settlement is the money moment |
 
 `settle` is deliberately **not** idempotency-keyed — it creates no document, and the strictly
@@ -205,11 +213,11 @@ client rules are in [docs/api.md](../api.md#the-property-website-contract).
 |---|---|---|
 | `hospitality.ticket_not_found` | 404 | unknown ticket in this tenant |
 | `hospitality.ticket_transition_invalid` | 409 | not the next state in `TICKET_FLOW` |
-| `hospitality.ticket_not_open` | 409 | adding lines after the ticket fired |
+| `hospitality.ticket_not_open` | 409 | adding lines, or cancelling, after the ticket fired |
 | `hospitality.ticket_empty` | 422 | firing a ticket with no lines |
 | `hospitality.no_lines` | 422 | an empty `lines` body |
 | `hospitality.status_not_advanceable` | 422 | `/advance` asked for fire or settle |
-| `hospitality.item_unavailable` | 422 | an 86'd dish, or a countdown burn larger than the count. `details.item_ids` |
+| `hospitality.item_unavailable` | 422 | an 86'd dish, or a countdown burn larger than the count. `details.item_ids` plus `details.items`, the dish names the message also carries (#205) |
 | `hospitality.item_not_found` | 422 | an item id that is not in this tenant. `details.item_ids` |
 | `hospitality.item_not_priced` | 422 | no active GENERAL price list prices it today, or its only price is in another currency. `details.item_ids` |
 | `hospitality.countdown_required` | 422 | `LIMITED` without a positive `remaining_qty` |

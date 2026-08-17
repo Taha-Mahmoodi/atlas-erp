@@ -311,16 +311,29 @@ async def fire_ticket(
     )
     unavailable = sorted(
         {
-            str(line.item_id)
+            line.item_id
             for line in lines
             if resolved[line.item_id].state == AvailabilityState.EIGHTY_SIXED
-        }
+        },
+        key=str,
     )
     if unavailable:
+        # NAME the dishes (#205). A server holding a six-line check cannot act on "one of these is
+        # 86'd" plus six UUIDs, and the label read costs one query on a path that is already
+        # refusing — never on the path that succeeds.
+        labels = await inventory_queries.item_labels(session, tenant_id, unavailable)
+        named = [labels.get(item_id, str(item_id)) for item_id in unavailable]
         raise ValidationFailedError(
-            message="An ordered item is 86'd and cannot be sent to the kitchen",
+            message=(
+                f"{'This dish is' if len(named) == 1 else 'These dishes are'} 86'd and cannot be "
+                f"sent to the kitchen: {', '.join(named)}"
+            ),
             code="hospitality.item_unavailable",
-            details={"ticket_id": str(ticket_id), "item_ids": unavailable},
+            details={
+                "ticket_id": str(ticket_id),
+                "item_ids": [str(item_id) for item_id in unavailable],
+                "items": named,
+            },
         )
 
     burns: dict[uuid.UUID, Decimal] = {}
@@ -396,8 +409,38 @@ async def settle_ticket(
     return ticket
 
 
+async def cancel_ticket(
+    session: AsyncSession, tenant_id: uuid.UUID, ticket_id: uuid.UUID, reason: str
+) -> OrderTicket:
+    """Close an OPEN check that should never have been opened (terminal, D-080).
+
+    The ONE transition that is not a step along ``TICKET_FLOW``, and the only state change with a
+    required reason: a check opened on the wrong table or for a party that walked has cooked
+    nothing and moved no money, so closing it costs nothing — while leaving it OPEN forever makes
+    the floor's live list unreadable.
+
+    Refused after firing, with the SAME code ``add_lines`` uses, because it is the same rule: past
+    that point the ingredients have left the storeroom, and a comp or a walk-out on a fired check
+    is a money correction the Phase 20 folio owns rather than a status a server can pick. Publishes
+    nothing — there is no effect to react to.
+    """
+    ticket = await get_ticket(session, tenant_id, ticket_id)
+    current = OrderTicketStatus(ticket.status)
+    if current is not OrderTicketStatus.OPEN:
+        raise ConflictError(
+            message="Only an OPEN check can be cancelled; a fired check is a folio correction",
+            code="hospitality.ticket_not_open",
+            details={"ticket_id": str(ticket_id), "status": current.value},
+        )
+    ticket.cancelled_at = utcnow()
+    ticket.cancel_reason = reason
+    await _apply_transition(session, tenant_id, ticket, OrderTicketStatus.CANCELLED)
+    return ticket
+
+
 __all__ = [
     "add_lines",
+    "cancel_ticket",
     "advance_ticket",
     "create_ticket",
     "fire_ticket",

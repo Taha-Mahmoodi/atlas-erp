@@ -119,3 +119,9 @@ export function advanceTicket(
 export function settleTicket(ticketId: string): Promise<OrderTicket> {
   return api.post<OrderTicket>(`/hospitality/tickets/${ticketId}/settle`);
 }
+
+/** Close an OPEN check that should never have been opened (D-080). No idempotency key: the
+ * terminal state refuses a second attempt on its own, exactly as settle does. */
+export function cancelTicket(ticketId: string, reason: string): Promise<OrderTicket> {
+  return api.post<OrderTicket>(`/hospitality/tickets/${ticketId}/cancel`, { reason });
+}

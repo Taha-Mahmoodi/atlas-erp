@@ -58,6 +58,7 @@ from app.modules.hospitality.schemas import (
     MenuAvailabilitySet,
     MenuItemAtRiskRead,
     OrderTicketAdvance,
+    OrderTicketCancel,
     OrderTicketCreate,
     OrderTicketLineRead,
     OrderTicketLinesAdd,
@@ -309,6 +310,37 @@ async def advance_ticket(
     async def work() -> None:
         ticket = await tickets.advance_ticket(
             session, current.tenant_id, ticket_id, OrderTicketStatus(payload.status)
+        )
+        await session.refresh(ticket)
+        holder["read"] = OrderTicketRead.model_validate(ticket)
+
+    await run_in_uow(session, work)
+    return holder["read"]
+
+
+@router.post(
+    "/tickets/{ticket_id}/cancel",
+    response_model=OrderTicketRead,
+    dependencies=[_TicketManageGuard],
+)
+async def cancel_ticket(
+    ticket_id: uuid.UUID,
+    payload: OrderTicketCancel,
+    current: CurrentUserDep,
+    session: SessionDep,
+) -> OrderTicketRead:
+    """Close an OPEN check that should never have been opened — wrong table, party walked (D-080).
+
+    Guarded by ``ticket.manage``, not ``ticket.settle``: nothing was cooked and no money moved, so
+    this is floor work rather than the money moment. Refused once fired with 409
+    ``hospitality.ticket_not_open``. No idempotency key — the terminal state rejects a second
+    attempt on its own, exactly as settling does.
+    """
+    holder: dict[str, OrderTicketRead] = {}
+
+    async def work() -> None:
+        ticket = await tickets.cancel_ticket(
+            session, current.tenant_id, ticket_id, payload.reason.strip()
         )
         await session.refresh(ticket)
         holder["read"] = OrderTicketRead.model_validate(ticket)

@@ -11,15 +11,14 @@ import { getErrorMessage } from "@/lib/apiClient";
 import { FormBuilder, type FieldDef, type FormValues } from "@/components/FormBuilder";
 import { useCreateTicket } from "@/modules/hospitality/hooks";
 
+// NO service-date field (#207). A restaurant sells today: a check dated yesterday or next week is
+// always a mistake, and the server defaults `opened_on` to today when it is absent. It was also
+// the trigger for #209, where one backdated check destroyed the whole ticket number sequence.
+// Backdating a check is a correction, not service-floor work; if it is ever needed it belongs
+// behind its own permission, not on the form every server uses.
 const FIELDS: FieldDef[] = [
   { name: "table_code", label: "Table", type: "text", placeholder: "12" },
   { name: "guest_count", label: "Guests", type: "number" },
-  {
-    name: "opened_on",
-    label: "Service date",
-    type: "date",
-    help: "Defaults to today. This is the date the ticket number resets on each year.",
-  },
   { name: "notes", label: "Notes", type: "textarea", span: 2 },
 ];
 
@@ -33,13 +32,12 @@ export function TicketFormPage() {
     setError(null);
     const tableCode = String(values.table_code ?? "").trim();
     const guests = String(values.guest_count ?? "").trim();
-    const openedOn = String(values.opened_on ?? "").trim();
     const notes = String(values.notes ?? "").trim();
     try {
       const created = await createTicket.mutateAsync({
         table_code: tableCode || null,
         guest_count: guests ? Number(guests) : null,
-        opened_on: openedOn || null,
+        opened_on: null, // the server stamps today; see FIELDS above
         notes: notes || null,
       });
       void navigate({
