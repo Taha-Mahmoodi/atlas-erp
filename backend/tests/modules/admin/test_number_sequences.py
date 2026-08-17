@@ -27,8 +27,9 @@ async def test_number_sequences_viewer_lists(admin_client, admin_user, db_sessio
     row = next(r for r in items if r["name"] == "finance.invoice")
     assert row["prefix"] == "INV"
     assert row["padding"] == 5
-    assert row["next_value"] == 1
     assert row["year_reset"] is False
+    # Provisioning opens the current year's counter; nothing has claimed from it yet.
+    assert row["counters"] == [{"year": None, "next_value": 1}]
 
 
 async def test_number_sequences_are_tenant_isolated(

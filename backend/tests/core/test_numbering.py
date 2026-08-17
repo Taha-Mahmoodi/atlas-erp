@@ -19,7 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from app.core.db import build_session_factory
 from app.core.exceptions import NotFoundError
-from app.core.numbering import NumberSequence, claim_number, ensure_sequence
+from app.core.numbering import (
+    NumberSequence,
+    NumberSequenceCounter,
+    claim_number,
+    ensure_sequence,
+)
 from app.core.tenancy import tenant_context
 
 SequenceFactory = Callable[..., Awaitable[None]]
@@ -196,11 +201,19 @@ async def test_ensure_sequence_is_idempotent(
                 select(NumberSequence).where(NumberSequence.name == "finance.invoice")
             )
         ).scalars().all()
+        counters = (
+            await db_session.execute(
+                select(NumberSequenceCounter).where(
+                    NumberSequenceCounter.sequence_id == first.id
+                )
+            )
+        ).scalars().all()
 
     assert first.id == second.id
     assert len(rows) == 1
     # The counter advanced by the one claim between the two ensure calls (not reset to 1).
-    assert rows[0].next_value == 2
+    assert len(counters) == 1
+    assert counters[0].next_value == 2
 
 
 async def test_claiming_a_missing_sequence_raises_not_found(
@@ -208,3 +221,42 @@ async def test_claiming_a_missing_sequence_raises_not_found(
 ) -> None:
     with tenant_context(tenant_a), pytest.raises(NotFoundError):
         await claim_number(db_session, tenant_a, "does.not.exist", on_date=date(2026, 6, 1))
+
+
+# --- issue #209: a backdated claim must not disturb the current year's counter --
+
+
+async def test_a_backdated_claim_keeps_its_own_year_series(
+    db_session: AsyncSession, tenant_a: uuid.UUID, make_sequence: SequenceFactory
+) -> None:
+    """The defect this test pins: a claim dated in a PAST year used to reset the ONE counter to
+    1 and stamp it with that past year, so the next current-year claim re-handed a number that
+    was already on a document — a duplicate the document table's unique index turned into a 500,
+    permanently. Each year owning its own counter is what makes backdating safe."""
+    await make_sequence(tenant_a, name="hospitality.order_ticket", prefix="TKT", padding=6)
+
+    live = [await _claim(db_session, tenant_a, "hospitality.order_ticket", 2026) for _ in range(3)]
+    backdated = await _claim(db_session, tenant_a, "hospitality.order_ticket", 2022)
+    after = await _claim(db_session, tenant_a, "hospitality.order_ticket", 2026)
+
+    assert live == ["TKT-2026-000001", "TKT-2026-000002", "TKT-2026-000003"]
+    # The old year gets its own series starting at 1 — it does not borrow the live counter.
+    assert backdated == "TKT-2022-000001"
+    # And the live year carries on exactly where it was: no reset, no duplicate.
+    assert after == "TKT-2026-000004"
+
+
+async def test_backdated_claims_continue_their_own_year(
+    db_session: AsyncSession, tenant_a: uuid.UUID, make_sequence: SequenceFactory
+) -> None:
+    """A second document entered for the same past year continues that year's series rather than
+    restarting it — the counter is per (sequence, year), not a stamp that flips back and forth."""
+    await make_sequence(tenant_a, name="finance.invoice", prefix="INV", padding=5)
+
+    await _claim(db_session, tenant_a, "finance.invoice", 2026)
+    first_2025 = await _claim(db_session, tenant_a, "finance.invoice", 2025)
+    await _claim(db_session, tenant_a, "finance.invoice", 2026)
+    second_2025 = await _claim(db_session, tenant_a, "finance.invoice", 2025)
+
+    assert first_2025 == "INV-2025-00001"
+    assert second_2025 == "INV-2025-00002"
