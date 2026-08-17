@@ -77,6 +77,18 @@ def _require_transition(ticket: OrderTicket, to_status: OrderTicketStatus) -> No
     else. Ordering the enum instead of writing a transition table means the rule cannot drift from
     the states — a new state is added in one place and lands in the right position."""
     current = OrderTicketStatus(ticket.status)
+    if current not in TICKET_FLOW:
+        # A state OFF the sequence (CANCELLED, D-080) is terminal: nothing follows it, and
+        # `.index()` would raise ValueError -> HTTP 500 instead of the honest 409.
+        raise ConflictError(
+            message=f"An order ticket in {current.value} is terminal and cannot move",
+            code="hospitality.ticket_transition_invalid",
+            details={
+                "ticket_id": str(ticket.id),
+                "status": current.value,
+                "requested_status": to_status.value,
+            },
+        )
     if TICKET_FLOW.index(to_status) != TICKET_FLOW.index(current) + 1:
         raise ConflictError(
             message=f"An order ticket cannot move from {current.value} to {to_status.value}",
