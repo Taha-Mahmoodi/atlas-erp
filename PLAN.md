@@ -205,6 +205,7 @@ The remaining-work priorities from [`docs/research/remaining-work-plan.md`](docs
 - [x] 22.1 **P0 — job-runner reliability**: handler idempotency, the stale-PENDING/RUNNING sweeper with an attempt ceiling, FAILED-job visibility, idempotency-key retention. Plan: [`docs/research/p0-job-runner-reliability-plan.md`](docs/research/p0-job-runner-reliability-plan.md). Pays back D-072's "bought back with alerting" clause
 - [x] 22.2 **P1 — the hospitality module UI**: menu/86 management, the at-risk list, tickets, and the KDS board on the porcelain register. Plan: [`docs/research/p1-hospitality-ui-plan.md`](docs/research/p1-hospitality-ui-plan.md)
 - [ ] 22.3 **P2 — the tracked minor issues** — #163, #164, #165 and #166 are SHIPPED to `dev` (PRs #194/#193/#197/#198, 2026-08-15); **#176 remains** and is the only reason this stays unticked. It was held out of the wave-1 fan-out deliberately: it rewrites `frontend/src/router.tsx`, which the hospitality-UI lane owned at the time. That lane has landed, so #176 is now unblocked. Plans: [`docs/research/p2-minor-issues-plan.md`](docs/research/p2-minor-issues-plan.md)
+- [x] 22.4 **The hospitality demo tenant and the property's guest website** — a `hospitality` profile in `seed.py` (recipes as BOMs, the menu tree + tags, the 86 board, tonight's book, tonight's checks) and the guest-facing site that consumes the Phase 19/21 website API from its own origin behind its own nginx, which holds the two scoped machine keys the seed mints (**D-082**)
 
 ## Scope-cut rule
 

@@ -38,6 +38,34 @@ TLS is deliberately outside the compose file: put the VPS distro's Caddy
 a cloud load balancer. The backend sets audit IPs from `X-Forwarded-For`
 (`ATLAS_TRUST_PROXY=1` in the compose file) because nginx is a trusted hop.
 
+## The property's guest website (hospitality only)
+
+`docker-compose.prod.yml` deliberately does **not** ship it. The guest site
+(`frontend/website.html`, D-082) is a second nginx serving a second Vite entry, and
+what it needs is per-property rather than per-box: its own hostname, its own TLS,
+and two machine API keys minted for that property's own tenant.
+
+To run it, add a service built from the same image with `target: website` and give
+it the keys **as environment variables** — the demo's shared-volume keyfile exists
+only because the demo's seed is what mints them:
+
+```yaml
+  website:
+    build: { context: ./frontend, target: website }
+    environment:
+      ATLAS_WEBSITE_MENU_KEY: ${ATLAS_WEBSITE_MENU_KEY:?}   # menu.read + ticket.manage
+      ATLAS_WEBSITE_BOOK_KEY: ${ATLAS_WEBSITE_BOOK_KEY:?}   # reservation.book
+    ports: ["8080:80"]
+```
+
+Mint them with `POST /api/v1/admin/api-keys` (see [docs/api.md](api.md)), scoped to
+exactly those permissions and bound to a **dedicated service user** so the audit trail
+names the website rather than a person. The container refuses to start when either key
+is missing, which is deliberate: nginx would otherwise serve a restaurant whose kitchen
+401s, and a guest cannot tell that apart from a restaurant that is closed. Rotation is
+mint → set → recreate the container → revoke the old key; nothing caches a key, so
+revocation takes effect on the next request.
+
 ## Sizing
 
 | Tier | Box | Postgres tuning | Notes |

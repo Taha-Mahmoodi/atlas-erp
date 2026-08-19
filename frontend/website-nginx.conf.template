@@ -1,0 +1,101 @@
+# The property's guest-facing website (frontend/src/modules/hospitality/website/).
+#
+# THIS FILE IS THE CREDENTIAL BOUNDARY. The site authenticates to Atlas with a machine API key
+# (D-069), and the key lives here — in the server — because a key in the browser is a key the
+# public holds. Two keys, not one, exactly as docs/api.md's website contract requires: the menu
+# key can read the menu and place an order, the booking key can check availability and book, and
+# neither can read tonight's guest list.
+#
+# ${ATLAS_WEBSITE_MENU_KEY} and ${ATLAS_WEBSITE_BOOK_KEY} are substituted at container start by
+# nginx's own template mechanism; `website-keys.envsh` puts them in the environment first, reading
+# them from the file the seed writes (or from the environment on a real deployment).
+#
+# Every proxied route is an EXACT location. A prefix would have been shorter and wrong: the menu
+# key also carries `hospitality.menu.read`, which reaches `/menu/at-risk` — the staff coverage
+# scan over the storeroom. An allowlist of the five contract endpoints (plus the two menu-structure
+# reads the site assembles the menu from) is what keeps a bug in the site from becoming a leak.
+
+# Keyed by ADDRESS here, not by credential: every request through this server presents the SAME
+# key, so the console's per-credential zone would put the whole public behind one bucket. 10 r/s
+# with the bursts below because ONE page load is four reads at once (menu, sections, placements,
+# the 86 board) and a guest reloading twice is not an attack.
+limit_req_zone $binary_remote_addr zone=guest_api:10m rate=10r/s;
+# 429, not nginx's default 503: a throttled guest is being asked to slow down, and the website
+# contract already names 429 as the edge limiter's answer. The console's conf says the same.
+limit_req_status 429;
+
+server {
+    listen 80;
+    listen [::]:80;
+
+    root /usr/share/nginx/html;
+    index website.html;
+
+    gzip on;
+    gzip_types text/css application/javascript image/svg+xml;
+
+    # Sent on every response: this origin serves one page and calls one API, so it needs no
+    # framing, no plugins, and no third-party script.
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    add_header Referrer-Policy same-origin always;
+
+    # --- The menu key: read the menu, place an order --------------------------
+    location = /guest-api/menu {
+        limit_except GET { deny all; }
+        limit_req zone=guest_api burst=20 nodelay;
+        proxy_set_header Authorization "Bearer ${ATLAS_WEBSITE_MENU_KEY}";
+        proxy_pass http://backend:8000/api/v1/hospitality/menu;
+    }
+    location = /guest-api/menu/sections {
+        limit_except GET { deny all; }
+        limit_req zone=guest_api burst=20 nodelay;
+        proxy_set_header Authorization "Bearer ${ATLAS_WEBSITE_MENU_KEY}";
+        proxy_pass http://backend:8000/api/v1/hospitality/menu/sections;
+    }
+    location = /guest-api/menu/placements {
+        limit_except GET { deny all; }
+        limit_req zone=guest_api burst=20 nodelay;
+        proxy_set_header Authorization "Bearer ${ATLAS_WEBSITE_MENU_KEY}";
+        proxy_pass http://backend:8000/api/v1/hospitality/menu/placements;
+    }
+    location = /guest-api/menu/availability {
+        limit_except GET { deny all; }
+        limit_req zone=guest_api burst=20 nodelay;
+        proxy_set_header Authorization "Bearer ${ATLAS_WEBSITE_MENU_KEY}";
+        # The conditional GET is the point of this endpoint: If-None-Match must reach Atlas and the
+        # 304 must reach the guest, so nothing here rewrites or strips the validator.
+        proxy_pass http://backend:8000/api/v1/hospitality/menu/availability;
+    }
+    location = /guest-api/orders {
+        limit_except POST { deny all; }
+        limit_req zone=guest_api burst=10 nodelay;
+        proxy_set_header Authorization "Bearer ${ATLAS_WEBSITE_MENU_KEY}";
+        proxy_pass http://backend:8000/api/v1/hospitality/orders;
+    }
+
+    # --- The booking key: check the grid, take a table ------------------------
+    location = /guest-api/reservation-availability {
+        limit_except GET { deny all; }
+        limit_req zone=guest_api burst=20 nodelay;
+        proxy_set_header Authorization "Bearer ${ATLAS_WEBSITE_BOOK_KEY}";
+        proxy_pass http://backend:8000/api/v1/hospitality/reservation-availability;
+    }
+    location = /guest-api/table-reservations {
+        limit_except POST { deny all; }
+        limit_req zone=guest_api burst=10 nodelay;
+        proxy_set_header Authorization "Bearer ${ATLAS_WEBSITE_BOOK_KEY}";
+        proxy_pass http://backend:8000/api/v1/hospitality/table-reservations;
+    }
+
+    # Anything else under /guest-api is not part of the contract and never reaches Atlas.
+    location /guest-api/ { return 404; }
+
+    # The Atlas console shares this build output but not this origin: it would be served with no
+    # /api proxy and no session, which is a broken page rather than a private one.
+    location = /index.html { return 404; }
+
+    location / {
+        try_files $uri /website.html;
+    }
+}

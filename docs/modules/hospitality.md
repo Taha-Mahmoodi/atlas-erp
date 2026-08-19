@@ -242,7 +242,26 @@ sequential lifecycle already answers a replay with `409 hospitality.ticket_trans
 ### Website (machine credential)
 
 `GET /menu`, `GET /menu/availability`, `POST /orders` — the published contract, cache policies and
-client rules are in [docs/api.md](../api.md#the-property-website-contract).
+client rules are in [docs/api.md](../api.md#the-property-website-contract). The section tree and the
+placement map (§3b) are read with the same `menu.read` scope, which is how a site renders the menu in
+the property's own order.
+
+The reference client is in this repo (**D-082**): `frontend/src/modules/hospitality/website/`, its own
+Vite entry (`website.html`) served by its own nginx on its own port — `docker compose up` puts it on
+<http://localhost:8080> for the seeded `hospitality` tenant. It exists on a separate origin for one
+reason: a guest has no session, so the site authenticates as the PROPERTY, and a key in the browser
+bundle is a key the public holds. `frontend/website-nginx.conf.template` attaches it at the edge —
+the menu key on the four menu reads and the order write, the booking key on the grid read and the
+booking write, one exact `location` each.
+
+Two things the site does that any client of this API has to do, and neither is in the payloads:
+
+- **A dish is an item with a PLACEMENT.** `GET /menu` unfiltered is every active item in the tenant,
+  ingredients included; the site joins the placement map and shows only placed items, which is why it
+  needs no `category_id` and never lists `ING-BEEF` next to the ribeye.
+- **Absence from the 86 board means available.** The board carries only items the kitchen has spoken
+  about. A client that treats a missing row as unknown empties a healthy menu the first time the
+  board comes back empty.
 
 ### Error codes
 

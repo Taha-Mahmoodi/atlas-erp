@@ -13,6 +13,18 @@ export default defineConfig({
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
+  // TWO entries, one toolchain. `index.html` is the Atlas console; `website.html` is the
+  // property's guest-facing site (frontend/src/modules/hospitality/website/), which is served
+  // from its own origin behind its own nginx because it authenticates to the API with a machine
+  // key rather than a session. They share types and the build, never a bundle entry.
+  build: {
+    rollupOptions: {
+      input: {
+        console: fileURLToPath(new URL("./index.html", import.meta.url)),
+        website: fileURLToPath(new URL("./website.html", import.meta.url)),
+      },
+    },
+  },
   server: {
     proxy: { "/api": "http://localhost:8000" },
   },
