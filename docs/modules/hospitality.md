@@ -181,6 +181,38 @@ silently never move) — so a dish whose BOM is still DRAFT fails loudly rather 
 source bin is derived as *the bin holding the most* of each item (`issue_bins_for_items`, one query
 for the whole ticket), because a ticket has no warehouse concept; bin-level splits are not resolved.
 
+## 3b. The menu's own structure (#212, **D-081**)
+
+A dish's only grouping used to be its `ItemCategory`, and that entity decides how the dish is
+VALUED — costing method, inventory/COGS/price-difference accounts. A menu is a different axis, and
+it is **two** axes rather than one:
+
+| | Shape | A dish has | Answers |
+|---|---|---|---|
+| **Sections** (`hsp_menu_sections`) | tree, max 3 deep | exactly one | "print the menu in the property's order" |
+| **Tags** (`hsp_menu_item_tags`) | flat strings | any number | "show me everything vegan" |
+
+Sections carry `sort_order`, so Desserts come last because the restaurant says so rather than
+because D sorts after M. A dish with no placement is simply unplaced — it still sells.
+
+Both live in **hospitality**, keyed on `item_id` as an opaque id (D-029). Inventory is untouched:
+the item keeps its category and its GL wiring, and the reverse import stays forbidden
+(STRUCTURE §5).
+
+**Three rules the database cannot enforce**, so the service does:
+
+- a section may not be moved inside its own branch (`hospitality.menu_section_cycle`) — both ends
+  are valid rows in the right tenant, and the move would detach the branch;
+- the tree stops at three levels (`hospitality.menu_section_too_deep`);
+- a section still holding dishes or sub-sections is REFUSED, never cascaded
+  (`hospitality.menu_section_not_empty`) — a cascade under a mis-click unplaces every dish under it
+  and the rows it removes carry no way back.
+
+**The structure is its own read.** `GET /menu` is budgeted at exactly three statements
+(PERFORMANCE §2) and already spends them; `GET /menu/placements` carries the map in two more. That
+split is the same cache argument §1 makes: structure, price and availability change on three
+different clocks.
+
 ## 4. Endpoints
 
 ### Staff (`/api/v1/hospitality`, JWT or a staff-scoped key)
@@ -196,6 +228,11 @@ for the whole ticket), because a ticket has no warehouse concept; bin-level spli
 | POST | `/tickets/{id}/lines` | `hospitality.ticket.manage` | OPEN only (`hospitality.ticket_not_open`) |
 | POST | `/tickets/{id}/fire` | `hospitality.ticket.manage` | **idempotent**; refuses an 86'd dish; burns countdowns; submits depletion |
 | POST | `/tickets/{id}/advance` | `hospitality.ticket.manage` | IN_PREP / READY / SERVED only |
+| GET | `/menu/sections` | `hospitality.menu.read` | the whole tree, each heading with its DIRECT dish count. Two statements |
+| POST · PATCH · DELETE | `/menu/sections[/{id}]` | `hospitality.menu.manage` | add, rename/reorder/move, remove. Delete refuses a non-empty section |
+| GET | `/menu/placements` | `hospitality.menu.read` | {item -> section, tags} for every placed or tagged dish |
+| GET | `/menu/tags` | `hospitality.menu.read` | the tags actually in use — the picker's options, no master table (D-081) |
+| PUT | `/menu/{item_id}/placement` | `hospitality.menu.manage` | section AND tags replaced together |
 | POST | `/tickets/{id}/cancel` | `hospitality.ticket.manage` | OPEN only, `reason` required. Not `.settle`: nothing was cooked and no money moved |
 | POST | `/tickets/{id}/settle` | `hospitality.ticket.settle` | its own key: settlement is the money moment |
 
@@ -220,6 +257,11 @@ client rules are in [docs/api.md](../api.md#the-property-website-contract).
 | `hospitality.item_unavailable` | 422 | an 86'd dish, or a countdown burn larger than the count. `details.item_ids` plus `details.items`, the dish names the message also carries (#205) |
 | `hospitality.item_not_found` | 422 | an item id that is not in this tenant. `details.item_ids` |
 | `hospitality.item_not_priced` | 422 | no active GENERAL price list prices it today, or its only price is in another currency. `details.item_ids` |
+| `hospitality.menu_section_not_found` | 404 | unknown section in this tenant |
+| `hospitality.menu_section_cycle` | 422 | moving a section inside its own branch |
+| `hospitality.menu_section_too_deep` | 422 | nesting past three levels |
+| `hospitality.menu_section_not_empty` | 409 | deleting a section that still holds dishes or sub-sections. `details` carries both counts |
+| `hospitality.menu_too_many_tags` | 422 | more than 12 tags on one dish |
 | `hospitality.countdown_required` | 422 | `LIMITED` without a positive `remaining_qty` |
 | `hospitality.component_out_of_stock` | 422 | recorded on a FAILED depletion job, never returned to a guest |
 

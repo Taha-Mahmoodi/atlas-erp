@@ -24,11 +24,13 @@ must never be the number a guest sees.
 from __future__ import annotations
 
 import uuid
+from collections import defaultdict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import as_utc
@@ -41,6 +43,7 @@ from app.core.pagination import (
 )
 from app.core.schemas import Page
 from app.modules.hospitality.constants import OrderTicketStatus, ReservationStatus
+from app.modules.hospitality.menu_models import MenuItemTag, MenuPlacement, MenuSection
 from app.modules.hospitality.models import (
     MenuAvailability,
     OrderTicket,
@@ -227,11 +230,131 @@ async def list_reservations(
     )
 
 
+# --- Menu structure (#212) ----------------------------------------------------
+
+
+async def list_sections(
+    session: AsyncSession, tenant_id: uuid.UUID
+) -> list[MenuSection]:
+    """The whole section tree in ONE statement, in the property's own running order.
+
+    Unpaginated on purpose, and it is the same call the reservation grid makes: a menu's headings
+    are tens of rows, bounded by what a kitchen can cook, and a paginated tree is a tree the client
+    has to reassemble across pages. Ordered by depth-agnostic (sort_order, name) so the caller can
+    nest it by ``parent_id`` and every sibling list is already correct.
+    """
+    stmt = (
+        select(MenuSection)
+        .where(MenuSection.tenant_id == tenant_id)
+        .order_by(MenuSection.sort_order, MenuSection.name)
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def dish_counts_by_section(
+    session: AsyncSession, tenant_id: uuid.UUID
+) -> dict[uuid.UUID, int]:
+    """{section_id -> how many dishes sit in it}, in ONE grouped statement — never a count per
+    section, which is the N+1 a tree view invites."""
+    stmt = (
+        select(MenuPlacement.section_id, func.count())
+        .where(MenuPlacement.tenant_id == tenant_id)
+        .group_by(MenuPlacement.section_id)
+    )
+    return {section_id: count for section_id, count in (await session.execute(stmt)).all()}
+
+
+async def placements_for_items(
+    session: AsyncSession, tenant_id: uuid.UUID, item_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, uuid.UUID]:
+    """{item_id -> section_id} for the given dishes, in ONE statement. Items with no placement are
+    absent from the mapping — unplaced is the default, so it costs no row and no entry."""
+    if not item_ids:
+        return {}
+    stmt = select(MenuPlacement.item_id, MenuPlacement.section_id).where(
+        MenuPlacement.tenant_id == tenant_id, MenuPlacement.item_id.in_(list(item_ids))
+    )
+    return {item_id: section_id for item_id, section_id in (await session.execute(stmt)).all()}
+
+
+async def tags_for_items(
+    session: AsyncSession, tenant_id: uuid.UUID, item_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[str]]:
+    """{item_id -> [tag]} for the given dishes, in ONE statement, each list alphabetical."""
+    if not item_ids:
+        return {}
+    stmt = (
+        select(MenuItemTag.item_id, MenuItemTag.tag)
+        .where(MenuItemTag.tenant_id == tenant_id, MenuItemTag.item_id.in_(list(item_ids)))
+        .order_by(MenuItemTag.tag)
+    )
+    grouped: dict[uuid.UUID, list[str]] = defaultdict(list)
+    for item_id, tag in (await session.execute(stmt)).all():
+        grouped[item_id].append(tag)
+    return grouped
+
+
+async def all_placements(
+    session: AsyncSession, tenant_id: uuid.UUID
+) -> dict[uuid.UUID, uuid.UUID]:
+    """{item_id -> section_id} for every placed dish in the tenant, in ONE statement — the whole
+    map, for a caller that is about to render the whole menu."""
+    stmt = select(MenuPlacement.item_id, MenuPlacement.section_id).where(
+        MenuPlacement.tenant_id == tenant_id
+    )
+    return {item_id: section_id for item_id, section_id in (await session.execute(stmt)).all()}
+
+
+async def all_tags(session: AsyncSession, tenant_id: uuid.UUID) -> dict[uuid.UUID, list[str]]:
+    """{item_id -> [tag]} for every tagged dish in the tenant, in ONE statement, each list
+    alphabetical."""
+    stmt = (
+        select(MenuItemTag.item_id, MenuItemTag.tag)
+        .where(MenuItemTag.tenant_id == tenant_id)
+        .order_by(MenuItemTag.tag)
+    )
+    grouped: dict[uuid.UUID, list[str]] = defaultdict(list)
+    for item_id, tag in (await session.execute(stmt)).all():
+        grouped[item_id].append(tag)
+    return grouped
+
+
+async def item_ids_with_tag(
+    session: AsyncSession, tenant_id: uuid.UUID, tag: str
+) -> list[uuid.UUID]:
+    """Every dish carrying ``tag`` — the filter the whole flat-tag shape exists to serve
+    (D-081), served from ``ix_hsp_menu_item_tags_tenant_id_tag`` rather than a scan."""
+    stmt = select(MenuItemTag.item_id).where(
+        MenuItemTag.tenant_id == tenant_id, MenuItemTag.tag == tag.strip().lower()
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def tags_in_use(session: AsyncSession, tenant_id: uuid.UUID) -> list[str]:
+    """Every distinct tag the tenant has used, alphabetical — what a tag picker offers instead of
+    a tag-master table nobody has to maintain (D-081)."""
+    stmt = (
+        select(MenuItemTag.tag)
+        .where(MenuItemTag.tenant_id == tenant_id)
+        .distinct()
+        .order_by(MenuItemTag.tag)
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
 __all__ = [
     "MenuItemAtRisk",
+    "all_placements",
+    "all_tags",
     "at_risk_menu_items",
+    "dish_counts_by_section",
+    "item_ids_with_tag",
     "list_availability_overrides",
     "list_reservations",
+    "list_sections",
     "list_tickets",
+    "placements_for_items",
     "slot_counters",
+    "tags_for_items",
+    "tags_in_use",
 ]

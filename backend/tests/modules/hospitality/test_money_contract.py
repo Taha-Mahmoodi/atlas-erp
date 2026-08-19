@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.pagination import DEFAULT_LIMIT
 from app.core.tenancy import tenant_context
+from app.modules.hospitality import menu_router as menu_router_module
 from app.modules.hospitality import router as staff_router_module
 from app.modules.hospitality import schemas as hospitality_schemas
 from app.modules.hospitality import website_router as website_router_module
@@ -389,6 +390,16 @@ EXPECTED_ROUTES = {
     ("GET", "/api/v1/hospitality/menu"),
     ("GET", "/api/v1/hospitality/menu/availability"),
     ("POST", "/api/v1/hospitality/orders"),
+    # The menu-structure router (#212, D-081). On the guarded list like everything else: the
+    # exclusion list is only worth something if EVERY hospitality surface is checked against it,
+    # and a route that escapes by living in a third module is exactly how that guard rots.
+    ("GET", "/api/v1/hospitality/menu/sections"),
+    ("POST", "/api/v1/hospitality/menu/sections"),
+    ("PATCH", "/api/v1/hospitality/menu/sections/{section_id}"),
+    ("DELETE", "/api/v1/hospitality/menu/sections/{section_id}"),
+    ("GET", "/api/v1/hospitality/menu/placements"),
+    ("GET", "/api/v1/hospitality/menu/tags"),
+    ("PUT", "/api/v1/hospitality/menu/{item_id}/placement"),
 }
 
 # Words from the exclusion list. A field carrying one of these is scope that was meant to wait.
@@ -410,7 +421,7 @@ OUT_OF_SCOPE_FIELD_WORDS = (
 def test_the_hospitality_route_table_is_exactly_phase_19() -> None:
     routes = {
         (method, route.path)
-        for module in (staff_router_module, website_router_module)
+        for module in (staff_router_module, website_router_module, menu_router_module)
         for route in module.router.routes
         for method in getattr(route, "methods", set())
         if method != "HEAD"
