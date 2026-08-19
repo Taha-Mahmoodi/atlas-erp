@@ -49,6 +49,12 @@ services:
       ATLAS_JWT_SECRET: ${ATLAS_JWT_SECRET:-insecure-demo-secret-change-me}
       ATLAS_API: http://backend:8000/api/v1
       ATLAS_SEED_DEMO: ${ATLAS_SEED_DEMO:-1}
+      # Where the hospitality tenant's two website API keys are written. They exist only in the
+      # response that minted them, so the file on this shared volume is how the guest site gets
+      # them; the website container waits for it.
+      ATLAS_WEBSITE_KEYFILE: /run/atlas/website.env
+    volumes:
+      - website-keys:/run/atlas
     depends_on:
       backend:
         condition: service_healthy
@@ -70,5 +76,29 @@ services:
       timeout: 5s
       retries: 10
 
+  # The hospitality tenant's own guest-facing website — tonight's menu, an order, a table.
+  # A SEPARATE ORIGIN from the console, because its nginx holds the machine API key it
+  # authenticates to Atlas with (frontend/website-nginx.conf.template) and a key in the browser is
+  # a key the public holds. Open http://localhost:8080.
+  website:
+    build:
+      context: ./frontend
+      target: website
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    volumes:
+      - website-keys:/run/atlas:ro
+    # No `depends_on: seed`: the keys are read at start and the container waits for the file
+    # rather than for the whole three-month demo seed to finish.
+    healthcheck:
+      test: ["CMD", "wget", "-qO/dev/null", "http://localhost/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   pgdata:
+  website-keys:

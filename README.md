@@ -18,10 +18,11 @@ The parity map lives at [docs/research/s4hana-parity.md](docs/research/s4hana-pa
 Prerequisite: Docker with the Compose plugin. Everything else runs inside containers.
 
 1. `git clone https://github.com/Taha-Mahmoodi/atlas-erp.git && cd atlas-erp`
-2. `docker compose up --build` — builds and starts PostgreSQL, the API (migrations run on boot), the web app, and a one-shot seed job that populates **six demo tenants** (`acme` plus one per industry template) with ~3 months of interlinked transactions through the real API. First seed takes a few minutes; it's done when `seed-1` prints its per-tenant summaries and exits with code 0.
-3. Open **http://localhost:5173** and log in: tenant `acme`, email `owner@acme.test`, password `correct-horse-battery`. The other tenants (`manufacturing`, `retail`, `professional-services`, `healthcare`, `construction`) use `owner@<tenant>.test` with the same password.
-4. Explore the API directly if you like: OpenAPI UI at http://localhost:8000/api/v1/docs, health at http://localhost:8000/api/v1/health.
-5. Tear down with `docker compose down -v` (drops the database volume; the next `up` reseeds).
+2. `docker compose up --build` — builds and starts PostgreSQL, the API (migrations run on boot), the web app, the hospitality tenant's guest website, and a one-shot seed job that populates **seven demo tenants** (`acme` plus one per industry template) with ~3 months of interlinked transactions through the real API. First seed takes a few minutes; it's done when `seed-1` prints its per-tenant summaries and exits with code 0.
+3. Open **http://localhost:5173** and log in: tenant `acme`, email `owner@acme.test`, password `correct-horse-battery`. The other tenants (`manufacturing`, `retail`, `professional-services`, `healthcare`, `construction`, `hospitality`) use `owner@<tenant>.test` with the same password.
+4. Open **http://localhost:8080** for the other kind of surface: the `hospitality` tenant's own restaurant website — tonight's menu with the kitchen's 86 board applied, an order that reaches the kitchen display in the console, and a table booking that lands in the reservation book. It talks to the same API as a machine client (a scoped API key the seed mints, held by *its* nginx and never by the browser), so it is also the working reference for [the website contract](docs/api.md#the-property-website-contract).
+5. Explore the API directly if you like: OpenAPI UI at http://localhost:8000/api/v1/docs, health at http://localhost:8000/api/v1/health.
+6. Tear down with `docker compose down -v` (drops the database volume; the next `up` reseeds).
 
 Notes: seeding is opt-in via `ATLAS_SEED_DEMO` (default `1` in compose; set `0` to skip) and refuses to run against a production database. Set a real `ATLAS_JWT_SECRET` in the environment for anything reachable from outside your machine. For contributor (non-Docker) workflows see [CONTRIBUTING.md](CONTRIBUTING.md).
 

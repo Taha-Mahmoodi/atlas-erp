@@ -1,0 +1,31 @@
+# Sourced by nginx's docker-entrypoint before it renders the config template (files ending
+# `.envsh` in /docker-entrypoint.d are sourced, not executed, so what is exported here reaches
+# the envsubst step).
+#
+# The two API keys exist only in the 201 body that minted them, so the seed writes them to a file
+# on a shared volume and this reads it. On a real deployment there is no seed: set the two
+# variables in the environment and the wait below is skipped entirely.
+#
+# A missing key is fatal ON PURPOSE. nginx would otherwise start and send `Bearer ` on every
+# request, and the site would look like a working restaurant whose kitchen returns 401 — which is
+# the failure a guest cannot distinguish from "closed".
+
+if [ -z "$ATLAS_WEBSITE_MENU_KEY" ] || [ -z "$ATLAS_WEBSITE_BOOK_KEY" ]; then
+    keyfile="${ATLAS_WEBSITE_KEYFILE:-/run/atlas/website.env}"
+    waited=0
+    while [ ! -s "$keyfile" ] && [ "$waited" -lt 180 ]; do
+        [ "$waited" = 0 ] && echo "website: waiting for the API keys at $keyfile"
+        sleep 2
+        waited=$((waited + 2))
+    done
+    if [ -s "$keyfile" ]; then
+        . "$keyfile"
+        export ATLAS_WEBSITE_MENU_KEY ATLAS_WEBSITE_BOOK_KEY
+    fi
+fi
+
+if [ -z "$ATLAS_WEBSITE_MENU_KEY" ] || [ -z "$ATLAS_WEBSITE_BOOK_KEY" ]; then
+    echo "website: no API keys — set ATLAS_WEBSITE_MENU_KEY and ATLAS_WEBSITE_BOOK_KEY, or point" >&2
+    echo "website: ATLAS_WEBSITE_KEYFILE at the file the seed writes. Refusing to start." >&2
+    exit 1
+fi
