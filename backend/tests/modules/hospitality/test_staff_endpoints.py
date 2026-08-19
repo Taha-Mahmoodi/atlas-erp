@@ -108,6 +108,66 @@ async def test_fire_then_advance_then_settle(hospitality_api: HospitalityApi) ->
     assert settled.json()["settled_at"] is not None
 
 
+async def test_an_open_check_cancels_over_the_wire_and_a_fired_one_does_not(
+    hospitality_api: HospitalityApi,
+) -> None:
+    """#206 over the wire: an OPEN check closes with a reason; once fired it is refused, because
+    by then the ingredients have left the storeroom."""
+    client = hospitality_api.client
+    ticket = await _open_ticket(hospitality_api)
+    cancelled = await client.post(
+        f"/api/v1/hospitality/tickets/{ticket['id']}/cancel",
+        json={"reason": "opened on the wrong table"},
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["status"] == "CANCELLED"
+    assert cancelled.json()["cancel_reason"] == "opened on the wrong table"
+    assert cancelled.json()["cancelled_at"] is not None
+
+    # A reason is required: an empty one is a body-validation error, not a silent blank.
+    other = await _open_ticket(hospitality_api)
+    blank = await client.post(
+        f"/api/v1/hospitality/tickets/{other['id']}/cancel", json={"reason": ""}
+    )
+    assert blank.status_code == 422, blank.text
+
+    fired = await client.post(
+        f"/api/v1/hospitality/tickets/{other['id']}/fire",
+        headers={"Idempotency-Key": uuid.uuid4().hex},
+    )
+    assert fired.status_code == 200, fired.text
+    await wait_for_jobs()
+    refused = await client.post(
+        f"/api/v1/hospitality/tickets/{other['id']}/cancel", json={"reason": "party walked"}
+    )
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["code"] == "hospitality.ticket_not_open"
+
+
+async def test_the_86_refusal_names_the_dish_over_the_wire(
+    hospitality_api: HospitalityApi,
+) -> None:
+    """#205: a server cannot act on "one of these is 86'd" plus a UUID, so the message names the
+    dish and the details carry it for the UI."""
+    client = hospitality_api.client
+    dish_id = hospitality_api.kitchen.dishes["PASTA"]
+    await client.put(
+        f"/api/v1/hospitality/menu/{dish_id}/availability",
+        json={"state": "EIGHTY_SIXED", "reason": "out of basil"},
+    )
+    ticket = await _open_ticket(hospitality_api)
+    refused = await client.post(
+        f"/api/v1/hospitality/tickets/{ticket['id']}/fire",
+        headers={"Idempotency-Key": uuid.uuid4().hex},
+    )
+
+    assert refused.status_code == 422, refused.text
+    error = refused.json()["error"]
+    assert error["code"] == "hospitality.item_unavailable"
+    assert "PASTA" in error["message"]
+    assert any("PASTA" in named for named in error["details"]["items"])
+
+
 async def test_firing_an_86d_dish_is_refused(hospitality_api: HospitalityApi) -> None:
     """Q2's whole point at the terminal: hiding a dish on the website is not enough, because a
     server's terminal never read the website."""

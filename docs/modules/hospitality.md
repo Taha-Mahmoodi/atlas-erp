@@ -92,6 +92,8 @@ ships no menu-membership entity; `limit` bounds the response, not the scan.
 ```
 OPEN ──fire──> SENT_TO_KITCHEN ──> IN_PREP ──> READY ──> SERVED ──> SETTLED
  │                    │                                              │
+ └──cancel──> CANCELLED (terminal; OPEN only, reason required — D-080)
+ │                    │
  │ lines may be       │ event RestaurantOrderFired                   │ event RestaurantOrderSettled
  │ added ONLY here    │   └─> depletion job(s) submitted             │   (no subscriber until 20.6)
  │                    │        └─> TicketIngredientsConsumed
@@ -112,7 +114,12 @@ skip is revenue with no depletion. The cost is that a counter-service property t
 - Tickets carry **no `currency_code`**: every check is in the tenant's functional currency (D-019),
   the ticket trades no FX and posts no journal of its own. The website order response labels the
   currency it resolved.
-- There is **no VOID/CANCELLED**: a comp or a walk-out is a money correction the Phase 20 folio owns.
+- **`CANCELLED` is reachable only from OPEN** (D-080, #206), with a required reason. A check opened
+  on the wrong table has cooked nothing and moved no money, so closing it costs nothing — while
+  leaving it OPEN forever is what makes the floor's live list unreadable. It is deliberately NOT a
+  step in `TICKET_FLOW`: it is a branch, so the "index + 1" arithmetic the kanban and the status
+  button share is untouched and nothing may follow it. Past the fire there is still **no void**: a
+  comp or a walk-out on a cooked check is a money correction the Phase 20 folio owns.
 
 Firing an 8-line ticket costs **10 statements**, and the count does not grow with the line count or
 with countdown lines (`tests/perf/test_write_budgets.py`, `FIRED_TICKET_CEILING = 14`). It rises by
@@ -174,6 +181,38 @@ silently never move) — so a dish whose BOM is still DRAFT fails loudly rather 
 source bin is derived as *the bin holding the most* of each item (`issue_bins_for_items`, one query
 for the whole ticket), because a ticket has no warehouse concept; bin-level splits are not resolved.
 
+## 3b. The menu's own structure (#212, **D-081**)
+
+A dish's only grouping used to be its `ItemCategory`, and that entity decides how the dish is
+VALUED — costing method, inventory/COGS/price-difference accounts. A menu is a different axis, and
+it is **two** axes rather than one:
+
+| | Shape | A dish has | Answers |
+|---|---|---|---|
+| **Sections** (`hsp_menu_sections`) | tree, max 3 deep | exactly one | "print the menu in the property's order" |
+| **Tags** (`hsp_menu_item_tags`) | flat strings | any number | "show me everything vegan" |
+
+Sections carry `sort_order`, so Desserts come last because the restaurant says so rather than
+because D sorts after M. A dish with no placement is simply unplaced — it still sells.
+
+Both live in **hospitality**, keyed on `item_id` as an opaque id (D-029). Inventory is untouched:
+the item keeps its category and its GL wiring, and the reverse import stays forbidden
+(STRUCTURE §5).
+
+**Three rules the database cannot enforce**, so the service does:
+
+- a section may not be moved inside its own branch (`hospitality.menu_section_cycle`) — both ends
+  are valid rows in the right tenant, and the move would detach the branch;
+- the tree stops at three levels (`hospitality.menu_section_too_deep`);
+- a section still holding dishes or sub-sections is REFUSED, never cascaded
+  (`hospitality.menu_section_not_empty`) — a cascade under a mis-click unplaces every dish under it
+  and the rows it removes carry no way back.
+
+**The structure is its own read.** `GET /menu` is budgeted at exactly three statements
+(PERFORMANCE §2) and already spends them; `GET /menu/placements` carries the map in two more. That
+split is the same cache argument §1 makes: structure, price and availability change on three
+different clocks.
+
 ## 4. Endpoints
 
 ### Staff (`/api/v1/hospitality`, JWT or a staff-scoped key)
@@ -189,6 +228,12 @@ for the whole ticket), because a ticket has no warehouse concept; bin-level spli
 | POST | `/tickets/{id}/lines` | `hospitality.ticket.manage` | OPEN only (`hospitality.ticket_not_open`) |
 | POST | `/tickets/{id}/fire` | `hospitality.ticket.manage` | **idempotent**; refuses an 86'd dish; burns countdowns; submits depletion |
 | POST | `/tickets/{id}/advance` | `hospitality.ticket.manage` | IN_PREP / READY / SERVED only |
+| GET | `/menu/sections` | `hospitality.menu.read` | the whole tree, each heading with its DIRECT dish count. Two statements |
+| POST · PATCH · DELETE | `/menu/sections[/{id}]` | `hospitality.menu.manage` | add, rename/reorder/move, remove. Delete refuses a non-empty section |
+| GET | `/menu/placements` | `hospitality.menu.read` | {item -> section, tags} for every placed or tagged dish |
+| GET | `/menu/tags` | `hospitality.menu.read` | the tags actually in use — the picker's options, no master table (D-081) |
+| PUT | `/menu/{item_id}/placement` | `hospitality.menu.manage` | section AND tags replaced together |
+| POST | `/tickets/{id}/cancel` | `hospitality.ticket.manage` | OPEN only, `reason` required. Not `.settle`: nothing was cooked and no money moved |
 | POST | `/tickets/{id}/settle` | `hospitality.ticket.settle` | its own key: settlement is the money moment |
 
 `settle` is deliberately **not** idempotency-keyed — it creates no document, and the strictly
@@ -197,7 +242,26 @@ sequential lifecycle already answers a replay with `409 hospitality.ticket_trans
 ### Website (machine credential)
 
 `GET /menu`, `GET /menu/availability`, `POST /orders` — the published contract, cache policies and
-client rules are in [docs/api.md](../api.md#the-property-website-contract).
+client rules are in [docs/api.md](../api.md#the-property-website-contract). The section tree and the
+placement map (§3b) are read with the same `menu.read` scope, which is how a site renders the menu in
+the property's own order.
+
+The reference client is in this repo (**D-082**): `frontend/src/modules/hospitality/website/`, its own
+Vite entry (`website.html`) served by its own nginx on its own port — `docker compose up` puts it on
+<http://localhost:8080> for the seeded `hospitality` tenant. It exists on a separate origin for one
+reason: a guest has no session, so the site authenticates as the PROPERTY, and a key in the browser
+bundle is a key the public holds. `frontend/website-nginx.conf.template` attaches it at the edge —
+the menu key on the four menu reads and the order write, the booking key on the grid read and the
+booking write, one exact `location` each.
+
+Two things the site does that any client of this API has to do, and neither is in the payloads:
+
+- **A dish is an item with a PLACEMENT.** `GET /menu` unfiltered is every active item in the tenant,
+  ingredients included; the site joins the placement map and shows only placed items, which is why it
+  needs no `category_id` and never lists `ING-BEEF` next to the ribeye.
+- **Absence from the 86 board means available.** The board carries only items the kitchen has spoken
+  about. A client that treats a missing row as unknown empties a healthy menu the first time the
+  board comes back empty.
 
 ### Error codes
 
@@ -205,13 +269,18 @@ client rules are in [docs/api.md](../api.md#the-property-website-contract).
 |---|---|---|
 | `hospitality.ticket_not_found` | 404 | unknown ticket in this tenant |
 | `hospitality.ticket_transition_invalid` | 409 | not the next state in `TICKET_FLOW` |
-| `hospitality.ticket_not_open` | 409 | adding lines after the ticket fired |
+| `hospitality.ticket_not_open` | 409 | adding lines, or cancelling, after the ticket fired |
 | `hospitality.ticket_empty` | 422 | firing a ticket with no lines |
 | `hospitality.no_lines` | 422 | an empty `lines` body |
 | `hospitality.status_not_advanceable` | 422 | `/advance` asked for fire or settle |
-| `hospitality.item_unavailable` | 422 | an 86'd dish, or a countdown burn larger than the count. `details.item_ids` |
+| `hospitality.item_unavailable` | 422 | an 86'd dish, or a countdown burn larger than the count. `details.item_ids` plus `details.items`, the dish names the message also carries (#205) |
 | `hospitality.item_not_found` | 422 | an item id that is not in this tenant. `details.item_ids` |
 | `hospitality.item_not_priced` | 422 | no active GENERAL price list prices it today, or its only price is in another currency. `details.item_ids` |
+| `hospitality.menu_section_not_found` | 404 | unknown section in this tenant |
+| `hospitality.menu_section_cycle` | 422 | moving a section inside its own branch |
+| `hospitality.menu_section_too_deep` | 422 | nesting past three levels |
+| `hospitality.menu_section_not_empty` | 409 | deleting a section that still holds dishes or sub-sections. `details` carries both counts |
+| `hospitality.menu_too_many_tags` | 422 | more than 12 tags on one dish |
 | `hospitality.countdown_required` | 422 | `LIMITED` without a positive `remaining_qty` |
 | `hospitality.component_out_of_stock` | 422 | recorded on a FAILED depletion job, never returned to a guest |
 

@@ -120,6 +120,28 @@ async def existing_item_ids(
     return set((await session.execute(stmt)).scalars().all())
 
 
+async def item_labels(
+    session: AsyncSession, tenant_id: uuid.UUID, item_ids: Iterable[uuid.UUID]
+) -> dict[uuid.UUID, str]:
+    """{item_id -> "CODE — Name"} for the given items, in ONE query.
+
+    What another module needs to name an item in a message a HUMAN reads. Ids are the right
+    currency between modules (D-029) and the wrong one in an error: a server told a check carries
+    an 86'd dish cannot act on a UUID, and reporting all of them at once is the same courtesy
+    ``existing_item_ids`` exists for. Missing ids are simply absent from the mapping — the caller
+    decides whether that is an error or a fallback to the raw id."""
+    ids = list(dict.fromkeys(item_ids))
+    if not ids:
+        return {}
+    stmt = select(Item.id, Item.item_code, Item.name).where(
+        Item.tenant_id == tenant_id, Item.id.in_(ids)
+    )
+    return {
+        item_id: f"{item_code} — {name}"
+        for item_id, item_code, name in (await session.execute(stmt)).all()
+    }
+
+
 async def uom_exists(
     session: AsyncSession, tenant_id: uuid.UUID, uom_id: uuid.UUID
 ) -> bool:

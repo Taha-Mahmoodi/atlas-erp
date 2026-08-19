@@ -75,9 +75,13 @@ class OrderTicketStatus(StrEnum):
     - **SETTLED** — tendered. Terminal. Publishes ``RestaurantOrderSettled``, which is what Phase
       20.6's room-charge bridge will subscribe to. Phase 19 takes no payment itself (Q1's provider
       interface is Phase 20+).
-
-    v1 has no VOID/CANCELLED: a comp or a walk-out is a money correction the Phase 20 folio owns,
-    and inventing a terminal state here that nothing can reverse would be worse than not having it.
+    - **CANCELLED** — terminal, and reachable ONLY from OPEN (D-080). A check opened on the wrong
+      table, or for a party that walked before ordering, has cooked nothing and moved no money, so
+      closing it costs nothing and leaving it OPEN forever is what the floor actually complained
+      about. It is deliberately NOT reachable after firing: the ingredients have already left the
+      storeroom by then, and a comp or a walk-out on a fired check is a money correction the Phase
+      20 folio owns — inventing a terminal state that silently un-cooks food would be worse than
+      not having one.
     """
 
     OPEN = "OPEN"
@@ -86,12 +90,19 @@ class OrderTicketStatus(StrEnum):
     READY = "READY"
     SERVED = "SERVED"
     SETTLED = "SETTLED"
+    CANCELLED = "CANCELLED"
 
 
-# The lifecycle as an ordered tuple — the whole transition rule is "index + 1", so there is no
-# transition table to keep in sync with the enum. Declared next to the enum because the ORDER is
-# the contract, not just the membership.
-TICKET_FLOW: tuple[OrderTicketStatus, ...] = tuple(OrderTicketStatus)
+# The SEQUENTIAL lifecycle as an ordered tuple — the whole forward-transition rule is "index + 1",
+# so there is no transition table to keep in sync with the enum. Declared next to the enum because
+# the ORDER is the contract, not just the membership.
+#
+# CANCELLED is deliberately NOT in it: it is a branch off OPEN, not a step in the sequence, and
+# putting it in the tuple would both make SETTLED -> CANCELLED a legal "next" move and change what
+# the index arithmetic means. Its one transition is checked by ``cancel_ticket`` instead.
+TICKET_FLOW: tuple[OrderTicketStatus, ...] = tuple(
+    status for status in OrderTicketStatus if status is not OrderTicketStatus.CANCELLED
+)
 
 # The states a plain kitchen/floor progress update may set. Firing and settling are deliberately
 # NOT here: each carries effects (the 86 check + countdown + the fired event; the settled event)

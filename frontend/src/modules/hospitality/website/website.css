@@ -1,0 +1,109 @@
+/* The guest site's own skin — deliberately NOT the Atlas design system.
+ *
+ * `styles.css` is the porcelain console: a dense, neutral, information-first palette built for an
+ * operator reading a grid for eight hours. A restaurant's own website is the opposite brief, and
+ * importing the console's tokens here would make the property's front door look like its back
+ * office. No Tailwind either: this is one page, and a handful of classes is smaller than the
+ * build-time coupling.
+ *
+ * The serif is a system stack rather than a font dependency — the site ships no webfont, which is
+ * also why it renders instantly on a phone on restaurant wifi.
+ */
+
+:root {
+  --paper: #fbf7f0;
+  --paper-raised: #fffdf9;
+  --ink: #241f1a;
+  --ink-muted: #6d635a; /* 5.2:1 on paper */
+  --rule: #e4dbcc;
+  --claret: #7a2f2f; /* 8.0:1 on paper */
+  --claret-strong: #5c2020;
+  --gone: #9a5b2c; /* the 86 mark — 4.6:1 on paper, and never the ONLY signal */
+  --serif: ui-serif, Georgia, "Times New Roman", serif;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+h1, h2, h3 { font-family: var(--serif); font-weight: 400; letter-spacing: -0.01em; margin: 0; }
+
+.site { max-width: 68rem; margin: 0 auto; padding: 2rem 1.25rem 5rem; }
+
+.masthead { text-align: center; padding: 3rem 0 2.5rem; border-bottom: 1px solid var(--rule); }
+.masthead h1 { font-size: clamp(2.5rem, 7vw, 4rem); }
+.masthead p { color: var(--ink-muted); margin: 0.75rem 0 0; }
+
+.columns { display: grid; gap: 3rem; margin-top: 2.5rem; }
+@media (min-width: 60rem) { .columns { grid-template-columns: 3fr 2fr; align-items: start; } }
+@media (min-width: 60rem) { .aside { position: sticky; top: 2rem; } }
+
+.course { margin-bottom: 2.5rem; }
+.course > h2 { font-size: 1.6rem; border-bottom: 1px solid var(--rule); padding-bottom: 0.4rem; }
+.course .course > h2 { font-size: 1.15rem; letter-spacing: 0.08em; text-transform: uppercase;
+  font-family: var(--sans); color: var(--ink-muted); border: 0; padding-top: 0.75rem; }
+
+.dish { display: flex; gap: 1rem; align-items: baseline; padding: 0.85rem 0;
+  border-bottom: 1px dotted var(--rule); }
+.dish-main { flex: 1; }
+.dish-name { font-family: var(--serif); font-size: 1.15rem; }
+.dish-note { color: var(--ink-muted); font-size: 0.9rem; margin-top: 0.15rem; }
+.dish-price { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dish.is-gone .dish-name { text-decoration: line-through; text-decoration-thickness: 1px; }
+.dish.is-gone { color: var(--ink-muted); }
+
+.tag { display: inline-block; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase;
+  border: 1px solid var(--rule); border-radius: 999px; padding: 0.05rem 0.5rem; margin-right: 0.35rem;
+  color: var(--ink-muted); }
+.mark-gone { color: var(--gone); font-size: 0.85rem; }
+.mark-limited { color: var(--claret); font-size: 0.85rem; }
+
+.panel { background: var(--paper-raised); border: 1px solid var(--rule); border-radius: 2px;
+  padding: 1.25rem 1.25rem 1.5rem; }
+.panel + .panel { margin-top: 1.5rem; }
+.panel h2 { font-size: 1.35rem; margin-bottom: 0.25rem; }
+.panel .hint { color: var(--ink-muted); font-size: 0.875rem; margin: 0 0 1rem; }
+
+.line { display: flex; justify-content: space-between; gap: 0.75rem; padding: 0.35rem 0;
+  font-size: 0.95rem; }
+.total { display: flex; justify-content: space-between; border-top: 1px solid var(--rule);
+  margin-top: 0.75rem; padding-top: 0.75rem; font-variant-numeric: tabular-nums; }
+
+label { display: block; font-size: 0.8rem; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--ink-muted); margin: 0.85rem 0 0.25rem; }
+input, select, textarea { width: 100%; font: inherit; font-size: 0.95rem; padding: 0.5rem 0.6rem;
+  border: 1px solid var(--rule); border-radius: 2px; background: #fff; color: var(--ink); }
+input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible {
+  outline: 2px solid var(--claret); outline-offset: 2px; }
+
+button { font: inherit; cursor: pointer; border-radius: 2px; }
+.btn { background: var(--claret); color: #fff; border: 1px solid var(--claret);
+  padding: 0.55rem 1.1rem; width: 100%; margin-top: 1.1rem; }
+.btn:hover:not(:disabled) { background: var(--claret-strong); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-quiet { background: none; border: 1px solid var(--rule); color: var(--ink);
+  padding: 0.1rem 0.5rem; line-height: 1.4; }
+.btn-quiet:hover { border-color: var(--claret); color: var(--claret); }
+
+.slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(5.2rem, 1fr)); gap: 0.4rem;
+  margin-top: 0.5rem; }
+.slot { border: 1px solid var(--rule); background: #fff; padding: 0.4rem 0; font-variant-numeric: tabular-nums; }
+.slot[aria-pressed="true"] { background: var(--claret); border-color: var(--claret); color: #fff; }
+.slot:disabled { color: var(--ink-muted); background: transparent; text-decoration: line-through;
+  cursor: not-allowed; }
+
+.notice { border-left: 3px solid var(--claret); padding: 0.5rem 0.75rem; margin-top: 1rem;
+  background: #fff; font-size: 0.9rem; }
+.notice-good { border-color: #2f6b46; }
+.muted { color: var(--ink-muted); font-size: 0.875rem; }
+
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; }

@@ -147,6 +147,7 @@ import { OpportunityFormPage } from "@/modules/crm/pages/OpportunityFormPage";
 import { AtRiskPage } from "@/modules/hospitality/pages/AtRiskPage";
 import { HospitalityHomePage } from "@/modules/hospitality/pages/HospitalityHomePage";
 import { KdsBoardPage } from "@/modules/hospitality/pages/KdsBoardPage";
+import { MenuStructurePage } from "@/modules/hospitality/pages/MenuStructurePage";
 import { MenuAvailabilityPage } from "@/modules/hospitality/pages/MenuAvailabilityPage";
 import { TicketDetailPage } from "@/modules/hospitality/pages/TicketDetailPage";
 import { TicketFormPage } from "@/modules/hospitality/pages/TicketFormPage";
@@ -473,6 +474,13 @@ const inventoryUomDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/inventory/uoms/$uomId",
   component: UomFormPage,
+});
+// Menu structure lives under Inventory (#212): a dish IS an inventory item, and this is where a
+// manager already is when they create one. What it edits is hospitality state.
+const inventoryMenuRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory/menu",
+  component: MenuStructurePage,
 });
 const inventoryItemsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -1387,6 +1395,7 @@ const routeTree = rootRoute.addChildren([
   inventoryUomsRoute,
   inventoryUomNewRoute,
   inventoryUomDetailRoute,
+  inventoryMenuRoute,
   inventoryItemsRoute,
   inventoryItemNewRoute,
   inventoryItemDetailRoute,

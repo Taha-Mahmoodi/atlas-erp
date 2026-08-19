@@ -71,7 +71,15 @@ Issuing and revoking a key are themselves audited (`entity_table = core_api_keys
 
 A restaurant's own website is the first client Atlas ships a purpose-built surface for. It holds a
 machine API key (above) scoped to `hospitality.menu.read` and `hospitality.ticket.manage` — nothing
-else — and talks to three endpoints. If the site also takes **table bookings**, mint it a
+else — and talks to three endpoints.
+
+**Atlas ships a working one** (D-082): `frontend/src/modules/hospitality/website/`, served on its own
+origin by its own nginx (`docker compose up` → <http://localhost:8080>), which is what holds the two
+keys — the browser bundle never sees them and calls a relative `/guest-api/*` that carries no
+credential at all. Read `frontend/website-nginx.conf.template` for the shape: one **exact** location
+per contract endpoint (a `/menu/` prefix would also publish `/menu/at-risk`, the staff coverage scan),
+`limit_except` per method, and a rate-limit zone keyed by address rather than by credential, because
+every request through such a server presents the same key. If the site also takes **table bookings**, mint it a
 **separate** key scoped to `hospitality.reservation.book` (see [the reservation
 contract](#the-reservation-contract)) rather than widening this one: the two surfaces fail
 differently, and a key that can only book cannot also read the menu it has no business changing.

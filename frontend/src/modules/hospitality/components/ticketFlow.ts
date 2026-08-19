@@ -23,15 +23,28 @@ export const TICKET_FLOW: readonly OrderTicketStatus[] = [
   "SETTLED",
 ];
 
+/** CANCELLED is deliberately absent from TICKET_FLOW above: it is a terminal BRANCH off OPEN
+ * (D-080), not a step in the sequence, and the backend checks its one transition separately. */
+const CANCELLABLE_FROM: OrderTicketStatus = "OPEN";
+
+/** Whether this check may be cancelled — nothing cooked, no money moved. */
+export function canCancelTicket(status: OrderTicketStatus): boolean {
+  return status === CANCELLABLE_FROM;
+}
+
 /** Every state something can advance INTO — OPEN is excluded because it is where a check starts
  * and nothing moves back to it. Callers use it to key an exhaustive action table. */
-export type NextTicketStatus = Exclude<OrderTicketStatus, "OPEN">;
+export type NextTicketStatus = Exclude<OrderTicketStatus, "OPEN" | "CANCELLED">;
 
 /** The one state this ticket may move to, or null once it is settled (terminal). */
 export function nextTicketStatus(status: OrderTicketStatus): NextTicketStatus | null {
+  const index = TICKET_FLOW.indexOf(status);
+  // A status that is not IN the sequence has no next state. Without this guard indexOf's -1 makes
+  // the +1 land on TICKET_FLOW[0] and a CANCELLED check would be offered "Fire to kitchen".
+  if (index === -1) return null;
   // The +1 can never land on TICKET_FLOW[0], so the result excludes OPEN by construction — a fact
   // the index expression cannot carry in its type, and one the tests pin.
-  return (TICKET_FLOW[TICKET_FLOW.indexOf(status) + 1] as NextTicketStatus | undefined) ?? null;
+  return (TICKET_FLOW[index + 1] as NextTicketStatus | undefined) ?? null;
 }
 
 export function isNextStatus(from: OrderTicketStatus, to: OrderTicketStatus): boolean {

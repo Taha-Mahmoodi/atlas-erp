@@ -180,6 +180,11 @@ class OrderTicket(UuidPKMixin, TenantMixin, AuditMixin, DocumentMixin, Timestamp
     guest_count: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
     fired_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
     settled_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+    # The third moment worth stamping, and the only one that carries a REASON: cancelling is the
+    # one terminal state a human chooses for a reason the numbers do not record anywhere else
+    # (wrong table, party walked). Required by the service, so the pair is always written together.
+    cancelled_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+    cancel_reason: Mapped[str | None] = mapped_column(sa.String(200), nullable=True)
     total_amount: Mapped[Decimal] = mapped_column(
         MoneyType(), nullable=False, default=Decimal(0), server_default="0"
     )

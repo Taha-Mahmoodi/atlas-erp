@@ -20,7 +20,10 @@ export type OrderTicketStatus =
   | "IN_PREP"
   | "READY"
   | "SERVED"
-  | "SETTLED";
+  | "SETTLED"
+  /** Terminal, reachable only from OPEN (D-080) — a check opened by mistake. Deliberately NOT a
+   * step in `TICKET_FLOW`: see `ticketFlow.ts`. */
+  | "CANCELLED";
 
 // --- Menu availability --------------------------------------------------------
 
@@ -116,6 +119,50 @@ export interface OrderTicket {
   guest_count: number | null;
   fired_at: string | null;
   settled_at: string | null;
+  cancelled_at: string | null;
+  cancel_reason: string | null;
   total_amount: string;
   notes: string | null;
+}
+
+// --- Menu structure (#212, D-081) ---------------------------------------------
+// TWO axes, because a restaurant has two: sections are a TREE and a dish sits in exactly one of
+// them (that is the running order of a printed menu, and order implies a single place); tags are
+// FLAT and a dish carries any number (vegan, spicy, Italian), which is what answers "show me
+// everything vegan" without duplicating the dish into a second branch.
+
+export interface MenuSection {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  sort_order: number;
+  /** DIRECT dishes only, never cumulative — a course showing its children's dishes would read as
+   * "12 starters" on a heading that holds none of them itself. */
+  dish_count: number;
+}
+
+export interface MenuSectionCreate {
+  name: string;
+  parent_id?: string | null;
+  sort_order?: number;
+}
+
+export interface MenuSectionUpdate {
+  name?: string;
+  /** Needs `reparent` beside it: an optional nullable field cannot say the difference between
+   * "leave the parent alone" and "make this a root section". */
+  parent_id?: string | null;
+  reparent?: boolean;
+  sort_order?: number;
+}
+
+export interface MenuPlacement {
+  item_id: string;
+  section_id: string | null;
+  tags: string[];
+}
+
+export interface MenuPlacementSet {
+  section_id: string | null;
+  tags: string[];
 }

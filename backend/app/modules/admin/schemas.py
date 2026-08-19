@@ -116,14 +116,25 @@ class ApiKeyCreated(ApiKeyRead):
     key: str
 
 
+class NumberSequenceCounterRead(ApiModel):
+    """One year's running counter (D-012). ``next_value`` is the next number a claim in that year
+    would hand out; ``year`` is null for a sequence that does not year-reset."""
+
+    year: int | None
+    next_value: int
+
+
 class NumberSequenceRead(ApiModel):
-    """One per-tenant number sequence as the read-only viewer exposes it (D-012):
-    ``next_value`` is the counter's current position — the next number a claim would hand out."""
+    """One per-tenant number sequence as the read-only viewer exposes it (D-012).
+
+    ``counters`` is one row per year the tenant has actually claimed in, newest first — a
+    sequence claimed in no year yet has none. Showing the whole set rather than a single
+    "current" position is what makes a mis-dated document visible: a stray 2022 counter next to
+    the live one is the tell that somebody backdated a check (issue #209)."""
 
     id: uuid.UUID
     name: str
     prefix: str
     padding: int
-    next_value: int
     year_reset: bool
-    current_year: int | None
+    counters: list[NumberSequenceCounterRead] = []

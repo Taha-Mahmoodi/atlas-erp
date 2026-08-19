@@ -3,11 +3,12 @@
 Two modes:
 
 * Default: one demo tenant per industry template (manufacturing, retail,
-  professional-services, healthcare, construction) plus the industry-agnostic `acme`
-  baseline — each bootstrapped with a full-catalog superuser, its industry template
+  professional-services, healthcare, construction, hospitality) plus the industry-agnostic
+  `acme` baseline — each bootstrapped with a full-catalog superuser, its industry template
   applied, and ~3 months of interlinked transactions seeded through the HTTP API
   (procure-to-pay, order-to-cash, make-to-stock where enabled, HR/time/payroll,
-  projects) so every report shows real data. Login: owner@<slug>.test / the shared
+  projects, and a restaurant service on the hospitality tenant) so every report shows real
+  data. Login: owner@<slug>.test / the shared
   demo password below.
 
 * ``--volume``: a high-volume `volume` tenant per PERFORMANCE.md §5 — ≥100k journal
@@ -29,6 +30,7 @@ journal entries.
 
 import asyncio
 import os
+import secrets
 import sys
 import time
 import uuid
@@ -323,6 +325,114 @@ PROFILES = [
         "flows": {"mfg": False, "quality": True, "maintenance": True, "projects": True,
                   "crm": True, "stock": True},
     },
+    {
+        "slug": "hospitality",
+        "template": "hospitality",
+        "name": "Lantern & Larder",
+        # The RESTAURANT half of the template (PLAN 19/21). The hotel half — rooms, folios,
+        # night audit — is Phase 20 and does not exist yet, so this tenant deliberately leaves
+        # the Guest Ledger and Advance Deposits control accounts the template ships untouched
+        # rather than posting invented folio balances to them.
+        "coa": {
+            "cash": _acct("1000", "Front Desk Float", "ASSET", "OPERATING", True),
+            # The CITY ledger, not the guest ledger: Atlas customers here are the billing
+            # accounts a restaurant actually invoices (an events company, a corporate travel
+            # desk), never the walk-in diner, who pays their check and leaves no receivable.
+            "ar": _acct("1110", "City Ledger", "ASSET"),
+            "inv": _acct("1300", "Food Inventory", "ASSET"),
+            "bev": _acct("1310", "Beverage Inventory", "ASSET"),
+            "grir": _acct("1400", "GR/IR Clearing", "ASSET"),
+            "ap": _acct("2000", "Accounts Payable", "LIABILITY"),
+            "wages": _acct("2300", "Wages Payable", "LIABILITY"),
+            "paytax": _acct("2400", "Payroll Tax Payable", "LIABILITY"),
+            "equity": _acct("3000", "Owner Equity", "EQUITY"),
+            "rev": _acct("4100", "Food Revenue", "REVENUE"),
+            "cogs": _acct("5000", "Cost of Food and Beverage Sold", "EXPENSE"),
+            # NOT 5200 Spoilage and Waste, which the template ships: a receipt priced above the
+            # item's standard cost is a purchase price variance, and booking it as spoilage
+            # would tell a chef food was thrown away when nothing left the walk-in.
+            "pricediff_a": _acct("5210", "Inventory Price Difference", "EXPENSE"),
+            "opex": _acct("6000", "Operating Expenses", "EXPENSE"),
+            "salary": _acct("6100", "Kitchen and Floor Salaries", "EXPENSE"),
+        },
+        "pricediff": "pricediff_a",
+        # MENU and FOOD both value to Food Inventory; the cellar has its own control account,
+        # which is the split every F&B operator's P&L is read on.
+        "categories": {"MENU": "inv", "FOOD": "inv", "BEV": "bev"},
+        # A dish is an ORDINARY inventory item that happens to be a BOM parent (the template
+        # says so in as many words): no recipe entity, no menu-membership entity. The MENU
+        # category IS the menu, and it is the category id the website passes to GET /menu.
+        "items": [
+            ("DISH-RIBEYE", "Dry-Aged Ribeye", "STOCKED", "MENU", "38.00", "16.00"),
+            ("DISH-RISOTTO", "Wild Mushroom Risotto", "STOCKED", "MENU", "24.00", "7.50"),
+            ("DISH-BASS", "Roast Sea Bass", "STOCKED", "MENU", "31.00", "12.00"),
+            ("DISH-BURRATA", "Burrata and Heirloom Tomato", "STOCKED", "MENU", "16.00", "5.50"),
+            ("DISH-TART", "Salted Caramel Tart", "STOCKED", "MENU", "11.00", "3.20"),
+            ("ING-BEEF", "Ribeye Steak (kg)", "STOCKED", "FOOD", None, "22.00"),
+            ("ING-MUSH", "Wild Mushrooms (kg)", "STOCKED", "FOOD", None, "18.00"),
+            ("ING-BASS", "Sea Bass Fillet (kg)", "STOCKED", "FOOD", None, "26.00"),
+            ("ING-BURRATA", "Burrata (each)", "STOCKED", "FOOD", None, "3.40"),
+            ("ING-BUTTER", "Butter (kg)", "STOCKED", "FOOD", None, "8.00"),
+            ("BEV-RED", "House Red (bottle)", "STOCKED", "BEV", "34.00", "9.00"),
+            ("BEV-WATER", "Sparkling Water (bottle)", "STOCKED", "BEV", "5.00", "0.90"),
+        ],
+        # Group and event covers are the sales orders a restaurant really raises; the nightly
+        # floor is order tickets, seeded by seed_hospitality further down.
+        "sell": 0,
+        "make": None,
+        "buys": [5, 6, 7],
+        "vendors": [("V-BUTCHER", "Fenwick Butchers"), ("V-PRODUCE", "Marketgarden Produce"),
+                    ("V-CELLAR", "Harbour Cellar Wines")],
+        "customers": [("C-ASHCROFT", "Ashcroft Events Co"),
+                      ("C-MERIDIAN", "Meridian Corporate Travel"),
+                      ("C-GUILD", "Northgate Dining Guild")],
+        "employees": [("E-7001", "Elena", "Rossi", "5200"), ("E-7002", "Marcus", "Bell", "3400"),
+                      ("E-7003", "Yara", "Haddad", "4600")],
+        "department": ("D-FB", "Food and Beverage"),
+        "projects": [],
+        # mfg is OFF even though the template turns the module on, and the two are not in
+        # conflict: the template needs the BOM sub-engine because a recipe IS a bill of
+        # material, while this flag drives seed_manufacturing, which releases production
+        # orders and runs MRP. A kitchen does not release a production order to cook a steak.
+        # seed_hospitality builds the recipes itself, which is the half a restaurant uses.
+        "flows": {"mfg": False, "quality": False, "maintenance": True, "projects": False,
+                  "crm": True, "stock": True, "hospitality": True},
+        # dish -> [(ingredient, quantity per portion)]. Deliberately shallow and shared: the
+        # butter runs through three dishes, which is what makes the at-risk scan's
+        # over-reporting on shared ingredients visible in the demo instead of theoretical.
+        # A storeroom, not a warehouse: these are the counts a chef would actually read off a
+        # walk-in shelf, and they are what makes the at-risk scan say something. Everything not
+        # named here falls back to seed_inventory's generic opening stock.
+        "opening_qty": {
+            "ING-BEEF": "40", "ING-MUSH": "12", "ING-BASS": "18", "ING-BURRATA": "6",
+            "ING-BUTTER": "9", "BEV-RED": "60", "BEV-WATER": "120",
+        },
+        "recipes": {
+            "DISH-RIBEYE": [("ING-BEEF", "0.35"), ("ING-BUTTER", "0.02")],
+            "DISH-RISOTTO": [("ING-MUSH", "0.15"), ("ING-BUTTER", "0.03")],
+            "DISH-BASS": [("ING-BASS", "0.22"), ("ING-BUTTER", "0.02")],
+            "DISH-BURRATA": [("ING-BURRATA", "1")],
+        },
+        # The menu a guest reads: root courses in service order, one sub-heading to prove the
+        # tree is a tree. (section, parent, sort_order)
+        "menu_sections": [
+            ("Starters", None, 10),
+            ("Mains", None, 20),
+            ("From the Grill", "Mains", 10),
+            ("Desserts", None, 30),
+            ("Cellar", None, 40),
+        ],
+        # dish -> (section, tags)
+        "menu_placements": {
+            "DISH-BURRATA": ("Starters", ["vegetarian", "gluten-free"]),
+            "DISH-RIBEYE": ("From the Grill", ["signature"]),
+            "DISH-RISOTTO": ("Mains", ["vegetarian"]),
+            "DISH-BASS": ("Mains", ["gluten-free"]),
+            "DISH-TART": ("Desserts", ["vegetarian"]),
+            "BEV-RED": ("Cellar", []),
+            "BEV-WATER": ("Cellar", []),
+        },
+    },
 ]
 
 
@@ -338,6 +448,7 @@ async def bootstrap(p: dict) -> uuid.UUID:
     import app.core.bootstrap  # noqa: F401 — side effect: registers every module's permission keys
     from app.core.bootstrap import register_event_handlers
     from app.core.db import build_session_factory, engine
+    from app.core.events import run_in_uow
     from app.core.models import Role, User, UserRole
     from app.core.rbac import catalog_keys, sync_permission_catalog
     from app.core.tenancy import system_context
@@ -363,7 +474,14 @@ async def bootstrap(p: dict) -> uuid.UUID:
         if tenant is None:
             tenant = await provision_tenant(db, slug=slug, name=p["name"])
         if p.get("template"):
-            await apply_template(db, tenant.id, p["template"])  # no-op when already applied
+            # INSIDE run_in_uow, and that is the whole point: `apply_template` applies the
+            # core/admin slices directly but PUBLISHES `IndustryTemplateApplying` for the rest, and
+            # `core/events.publish` only appends to the session buffer. Without the uow to drain it
+            # the finance/inventory/procurement handlers never run, so a "template tenant" got its
+            # custom fields, numbering and terminology and none of its chart of accounts, tax
+            # codes, UoMs, per-category costing method or approval rules — for every template
+            # shipped. Idempotent: a second pass is a no-op.
+            await run_in_uow(db, lambda: apply_template(db, tenant.id, p["template"]))
 
         with system_context():
             user = (
@@ -679,7 +797,9 @@ def seed_inventory(p: dict, fin: dict) -> dict:
         for code, _name, itype, _cat, price, cost in p["items"]:
             if itype != "STOCKED":
                 continue
-            qty = "800" if price else "600"  # sellables cover 3 months of orders
+            # sellables cover 3 months of orders; `opening_qty` overrides per item for a
+            # profile whose storeroom is a real quantity (a kitchen holds six burrata, not 600)
+            qty = p.get("opening_qty", {}).get(code) or ("800" if price else "600")
             post(
                 "/inventory/stock-moves",
                 {
@@ -718,8 +838,15 @@ def _run_po_cycle(p, fin, inv, vendor_id, item_idx, qty, order_date, match_invoi
     )
     if not po:
         return
-    post(f"/procurement/purchase-orders/{po['id']}/decision", {"decision": "APPROVED"})
+    # A directly-created PO starts DRAFT, and `send` is what routes it: under the template's
+    # approval preset it goes straight to SENT, over it to PENDING_APPROVAL. So the approval
+    # happens AFTER the send, and only when the send actually parked it there — a decision on a
+    # DRAFT is a 409 and would leave the order stuck one state short of receivable, which is
+    # exactly what a tenant whose preset threshold is lower than its order values hit.
     post(f"/procurement/purchase-orders/{po['id']}/send")
+    if get(f"/procurement/purchase-orders/{po['id']}")["status"] == "PENDING_APPROVAL":
+        post(f"/procurement/purchase-orders/{po['id']}/decision", {"decision": "APPROVED"})
+        post(f"/procurement/purchase-orders/{po['id']}/send")
     po_lines = get(f"/procurement/purchase-orders/{po['id']}").get("lines", [])
     if not po_lines:
         return
@@ -823,8 +950,14 @@ def seed_procurement(p: dict, fin: dict, inv: dict) -> dict:
             },
         )
     if po:
-        post(f"/procurement/purchase-orders/{po['id']}/decision", {"decision": "APPROVED"})
+        # A PO converted from a requisition arrives PENDING_APPROVAL when it is over the preset,
+        # so it is approved first and sent second — the mirror of the direct path above.
+        if po["status"] == "PENDING_APPROVAL":
+            post(f"/procurement/purchase-orders/{po['id']}/decision", {"decision": "APPROVED"})
         post(f"/procurement/purchase-orders/{po['id']}/send")
+        if get(f"/procurement/purchase-orders/{po['id']}")["status"] == "PENDING_APPROVAL":
+            post(f"/procurement/purchase-orders/{po['id']}/decision", {"decision": "APPROVED"})
+            post(f"/procurement/purchase-orders/{po['id']}/send")
         lines = get(f"/procurement/purchase-orders/{po['id']}").get("lines", [])
         if lines:
             gr = post(
@@ -1472,6 +1605,301 @@ def seed_crm(p: dict, hr: dict) -> None:
             )
 
 
+# ── Hospitality (the restaurant floor) ───────────────────────────────────────
+# THE ONE FLOW THAT RUNS ON THE REAL CLOCK. Everything above is seeded inside the frozen
+# START..TODAY window so three months of history always look the same; a reservation cannot be,
+# because the pacing gate validates the service date against `utcnow()` (a booking in the past is
+# refused, by design), and a ticket's `fired_at` is stamped server-side. So this seeds TONIGHT'S
+# service and tomorrow's book, against whatever day the seed actually runs.
+_SERVICE_SLOTS = {  # (hour, minute) UTC — inside the module's default 11:00-23:00 window
+    "early": (18, 30),
+    "prime": (19, 45),
+    "late": (21, 15),
+}
+
+
+def _slot(day: date, key: str) -> str:
+    """A slot instant as the API wants it: UTC, on the 15-minute grid, with an offset. A naive
+    datetime is refused (422) — the instant is half of the pacing counter's key."""
+    hour, minute = _SERVICE_SLOTS[key]
+    return datetime(day.year, day.month, day.day, hour, minute, tzinfo=UTC).isoformat()
+
+
+def seed_hospitality(p: dict, fin: dict, inv: dict) -> None:
+    """Recipes, the menu a guest reads, the 86 board, tonight's book and tonight's checks.
+
+    Runs after sales so the standard price list exists: the website's `GET /menu` resolves a dish's
+    price from it, and a dish with no applicable price is listed unorderable rather than hidden.
+    """
+    dishes = inv["items"]
+
+    # The fiscal period covering the REAL today, opened so the depletion job's ingredient ISSUE
+    # can post its COGS journal. seed_finance opens the frozen window's periods (March-July); a
+    # ticket fired tonight posts into the month the seed is actually run in, and a closed period
+    # would surface as a FAILED job rather than as stock leaving the walk-in.
+    real_today = date.today().isoformat()
+    fy = get_or_create(
+        "/finance/fiscal-years",
+        "code",
+        {"code": "FY2026", "name": "Fiscal Year 2026", "start_date": "2026-01-01"},
+    )
+    for per in items(f"/finance/fiscal-periods?fiscal_year_id={fy['id']}"):
+        if per["start_date"] <= real_today <= per["end_date"] and per["status"] != "OPEN":
+            post(f"/finance/fiscal-periods/{per['id']}/open")
+
+    # --- Recipes: a dish's BOM is its recipe (no recipe entity exists, and none is wanted) ---
+    if empty("/manufacturing/boms"):
+        for dish_code, components in p["recipes"].items():
+            bom = post(
+                "/manufacturing/boms",
+                {
+                    "item_id": dishes[dish_code],
+                    "version": "v1",
+                    "name": f"{dish_code} recipe",
+                    "base_quantity": "1",
+                    "uom_id": inv["uom"],
+                },
+            )
+            if not bom:
+                continue
+            for comp_code, qty_per in components:
+                post(
+                    f"/manufacturing/boms/{bom['id']}/components",
+                    {
+                        "component_item_id": dishes[comp_code],
+                        "quantity_per": qty_per,
+                        "uom_id": inv["uom"],
+                    },
+                )
+            post(f"/manufacturing/boms/{bom['id']}/activate")
+
+    # --- The menu: headings, then which dish sits under which and how it is labelled ---
+    sections = {s["name"]: s for s in items("/hospitality/menu/sections")}
+    for name, parent, sort_order in p["menu_sections"]:
+        if name in sections:
+            continue
+        body = {"name": name, "sort_order": sort_order}
+        if parent:
+            body["parent_id"] = sections[parent]["id"]
+        created = post("/hospitality/menu/sections", body)
+        if created:
+            sections[name] = created
+    for dish_code, (section_name, tags) in p["menu_placements"].items():
+        put(
+            f"/hospitality/menu/{dishes[dish_code]}/placement",
+            {"section_id": sections[section_name]["id"], "tags": tags},
+        )
+
+    # --- The 86 board: one dish off, one on a countdown. Absence IS available, so two rows is
+    # the whole board — and it is what the website's conditional GET revalidates against.
+    put(
+        f"/hospitality/menu/{dishes['DISH-BASS']}/availability",
+        {"state": "EIGHTY_SIXED", "reason": "Market closed — no bass today"},
+    )
+    put(
+        f"/hospitality/menu/{dishes['DISH-RIBEYE']}/availability",
+        {"state": "LIMITED", "remaining_qty": "6", "reason": "Six portions left on the rack"},
+    )
+
+    # --- Tonight's book -------------------------------------------------------
+    today, tomorrow = date.today(), date.today() + timedelta(days=1)
+    if empty("/hospitality/reservations"):
+        bookings = [
+            (today, "early", 2, "Hannah Weiss", "hannah.weiss@example.test"),
+            (today, "prime", 4, "The Okonkwo party", "+1 555 0142"),
+            (today, "prime", 2, "Sam Delacroix", "sam.d@example.test"),
+            (today, "late", 6, "Ferrand — birthday", "+1 555 0199"),
+            (tomorrow, "early", 3, "Ines Alvarez", "ines@example.test"),
+            (tomorrow, "prime", 8, "Northgate Dining Guild", "guild@example.test"),
+        ]
+        taken = []
+        for day, slot_key, party, name, contact in bookings:
+            res = post(
+                "/hospitality/reservations",
+                {
+                    "service_date": day.isoformat(),
+                    "slot_start": _slot(day, slot_key),
+                    "party_size": party,
+                    "guest_name": name,
+                    "guest_contact": contact,
+                },
+            )
+            if res:
+                taken.append(res)
+        # Three of the six leave CONFIRMED so the book has something live in it; the rest show
+        # the lifecycle: one party is at a table (which opens their check), one called off.
+        if len(taken) >= 4:
+            post(f"/hospitality/reservations/{taken[1]['id']}/seat", {"table_code": "7"})
+            post(f"/hospitality/reservations/{taken[3]['id']}/cancel")
+
+    # One slot closed for a private event: capacity zero is a real answer the website's grid
+    # renders as unbookable, and it is the only way to say "we are not selling that time".
+    put(
+        "/hospitality/service-slots",
+        {
+            "service_date": tomorrow.isoformat(),
+            "slot_start": _slot(tomorrow, "late"),
+            "covers_max": 0,
+            "parties_max": 0,
+        },
+    )
+
+    # --- Tonight's checks -----------------------------------------------------
+    # Deliberately NOT dated into the frozen window: fired_at is stamped server-side, so a ticket
+    # is always part of the service running when the seed ran. The sea bass is absent from every
+    # one of them — it is 86'd, and firing it would be a 422 (which is the point of the board).
+    if len(items("/hospitality/tickets")) > 1:  # the seated party's check may already exist
+        return
+    prices = {code: price for code, _n, _t, _c, price, _cost in p["items"]}
+
+    def line(code: str, qty: str, seat: int | None = None, notes: str | None = None) -> dict:
+        return {
+            "item_id": dishes[code],
+            "quantity": qty,
+            "unit_price": prices[code],
+            "seat_number": seat,
+            "notes": notes,
+        }
+
+    # A check the kitchen has finished and the guest has paid.
+    settled = post(
+        "/hospitality/tickets",
+        {
+            "table_code": "3",
+            "guest_count": 2,
+            "lines": [
+                line("DISH-BURRATA", "1", 1),
+                line("DISH-RISOTTO", "1", 1, "no parmesan"),
+                line("DISH-TART", "2"),
+                line("BEV-RED", "1"),
+            ],
+        },
+    )
+    if settled:
+        post(f"/hospitality/tickets/{settled['id']}/fire")
+        for status in ("IN_PREP", "READY", "SERVED"):
+            post(f"/hospitality/tickets/{settled['id']}/advance", {"status": status})
+        post(f"/hospitality/tickets/{settled['id']}/settle")
+
+    # A check mid-service, and the one that burns the ribeye countdown from 6 down to 4.
+    in_prep = post(
+        "/hospitality/tickets",
+        {
+            "table_code": "12",
+            "guest_count": 4,
+            "lines": [
+                line("DISH-RIBEYE", "2", 1, "one medium rare, one medium"),
+                line("DISH-RISOTTO", "1", 3),
+                line("BEV-WATER", "2"),
+            ],
+        },
+    )
+    if in_prep:
+        post(f"/hospitality/tickets/{in_prep['id']}/fire")
+        post(f"/hospitality/tickets/{in_prep['id']}/advance", {"status": "IN_PREP"})
+
+    # A check still being taken — the only state in which lines may still be added.
+    post(
+        "/hospitality/tickets",
+        {
+            "table_code": "5",
+            "guest_count": 2,
+            "lines": [line("DISH-BURRATA", "1", 1), line("BEV-RED", "1")],
+        },
+    )
+
+    # And one opened on the wrong table, closed without cooking anything (D-080).
+    walked = post(
+        "/hospitality/tickets", {"table_code": "9", "guest_count": 2, "lines": []}
+    )
+    if walked:
+        post(f"/hospitality/tickets/{walked['id']}/cancel", {"reason": "Wrong table"})
+
+
+# ── The property's website credential (D-069) ────────────────────────────────
+# The guest-facing site is a first-party SYSTEM, not a member of staff: it authenticates with a
+# machine API key, and docs/api.md's contract is two keys, not one — a leaked booking key must not
+# also be able to read the menu, and a leaked menu key must not be able to see tonight's guest
+# list. Both are bound to a dedicated service user so the audit trail names the website rather
+# than a person (docs/api.md, "the audit note").
+#
+# The full key exists only in the 201 body, so it is written where the website container can read
+# it (ATLAS_WEBSITE_KEYFILE, a shared volume in docker-compose) and printed nowhere else unless
+# there is no file to write to. Nothing recovers a key: a re-run with no keyfile present revokes
+# the previous pair and mints a fresh one rather than pretending it can hand the old one back.
+WEBSITE_USER_EMAIL_SUFFIX = "website@{slug}.test"
+WEBSITE_KEYS = {
+    # env var -> (key name, scopes). The scopes ARE the contract in docs/api.md.
+    "ATLAS_WEBSITE_MENU_KEY": (
+        "website — menu and orders",
+        ["hospitality.menu.read", "hospitality.ticket.manage"],
+    ),
+    "ATLAS_WEBSITE_BOOK_KEY": (
+        "website — reservations",
+        ["hospitality.reservation.book"],
+    ),
+}
+
+
+def seed_website_keys(p: dict) -> None:
+    """Provision the service user, its role, and the two scoped keys the guest site presents."""
+    keyfile = os.environ.get("ATLAS_WEBSITE_KEYFILE")
+    email = WEBSITE_USER_EMAIL_SUFFIX.format(slug=p["slug"])
+    user = get_or_create(
+        "/admin/users",
+        "email",
+        {
+            # Never logged into by a human — the credential that matters is the API key, and a
+            # password nobody holds is one fewer way in. Not the shared demo password.
+            "email": email,
+            "password": secrets.token_urlsafe(24),
+            "full_name": "Property website (machine)",
+        },
+    )
+    role = get_or_create(
+        "/admin/roles",
+        "name",
+        {
+            "name": "Website",
+            # The UNION of what the two keys need. Each key then narrows it: authentication
+            # intersects a key's scopes with its user's permissions on every request, so the
+            # role is the ceiling and the scopes are the actual width.
+            "permissions": sorted({key for _n, scopes in WEBSITE_KEYS.values() for key in scopes}),
+        },
+    )
+    post("/admin/users/assign-role", {"user_id": user["id"], "role_id": role["id"]})
+
+    live = {k["name"]: k for k in items("/admin/api-keys") if not k.get("revoked_at")}
+    names = [name for name, _scopes in WEBSITE_KEYS.values()]
+    if all(name in live for name in names) and keyfile and os.path.exists(keyfile):
+        print(f"seed: website keys already minted and {keyfile} exists — left alone")
+        return
+
+    minted = {}
+    for env_var, (name, scopes) in WEBSITE_KEYS.items():
+        if name in live:
+            post(f"/admin/api-keys/{live[name]['id']}/revoke")
+        created = post(
+            "/admin/api-keys", {"name": name, "user_id": user["id"], "scopes": scopes}
+        )
+        if created:
+            minted[env_var] = created["key"]
+
+    if not keyfile:
+        print("seed: ATLAS_WEBSITE_KEYFILE not set — the website keys are printed ONCE, here:")
+        for env_var, key in minted.items():
+            print(f"  {env_var}={key}")
+        return
+    os.makedirs(os.path.dirname(keyfile) or ".", exist_ok=True)
+    # 0600 and written whole: the website container reads it at start, and a half-written file
+    # would start nginx with an empty Authorization header instead of failing loudly.
+    with open(keyfile, "w", encoding="utf-8") as handle:
+        for env_var, key in minted.items():
+            handle.write(f"{env_var}={key}\n")
+    os.chmod(keyfile, 0o600)
+    print(f"seed: minted {len(minted)} website API key(s) -> {keyfile}")
+
+
 # ── Verify ───────────────────────────────────────────────────────────────────
 _VERIFY_CORE = {
     "finance/accounts": "Accounts",
@@ -1497,6 +1925,11 @@ _VERIFY_FLOW = {
     "maintenance": {"maintenance/maintenance-orders": "Maintenance orders"},
     "projects": {"projects": "Projects"},
     "crm": {"crm/leads": "Leads", "crm/opportunities": "Opportunities"},
+    "hospitality": {
+        "hospitality/menu/sections": "Menu sections",
+        "hospitality/reservations": "Reservations",
+        "hospitality/tickets": "Order tickets",
+    },
 }
 
 
@@ -1533,6 +1966,9 @@ def seed_tenant(p: dict) -> None:
     hr = seed_hr(p, fin, prj)
     if p["flows"]["crm"]:
         seed_crm(p, hr)
+    if p["flows"].get("hospitality"):
+        seed_hospitality(p, fin, inv)
+        seed_website_keys(p)
     summarize(p)
 
 

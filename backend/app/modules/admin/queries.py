@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
+from collections.abc import Sequence
 from datetime import datetime
 
 from sqlalchemy import select
@@ -34,7 +35,7 @@ from app.core.models import (
     User,
     UserRole,
 )
-from app.core.numbering import NumberSequence
+from app.core.numbering import NumberSequence, NumberSequenceCounter
 from app.core.pagination import OrderKey, SortDirection, filter_fingerprint, paginate
 from app.core.schemas import Page
 
@@ -231,3 +232,28 @@ async def list_number_sequences(
         cursor=cursor,
         limit=limit,
     )
+
+
+async def counters_for_sequences(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    sequence_ids: Sequence[uuid.UUID],
+) -> dict[uuid.UUID, list[NumberSequenceCounter]]:
+    """Every year's counter for the given sequences, newest year first — ONE statement for the
+    whole page (PERFORMANCE §2), not one per sequence. An empty input short-circuits."""
+    if not sequence_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(NumberSequenceCounter)
+            .where(
+                NumberSequenceCounter.tenant_id == tenant_id,
+                NumberSequenceCounter.sequence_id.in_(list(sequence_ids)),
+            )
+            .order_by(NumberSequenceCounter.year.desc())
+        )
+    ).scalars()
+    by_sequence: dict[uuid.UUID, list[NumberSequenceCounter]] = {}
+    for row in rows:
+        by_sequence.setdefault(row.sequence_id, []).append(row)
+    return by_sequence

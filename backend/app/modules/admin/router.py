@@ -49,6 +49,7 @@ from app.modules.admin.schemas import (
     ApiKeyCreated,
     ApiKeyRead,
     AuditLogRead,
+    NumberSequenceCounterRead,
     NumberSequenceRead,
     PermissionRead,
     RoleAssign,
@@ -396,7 +397,32 @@ async def list_number_sequences(
     # (or a duplicate) in the gapless numbering D-012 guarantees, so exposing it is a foot-gun
     # with no v1 need (YAGNI). Add a guarded, audited adjust endpoint only if a real correction
     # workflow demands it.
+    #
+    # TWO statements for the whole page (PERFORMANCE §2): the sequences, then every year's
+    # counter for exactly those sequences.
     page = await queries.list_number_sequences(
         session, current.tenant_id, cursor=params.cursor, limit=params.limit
     )
-    return map_page(page, NumberSequenceRead)
+    counters = await queries.counters_for_sequences(
+        session, current.tenant_id, [sequence.id for sequence in page.items]
+    )
+    return Page(
+        items=[
+            NumberSequenceRead(
+                id=sequence.id,
+                name=sequence.name,
+                prefix=sequence.prefix,
+                padding=sequence.padding,
+                year_reset=sequence.year_reset,
+                counters=[
+                    NumberSequenceCounterRead(
+                        year=counter.year or None, next_value=counter.next_value
+                    )
+                    for counter in counters.get(sequence.id, [])
+                ],
+            )
+            for sequence in page.items
+        ],
+        next_cursor=page.next_cursor,
+        limit=page.limit,
+    )

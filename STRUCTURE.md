@@ -34,10 +34,16 @@ atlas-erp/
 │   ├── tests/              # mirrors app/ — see §6
 │   └── seed.py
 └── frontend/
-    ├── package.json  vite.config.ts  tsconfig.json  index.html
-    ├── Dockerfile  nginx.conf  .dockerignore
+    ├── package.json  vite.config.ts  tsconfig.json
+    ├── index.html          # entry 1 — the Atlas console
+    ├── website.html        # entry 2 — the property's guest site (D-082)
+    ├── Dockerfile  .dockerignore
+    ├── nginx.conf                      # serves the console, proxies /api
+    ├── website-nginx.conf.template     # serves the guest site, holds its API keys
+    ├── website-keys.envsh              # loads those keys before the template renders
     └── src/
-        ├── main.tsx  App.tsx  router.tsx
+        ├── main.tsx  App.tsx  router.tsx   # the console
+        ├── website.tsx                     # the guest site's entry — no router, no shell
         ├── lib/            # api client, auth, query hooks, formatters
         ├── components/     # design system, module-agnostic — see §4
         └── modules/        # one folder per ERP module, mirrors backend names
@@ -75,7 +81,9 @@ A new file type may not be invented per-module. If finance needs `depreciation.p
 
 - `src/components/` is the design system: one folder per component (`DataGrid/`, `FormBuilder/`, `Kanban/`, `KpiCard/`, `DocFlowViewer/`), each containing `ComponentName.tsx`, optional `ComponentName.test.tsx`, and `index.ts` re-export. Components here know NOTHING about ERP concepts — they take data and callbacks.
 - `src/modules/<module>/` mirrors backend module names exactly and contains: `pages/` (route components, named `<Entity>ListPage.tsx`, `<Entity>DetailPage.tsx`, `<Entity>FormPage.tsx`), `components/` (module-specific composites), `api.ts` (typed endpoint calls for this module only), `types.ts` (mirrors backend schemas), `hooks.ts` (TanStack Query hooks: `useJournalEntries`, `usePostJournal`).
-- `src/lib/`: `apiClient.ts` (the ONLY place fetch/axios appears), `auth.ts`, `queryClient.ts`, `format.ts` (money, dates, quantities — all display formatting goes through here, never inline `toFixed`).
+- `src/lib/`: `apiClient.ts` (the only place fetch/axios appears **in the console**), `auth.ts`, `queryClient.ts`, `format.ts` (money, dates, quantities — all display formatting goes through here, never inline `toFixed`).
+- **The one sanctioned second fetch** is `src/modules/hospitality/website/guestApi.ts`, and the exception is the credential, not convenience (D-082): the guest site has no session, so `apiClient`'s bearer token and its D-008 refresh-and-retry are wrong for it end to end. Any THIRD one is a bug — a module talking to the API from anywhere else goes through `apiClient`.
+- A module may own a `website/` folder for a surface served to someone who is not a member of staff. It follows the module anatomy above (`components` inline, its own api file, its own entry-level CSS) and imports the module's `types.ts`; it must not import `lib/apiClient`, `shell/`, or `components/` — those are the console's, and the two are built as separate bundles from separate HTML entries.
 - No barrel-exporting whole modules into each other; cross-module UI reuse means the component was design-system material and must be promoted to `src/components/`.
 
 # 5. Dependency Rules (what may import what)
