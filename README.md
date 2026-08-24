@@ -202,7 +202,7 @@ stateDiagram-v2
     DRAFT --> DRAFT: edit freely
     DRAFT --> POSTED: post — balance checked in service AND by DB trigger,<br/>period must be OPEN, doc number claimed
     POSTED --> POSTED: immutable — no update path exists
-    POSTED --> REVERSED: write a NEW entry;<br/>reverses_entry_id points back at the original
+    POSTED --> REVERSED: write a NEW entry, reverses_entry_id points back at the original
     REVERSED --> [*]
     note right of POSTED
         There is no edit and no delete.
