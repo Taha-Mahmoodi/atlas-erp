@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 560" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="t d" font-family="ui-monospace, &#34;SF Mono&#34;, &#34;DejaVu Sans Mono&#34;, Menlo, monospace">
+<title id="t">Atlas ERP — a posted journal entry that balances.</title>
+<desc id="d">A ledger-paper document. Header: ATLAS ERP, open-source industry-agnostic ERP; document v1.3.0, posted 2026-08-19. A double-entry journal: account 1000, S/4HANA capabilities benchmarked, debit 140; account 2000, delivered at full parity, credit 44; account 2100, delivered in reduced form, credit 49; account 2200, out of scope with a documented path, credit 47 in amber ink. Totals 140 and 140 — the entry balances. A claret POSTED stamp sits beside the totals. Along the bottom margin, seven hand-pressed fact stamps: licence Apache-2.0; engines PostgreSQL 16 and SQLite; tests 2,334 collected; modules 14 plus core; tables 132; migrations 53; decisions 82.</desc>
+<style>
+.f{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+@media (prefers-reduced-motion: no-preference){
+  .rule-draw{stroke-dasharray:880;stroke-dashoffset:880;animation:draw .78s cubic-bezier(.22,.61,.36,1) .3s forwards}
+  .rule-draw2{stroke-dasharray:290;stroke-dashoffset:290;animation:draw .5s cubic-bezier(.22,.61,.36,1) 1.32s forwards}
+  .tot{opacity:0;animation:ink .55s ease-out 1.02s forwards}
+  .press{opacity:0;animation:press .5s cubic-bezier(.2,.9,.3,1) 1.6s forwards}
+}
+@media (prefers-reduced-motion: reduce){
+  .rule-draw,.rule-draw2,.tot,.press{animation:none !important;stroke-dashoffset:0 !important;opacity:1 !important;transform:none !important}
+}
+@keyframes draw{to{stroke-dashoffset:0}}
+@keyframes ink{from{opacity:0}to{opacity:1}}
+@keyframes press{0%{opacity:0;transform:translateY(-2.4px)}65%{opacity:1;transform:translateY(.9px)}100%{opacity:1;transform:translateY(0)}}
+</style>
+<rect width="1000" height="560" fill="#fbf7f0"/>
+<rect x="38" y="142" width="924" height="278" fill="#fffdf9"/>
+<text x="60" y="84" font-size="34" letter-spacing="7.5" font-weight="600" fill="#241f1a">ATLAS ERP</text>
+<text x="63" y="110" font-size="13" letter-spacing="0.9" fill="#6d635a">Open-source, industry-agnostic ERP</text>
+<text x="764" y="72" font-size="10.5" letter-spacing="1.9" fill="#6d635a">DOCUMENT</text>
+<text x="940" y="72" font-size="14.5" text-anchor="end" class="f" fill="#241f1a">v1.3.0</text>
+<line x1="764" y1="79.5" x2="940" y2="79.5" stroke="#e4dbcc" stroke-width="1"/>
+<text x="764" y="98" font-size="10.5" letter-spacing="1.9" fill="#6d635a">POSTED</text>
+<text x="940" y="98" font-size="14.5" text-anchor="end" class="f" fill="#241f1a">2026-08-19</text>
+<line x1="764" y1="105.5" x2="940" y2="105.5" stroke="#e4dbcc" stroke-width="1"/>
+<line x1="60" y1="128" x2="940" y2="128" stroke="#e4dbcc" stroke-width="1.4"/>
+<line x1="60" y1="132.5" x2="940" y2="132.5" stroke="#e4dbcc" stroke-width="1"/>
+<text x="60" y="162" font-size="10.5" letter-spacing="1.9" fill="#6d635a">ACCOUNT</text>
+<text x="780" y="162" font-size="10.5" letter-spacing="1.9" text-anchor="end" fill="#6d635a">DEBIT</text>
+<text x="930" y="162" font-size="10.5" letter-spacing="1.9" text-anchor="end" fill="#6d635a">CREDIT</text>
+<line x1="60" y1="174" x2="940" y2="174" stroke="#e4dbcc" stroke-width="1"/>
+<text x="60" y="208" font-size="15" class="f" fill="#6d635a">1000</text>
+<text x="120" y="208" font-size="15" fill="#241f1a">S/4HANA capabilities benchmarked</text>
+<text x="780" y="208" font-size="15" text-anchor="end" class="f" fill="#241f1a">140</text>
+<line x1="60" y1="222" x2="940" y2="222" stroke="#e4dbcc" stroke-width="1"/>
+<text x="60" y="250" font-size="15" class="f" fill="#6d635a">2000</text>
+<text x="144" y="250" font-size="15" fill="#241f1a">Delivered at full parity</text>
+<text x="930" y="250" font-size="15" text-anchor="end" class="f" fill="#241f1a">44</text>
+<line x1="60" y1="264" x2="940" y2="264" stroke="#e4dbcc" stroke-width="1"/>
+<text x="60" y="292" font-size="15" class="f" fill="#6d635a">2100</text>
+<text x="144" y="292" font-size="15" fill="#241f1a">Delivered in reduced form</text>
+<text x="930" y="292" font-size="15" text-anchor="end" class="f" fill="#241f1a">49</text>
+<line x1="60" y1="306" x2="940" y2="306" stroke="#e4dbcc" stroke-width="1"/>
+<text x="60" y="334" font-size="15" class="f" fill="#6d635a">2200</text>
+<text x="144" y="334" font-size="15" fill="#241f1a">Out of scope, with a documented path</text>
+<text x="930" y="334" font-size="15" text-anchor="end" class="f" fill="#9a5b2c">47</text>
+<line class="rule-draw" x1="60" y1="350" x2="940" y2="350" stroke="#241f1a" stroke-width="1.3"/>
+<g class="tot">
+<text x="780" y="382" font-size="15.5" font-weight="600" text-anchor="end" class="f" fill="#241f1a">140</text>
+<text x="930" y="382" font-size="15.5" font-weight="600" text-anchor="end" class="f" fill="#241f1a">140</text>
+</g>
+<g class="rule-draw2">
+<line x1="640" y1="393" x2="930" y2="393" stroke="#241f1a" stroke-width="1.1"/>
+<line x1="640" y1="397.5" x2="930" y2="397.5" stroke="#241f1a" stroke-width="1.1"/>
+</g>
+<g transform="rotate(-3 146.0 382.0)"><g class="press">
+<rect x="66" y="360" width="160" height="44" fill="none" stroke="#7a2f2f" stroke-width="1.6"/>
+<rect x="69.5" y="363.5" width="153" height="37" fill="none" stroke="#7a2f2f" stroke-width="0.9"/>
+<text x="146.0" y="377" font-size="9.5" letter-spacing="2.6" text-anchor="middle" fill="#7a2f2f">STATUS</text>
+<text x="146.0" y="395" font-size="16" letter-spacing="4.4" font-weight="600" text-anchor="middle" fill="#5c2020">POSTED</text>
+</g></g>
+<line x1="60" y1="512" x2="940" y2="512" stroke="#e4dbcc" stroke-width="1.2"/>
+<g transform="rotate(-1.6 108.6 486.0)">
+<rect x="60.0" y="460" width="97.2" height="52" fill="none" stroke="#241f1a" stroke-width="1.4"/>
+<rect x="63.0" y="463" width="91.2" height="46" fill="none" stroke="#241f1a" stroke-width="0.75"/>
+<text x="108.6" y="481" font-size="10.5" letter-spacing="1.6" text-anchor="middle" fill="#6d635a">LICENCE</text>
+<text x="108.6" y="501" font-size="12.5" text-anchor="middle" class="f" fill="#241f1a">Apache-2.0</text>
+</g>
+<g transform="rotate(1.3 269.6 486.0)">
+<rect x="175.8" y="460" width="187.5" height="52" fill="none" stroke="#241f1a" stroke-width="1.4"/>
+<rect x="178.8" y="463" width="181.5" height="46" fill="none" stroke="#241f1a" stroke-width="0.75"/>
+<text x="269.6" y="481" font-size="10.5" letter-spacing="1.6" text-anchor="middle" fill="#6d635a">ENGINES</text>
+<text x="269.6" y="501" font-size="12.5" text-anchor="middle" class="f" fill="#241f1a">PostgreSQL 16 · SQLite</text>
+</g>
+<g transform="rotate(-1.1 449.4 486.0)">
+<rect x="381.9" y="460" width="134.9" height="52" fill="none" stroke="#7a2f2f" stroke-width="1.4"/>
+<rect x="384.9" y="463" width="128.9" height="46" fill="none" stroke="#7a2f2f" stroke-width="0.75"/>
+<text x="449.4" y="481" font-size="10.5" letter-spacing="1.6" text-anchor="middle" fill="#7a2f2f">TESTS</text>
+<text x="449.4" y="501" font-size="12.5" text-anchor="middle" class="f" fill="#5c2020">2,334 collected</text>
+</g>
+<g transform="rotate(1.7 580.2 486.0)">
+<rect x="535.4" y="460" width="89.7" height="52" fill="none" stroke="#241f1a" stroke-width="1.4"/>
+<rect x="538.4" y="463" width="83.7" height="46" fill="none" stroke="#241f1a" stroke-width="0.75"/>
+<text x="580.2" y="481" font-size="10.5" letter-spacing="1.6" text-anchor="middle" fill="#6d635a">MODULES</text>
+<text x="580.2" y="501" font-size="12.5" text-anchor="middle" class="f" fill="#241f1a">14 + core</text>
+</g>
+<g transform="rotate(-1.4 677.6 486.0)">
+<rect x="643.6" y="460" width="67.9" height="52" fill="none" stroke="#241f1a" stroke-width="1.4"/>
+<rect x="646.6" y="463" width="61.9" height="46" fill="none" stroke="#241f1a" stroke-width="0.75"/>
+<text x="677.6" y="481" font-size="10.5" letter-spacing="1.6" text-anchor="middle" fill="#6d635a">TABLES</text>
+<text x="677.6" y="501" font-size="12.5" text-anchor="middle" class="f" fill="#241f1a">132</text>
+</g>
+<g transform="rotate(1.2 779.9 486.0)">
+<rect x="730.1" y="460" width="99.6" height="52" fill="none" stroke="#241f1a" stroke-width="1.4"/>
+<rect x="733.1" y="463" width="93.6" height="46" fill="none" stroke="#241f1a" stroke-width="0.75"/>
+<text x="779.9" y="481" font-size="10.5" letter-spacing="1.6" text-anchor="middle" fill="#6d635a">MIGRATIONS</text>
+<text x="779.9" y="501" font-size="12.5" text-anchor="middle" class="f" fill="#241f1a">53</text>
+</g>
+<g transform="rotate(-1.8 894.2 486.0)">
+<rect x="848.3" y="460" width="91.7" height="52" fill="none" stroke="#241f1a" stroke-width="1.4"/>
+<rect x="851.3" y="463" width="85.7" height="46" fill="none" stroke="#241f1a" stroke-width="0.75"/>
+<text x="894.2" y="481" font-size="10.5" letter-spacing="1.6" text-anchor="middle" fill="#6d635a">DECISIONS</text>
+<text x="894.2" y="501" font-size="12.5" text-anchor="middle" class="f" fill="#241f1a">82</text>
+</g>
+</svg>
