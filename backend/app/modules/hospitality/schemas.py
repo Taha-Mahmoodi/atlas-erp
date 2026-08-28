@@ -51,12 +51,15 @@ class OrderTicketCreate(ApiModel):
     is the normal first state rather than an error (unlike a sales order, which needs a line to
     mean anything). Firing an empty ticket is what is refused.
 
-    ``opened_on`` defaults to today; it is the service date the TKT- number year-resets on.
+    NO service date (#207). A restaurant sells today, so the server stamps ``opened_date`` itself
+    and a client cannot choose it: hiding the field in the terminal UI would still leave the API
+    open, and one backdated check is what destroys the year-reset TKT- sequence (#209). The
+    reservation-seating path keeps the date it needs through ``create_ticket``'s keyword argument,
+    which no request body reaches.
     """
 
     table_code: str | None = Field(default=None, max_length=20)
     guest_count: int | None = Field(default=None, ge=1)
-    opened_on: date | None = None
     notes: str | None = Field(default=None, max_length=1000)
     lines: list[OrderTicketLineCreate] = Field(default_factory=list)
 

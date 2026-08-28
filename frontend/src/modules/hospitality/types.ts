@@ -94,10 +94,10 @@ export interface OrderTicketLineCreate {
   notes?: string | null;
 }
 
+// No service date (#207): the server stamps today and the API does not accept one.
 export interface OrderTicketCreate {
   table_code?: string | null;
   guest_count?: number | null;
-  opened_on?: string | null;
   notes?: string | null;
   lines?: OrderTicketLineCreate[];
 }

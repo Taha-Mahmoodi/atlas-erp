@@ -183,7 +183,11 @@ async def _write_lines(
 
 
 async def create_ticket(
-    session: AsyncSession, tenant_id: uuid.UUID, payload: OrderTicketCreate
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    payload: OrderTicketCreate,
+    *,
+    opened_on: date | None = None,
 ) -> OrderTicket:
     """Open a check (PLAN 19 Task 4).
 
@@ -198,9 +202,13 @@ async def create_ticket(
     tenant's sequence row lock until COMMIT by construction (D-012 gaplessness), and Q4 flags that
     lock as what serializes every other posting in the tenant — including the hotel's. A rejected
     order must therefore never have taken it.
+
+    The service date is TODAY. It is NOT a request field (#207) — a restaurant sells today, and a
+    backdated check claims a number from another year's counter (#209). Only seating passes
+    ``opened_on``, so a party sitting at 23:50 orders onto the service day it booked.
     """
     ticket_id = uuid.uuid4()
-    opened_on = payload.opened_on or date.today()
+    opened_on = opened_on or date.today()
     await _require_items(session, tenant_id, [line.item_id for line in payload.lines])
     document = await docflow.register_document(
         session,

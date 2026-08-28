@@ -286,9 +286,11 @@ async def seat_reservation(
         OrderTicketCreate(
             table_code=table_code,
             guest_count=reservation.party_size,
-            opened_on=reservation.service_date,
             notes=f"Reservation {reservation.reservation_number} — {reservation.guest_name}",
         ),
+        # The booking's service date, not today: a party seated at 23:50 orders onto the service
+        # day it booked. This is the only caller allowed to say (#207) — no request body can.
+        opened_on=reservation.service_date,
     )
     reservation.ticket_id = ticket.id
     await _apply_transition(session, tenant_id, reservation, ReservationStatus.SEATED)

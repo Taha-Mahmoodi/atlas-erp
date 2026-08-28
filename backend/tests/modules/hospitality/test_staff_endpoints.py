@@ -11,6 +11,7 @@ formula would.
 
 import uuid
 from collections.abc import Awaitable, Callable
+from datetime import date
 from decimal import Decimal
 
 from httpx import AsyncClient
@@ -68,6 +69,21 @@ async def test_open_a_check_over_the_wire(hospitality_api: HospitalityApi) -> No
     # D-015: money crosses the wire as a decimal STRING, never a float.
     assert ticket["total_amount"] == "37.000000"
     assert isinstance(ticket["total_amount"], str)
+
+
+async def test_a_backdated_service_date_cannot_be_posted(hospitality_api: HospitalityApi) -> None:
+    """#207: the API takes no service date, so a backdated body still opens TODAY's check.
+
+    A UI that merely hides the field is bypassed by one curl, and a check dated last year claims a
+    number from last year's counter (#209). The server stamps the date; the request cannot.
+    """
+    response = await hospitality_api.client.post(
+        "/api/v1/hospitality/tickets",
+        json={"table_code": "T12", "guest_count": 2, "opened_on": "2020-01-02", "lines": []},
+        headers={"Idempotency-Key": uuid.uuid4().hex},
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["opened_date"] == date.today().isoformat()
 
 
 async def test_ticket_lines_read_back(hospitality_api: HospitalityApi) -> None:

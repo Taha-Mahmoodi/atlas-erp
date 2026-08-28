@@ -222,7 +222,7 @@ different clocks.
 | GET | `/menu/at-risk` | `hospitality.menu.read` | advisory list, `threshold` + `limit`, worst first |
 | PUT | `/menu/{item_id}/availability` | `hospitality.menu.manage` | 86, countdown, or time-box. Replaces the one stored answer, so no idempotency key |
 | DELETE | `/menu/{item_id}/availability` | `hospitality.menu.manage` | 204; a no-op if never 86'd |
-| POST | `/tickets` | `hospitality.ticket.manage` | 201, **idempotent** (`hospitality.order_ticket.create`) |
+| POST | `/tickets` | `hospitality.ticket.manage` | 201, **idempotent** (`hospitality.order_ticket.create`). No service date in the body: the server stamps today (#207) |
 | GET | `/tickets` | `hospitality.ticket.read` | `Page[OrderTicketRead]`, filter by `status` / `opened_on` |
 | GET | `/tickets/{id}` · `/tickets/{id}/lines` | `hospitality.ticket.read` | the KDS is a status-filtered query over these, not new infrastructure |
 | POST | `/tickets/{id}/lines` | `hospitality.ticket.manage` | OPEN only (`hospitality.ticket_not_open`) |

@@ -12,10 +12,10 @@ import { FormBuilder, type FieldDef, type FormValues } from "@/components/FormBu
 import { useCreateTicket } from "@/modules/hospitality/hooks";
 
 // NO service-date field (#207). A restaurant sells today: a check dated yesterday or next week is
-// always a mistake, and the server defaults `opened_on` to today when it is absent. It was also
-// the trigger for #209, where one backdated check destroyed the whole ticket number sequence.
-// Backdating a check is a correction, not service-floor work; if it is ever needed it belongs
-// behind its own permission, not on the form every server uses.
+// always a mistake, and it was the trigger for #209, where one backdated check destroyed the whole
+// ticket number sequence. The API does not accept a service date either — hiding the field here
+// alone would leave the bypass open. Backdating is a correction, not service-floor work; if it is
+// ever needed it belongs behind its own permission, not on the form every server uses.
 const FIELDS: FieldDef[] = [
   { name: "table_code", label: "Table", type: "text", placeholder: "12" },
   { name: "guest_count", label: "Guests", type: "number" },
@@ -37,7 +37,6 @@ export function TicketFormPage() {
       const created = await createTicket.mutateAsync({
         table_code: tableCode || null,
         guest_count: guests ? Number(guests) : null,
-        opened_on: null, // the server stamps today; see FIELDS above
         notes: notes || null,
       });
       void navigate({

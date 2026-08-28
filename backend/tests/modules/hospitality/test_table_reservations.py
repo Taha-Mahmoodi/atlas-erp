@@ -780,6 +780,9 @@ async def test_seating_opens_a_ticket_linked_to_the_reservation(
 
     assert reservation.status == ReservationStatus.SEATED
     assert (ticket.table_code, ticket.guest_count) == ("T12", 5)
+    # The check carries the BOOKING's service date, the one exception to #207's server-stamped
+    # today: a party seated at 23:50 orders onto the service day it booked.
+    assert ticket.opened_date == reservation.service_date
     assert {node.doc_type for node in chain.nodes} == {
         "hospitality.table_reservation",
         "hospitality.order_ticket",
