@@ -250,7 +250,10 @@ That chain is on screen: the **delivery, billing and return workbenches each end
 section** (issue #227) that fetches `GET /documents/{document_id}/chain` via `lib/docflow.ts` and
 renders it with `DocFlowViewer` — nodes click through to the document's own detail page where one
 exists. The quote and order pages have no such section yet because their read schemas do not expose
-`document_id` (issue #231).
+`document_id` (issue #231). **Posting refreshes that section**: the registry is written from inside
+every module's service and handlers, so there is no enumerable set of mutations that change a chain
+— `lib/queryClient.ts` invalidates `["documents"]` after any successful mutation instead of asking
+each post hook to remember. A failed chain fetch renders as a failure, never as "produced nothing".
 
 **Order status + the ATP shrink.** A post raises each order line's `delivered_quantity` and advances
 the order to **PARTIALLY_DELIVERED** (any line still open) or **DELIVERED** (every line fully

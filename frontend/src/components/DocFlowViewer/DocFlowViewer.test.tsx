@@ -67,4 +67,32 @@ describe("DocFlowViewer", () => {
     render(<DocFlowViewer nodes={[]} edges={[]} />);
     expect(screen.getByText(/flow builds as this document is processed/i)).toBeInTheDocument();
   });
+
+  // Issue #182 via #227: an omitted statusTone must fall through to the canonical word→tone
+  // table, not to a forced grey. PARTIALLY_DELIVERED is `warn` there, so the pill must carry
+  // the warn tint — under the old `tone: "mute"` fallback it renders the dashed mute outline
+  // and this fails.
+  it("resolves an omitted statusTone through the canonical StatusPill table", () => {
+    render(
+      <DocFlowViewer
+        nodes={[{ id: "so", kind: "Sales order", number: "SO-1", status: "PARTIALLY_DELIVERED" }]}
+        edges={[]}
+      />,
+    );
+    const pill = screen.getByText("Partially delivered");
+    expect(pill).toHaveClass("bg-warn-tint", "text-warn");
+    expect(pill).not.toHaveClass("border-dashed");
+  });
+
+  // Issue #227: an audit trail must not answer "this document produced nothing" when the
+  // request is still in flight or failed — both used to collapse into the empty state.
+  it("shows loading and failure instead of the empty sentence", () => {
+    const { rerender } = render(<DocFlowViewer nodes={[]} edges={[]} loading />);
+    expect(screen.queryByText(/flow builds as this document is processed/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Loading…")).toBeInTheDocument();
+
+    rerender(<DocFlowViewer nodes={[]} edges={[]} error="Unable to load the document flow." />);
+    expect(screen.queryByText(/flow builds as this document is processed/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Unable to load the document flow.");
+  });
 });

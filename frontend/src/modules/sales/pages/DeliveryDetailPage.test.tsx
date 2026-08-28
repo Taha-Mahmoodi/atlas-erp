@@ -109,7 +109,9 @@ describe("DeliveryDetailPage document flow (issue #227)", () => {
     // The predecessor's own kind and status render, and the delivery is the anchored node.
     const chain = within(screen.getByRole("group", { name: "Document flow" }));
     expect(chain.getByText("Sales order")).toBeInTheDocument();
-    expect(chain.getByText("Partially delivered")).toBeInTheDocument();
+    // Tone, not just text: the chain routes through the canonical StatusPill table (issue
+    // #182), so PARTIALLY_DELIVERED is amber here exactly as it is on the order list.
+    expect(chain.getByText("Partially delivered")).toHaveClass("bg-warn-tint");
     expect(chain.getByText("DLV-00007").closest("li")).toHaveAttribute("aria-current", "true");
 
     await userEvent.click(screen.getByText("SO-00042"));
@@ -117,5 +119,17 @@ describe("DeliveryDetailPage document flow (issue #227)", () => {
       to: "/sales/orders/$orderId",
       params: { orderId: "order-row-1" },
     });
+  });
+
+  // The 5xx/network case: queryClient's #180 rule only escalates 4xx, so a failed chain fetch
+  // stays inline. It must not read as an answer — "produced nothing" is a claim, and the page
+  // does not have one to make.
+  it("says the chain failed rather than that the delivery produced nothing", async () => {
+    apiGet.mockRejectedValue(new Error("gateway down"));
+
+    renderPage();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Unable to load the document flow.");
+    expect(screen.queryByText(/flow builds as this document is processed/i)).not.toBeInTheDocument();
   });
 });

@@ -13,7 +13,7 @@ import { useNavigate } from "@tanstack/react-router";
 
 import type { DocFlowViewerProps } from "@/components/DocFlowViewer";
 import { humanizeStatus } from "@/components/StatusPill";
-import { api } from "@/lib/apiClient";
+import { api, getErrorMessage } from "@/lib/apiClient";
 
 /** Mirrors backend `DocChainNode` (core/schemas.py), snake_case untranslated. */
 export interface DocChainNode {
@@ -80,7 +80,13 @@ const DOC_ROUTES: Record<string, { to: string; param: string }> = {
 /** The chain around one document, mapped straight into `DocFlowViewer`'s props. Spread it:
  * `<DocFlowViewer {...useDocumentFlow(delivery.document_id)} />`. Node clicks navigate to the
  * clicked document's own detail page when one exists. Status tone is left to the viewer, which
- * resolves it through the canonical StatusPill table (issue #182). */
+ * resolves it through the canonical StatusPill table (issue #182).
+ *
+ * Fetch state is passed through rather than swallowed (#227): `queryClient`'s #180 rule only
+ * escalates 4xx, so a 5xx or a dropped connection stays inline here — and collapsing that into
+ * an empty chain would make the viewer state, in writing, that a document produced no
+ * successors when the truth is that nobody asked successfully. `isLoading`, not `isPending`:
+ * with no `documentId` the query is disabled and `isPending` never clears. */
 export function useDocumentFlow(documentId: string | undefined): DocFlowViewerProps {
   const navigate = useNavigate();
   const chain = useQuery({
@@ -103,6 +109,8 @@ export function useDocumentFlow(documentId: string | undefined): DocFlowViewerPr
       ...(edge.link_type ? { label: humanizeStatus(edge.link_type).toLowerCase() } : {}),
     })),
     ...(documentId ? { currentId: documentId } : {}),
+    loading: chain.isLoading,
+    ...(chain.isError ? { error: getErrorMessage(chain.error, "Unable to load the document flow.") } : {}),
     onNodeClick: (clicked) => {
       const source = chainNodes.find((node) => node.document_id === clicked.id);
       const route = source ? DOC_ROUTES[source.doc_type] : undefined;
