@@ -478,7 +478,7 @@ one screen in Atlas that refreshes itself).
 | `/hospitality/tickets` · `/tickets/new` · `/tickets/{id}` | checks: list, open, lines, the status flow | `ticket.read`; New/lines/fire/advance need `ticket.manage`; Settle needs `ticket.settle`. Dish NAMES and the price prefill also need `menu.read` — without it the check still opens, with item ids and an empty dish picker |
 | `/hospitality/kitchen` | the kitchen display | `ticket.read`; dragging a card needs `ticket.manage` |
 
-Four things about it are decisions rather than styling:
+Five things about it are decisions rather than styling:
 
 1. **The kitchen display polls, and it is the only thing in the frontend that does.** Three
    `useKdsColumn` queries on a 10 s `refetchInterval` with `staleTime: 0` — the global 30 s
@@ -493,9 +493,16 @@ Four things about it are decisions rather than styling:
 4. **Ticket line prices are typed, prefilled from the menu read.** The staff service trusts a
    caller-supplied `unit_price` by contract, and there is no staff-side price-resolution endpoint —
    `/sales/price-quote` needs a customer id and a walk-in table has none. The website surface
-   resolves price server-side instead, because that caller is untrusted. That menu read is the one
-   query in the module with `throwOnError: false`: it is a label lookup, not the record the page is
-   for, and a server holding only `ticket.*` must not be handed a full-page 403 for it.
+   resolves price server-side instead, because that caller is untrusted.
+5. **The dish picker offers only what can be sold, and shows the 86 board on the options** (#208):
+   priced items only — `GET /menu` unfiltered returns every ACTIVE item, ingredients included,
+   which is honest for the website read and useless on a POS — with an 86'd dish rendered disabled
+   with its reason and a LIMITED one showing its count, rather than a pick that is refused at fire
+   time with the whole check. Both of the picker's reads are `menu.read`, so both carry
+   `throwOnError: false` on the check screen: they are lookups, not the record the page is for, and
+   a server holding only `ticket.*` must not be handed a full-page 403 for either. On
+   `/hospitality/menu` the same board read keeps the default and takes the page, because there it
+   IS the record.
 
 Known UI gaps, recorded not hidden: a kitchen card shows the check, the table, the covers and the
 time since it fired but **no line summary** (that would cost one `GET /tickets/{id}/lines` per card

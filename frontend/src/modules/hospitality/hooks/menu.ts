@@ -42,13 +42,21 @@ export function useMenu() {
 
 /** The 86 board. Infinite rather than a single query only because the endpoint's own contract
  * says a property past MAX_LIMIT overrides gets a non-null cursor a client MUST follow —
- * ignoring it would read a truncated board as "everything else is available". */
-export function useAvailabilityBoard() {
+ * ignoring it would read a truncated board as "everything else is available".
+ *
+ * A caller may only opt OUT of `throwOnError` (never in, which would swallow the global
+ * predicate's "5xx stays inline"), because ONE permission — `menu.read` — gates both this and
+ * `useMenu` above, and the two screens reading it are not the same kind of screen: the board IS
+ * the subject of `/hospitality/menu`, so a 403 there must take the page (#180), while on a check
+ * it only decorates the dish picker — and letting that 403 through would lock a server holding
+ * `ticket.*` and no `menu.*` out of every check, which is what `useMenu` already refuses to do. */
+export function useAvailabilityBoard(overrides: { throwOnError?: false } = {}) {
   return useInfiniteQuery({
     queryKey: ["hospitality", "availability"],
     queryFn: ({ pageParam }) => listAvailability(pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+    ...overrides,
   });
 }
 
