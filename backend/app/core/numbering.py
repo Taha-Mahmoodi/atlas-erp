@@ -353,10 +353,10 @@ def _highest_issued(tenant_id: uuid.UUID, prefix: str, year: int | None) -> sa.C
     invisible here and their counters still open at 1.
 
     Portable on both dialects (D-003): ``substr`` compares the fixed head rather than a LIKE
-    pattern (no wildcard escaping, and every head ends in ``-`` so no head is a prefix of
-    another), and the tail is CAST to INTEGER so a value that outgrew its padding still compares
-    numerically. A NULL ``doc_number`` (a document registered but not yet numbered) fails the
-    head comparison and drops out.
+    pattern (no wildcard escaping), and the tail is CAST to INTEGER so a value that outgrew its
+    padding still compares numerically. A head CAN be a prefix of another — see the paragraph
+    below, which is why the tail is also constrained. A NULL ``doc_number`` (a document
+    registered but not yet numbered) fails the head comparison and drops out.
 
     **The tail must hold no further ``-``, or the CAST is not portable at all.** A head is only
     the whole number's shape when the sequence year-resets: a sequence with ``year_reset=False``
