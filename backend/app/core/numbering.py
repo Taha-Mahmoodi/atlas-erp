@@ -357,6 +357,17 @@ def _highest_issued(tenant_id: uuid.UUID, prefix: str, year: int | None) -> sa.C
     another), and the tail is CAST to INTEGER so a value that outgrew its padding still compares
     numerically. A NULL ``doc_number`` (a document registered but not yet numbered) fails the
     head comparison and drops out.
+
+    **The tail must hold no further ``-``, or the CAST is not portable at all.** A head is only
+    the whole number's shape when the sequence year-resets: a sequence with ``year_reset=False``
+    (the default in industry-templates' NumberingFormatSpec) has head ``'PFX-'``, which is a
+    prefix of every ``'PFX-2026-000001'`` a year-resetting sequence on the same prefix issued —
+    and ``seed.py`` writes ``'STK-VOL-000001'`` shapes into the registry directly. Postgres
+    raises on ``CAST('2026-000001' AS INTEGER)`` and 500s the counter-creation path; SQLite
+    prefix-parses it to 2026 and silently opens the series at 2027, which is the worse half.
+    Every number THIS head issued is head + digits, so excluding tails containing ``-`` keeps
+    exactly the intended set and reads the same on both engines. ``-`` is not a LIKE wildcard,
+    so this needs no ESCAPE clause on either dialect.
     """
     # Imported at CALL time, not module scope: core/models.py trailing-imports docflow and then
     # numbering to register both on Base.metadata, so a module-scope import here would make
@@ -366,15 +377,13 @@ def _highest_issued(tenant_id: uuid.UUID, prefix: str, year: int | None) -> sa.C
 
     head = _number_head(prefix, year)
     documents = Document.__table__
+    tail = sa.func.substr(documents.c.doc_number, len(head) + 1)
     return sa.func.coalesce(
-        select(
-            sa.func.max(
-                sa.cast(sa.func.substr(documents.c.doc_number, len(head) + 1), sa.Integer)
-            )
-        )
+        select(sa.func.max(sa.cast(tail, sa.Integer)))
         .where(
             documents.c.tenant_id == tenant_id,
             sa.func.substr(documents.c.doc_number, 1, len(head)) == head,
+            tail.notlike("%-%"),
         )
         .scalar_subquery(),
         0,

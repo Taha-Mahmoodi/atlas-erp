@@ -332,6 +332,37 @@ async def test_another_tenants_documents_never_seed_a_counter(
     assert await _claim(db_session, tenant_a, "hospitality.order_ticket", 2022) == "TKT-2022-000001"
 
 
+async def test_a_flat_sequence_ignores_the_year_segment_of_a_prefix_it_shares(
+    db_session: AsyncSession, tenant_a: uuid.UUID, make_sequence: SequenceFactory
+) -> None:
+    """A sequence that does NOT year-reset has head ``'PFX-'``, which is also a prefix of every
+    ``'PFX-2026-...'`` a year-resetting sequence on the same prefix issued — so the seeding read
+    would take ``2026-000001`` for this sequence's counter value. That is not a mis-count, it is a
+    dialect split: Postgres raises (``invalid input syntax for type integer``) and 500s the
+    counter-creation path, while SQLite prefix-parses the CAST to 2026 and silently opens the flat
+    series at 2027. Foreign numbers carry another ``-`` after the head; this sequence's never do.
+
+    Provisioned AFTER the document exists, because that is when the seeding read runs: a counter
+    opened at provisioning time (the common path) has no documents to read yet."""
+    await make_sequence(tenant_a, name="projects.phase", prefix="PFX", padding=6, year_reset=True)
+    with tenant_context(tenant_a):
+        await docflow.register_document(
+            db_session,
+            tenant_a,
+            "projects.phase",
+            uuid.uuid4(),
+            doc_number="PFX-2026-000001",
+            status="open",
+        )
+        await db_session.commit()
+
+    await make_sequence(
+        tenant_a, name="projects.project", prefix="PFX", padding=6, year_reset=False
+    )
+
+    assert await _claim(db_session, tenant_a, "projects.project", 2026) == "PFX-000001"
+
+
 def test_numbering_imports_whichever_core_module_python_loads_first() -> None:
     """The seed reads ``core_documents``, so numbering now depends on docflow — and core/models.py
     trailing-imports docflow BEFORE numbering to register both on Base.metadata. A module-scope
