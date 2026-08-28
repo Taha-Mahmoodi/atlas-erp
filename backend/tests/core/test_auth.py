@@ -189,6 +189,9 @@ async def test_me_returns_current_user(
     assert body["id"] == str(provisioned_user.user_id)
     assert body["tenant_id"] == str(provisioned_user.tenant_id)
     assert body["email"] == provisioned_user.email
+    # The property's display name, the printed check's letterhead (#211) — the SPA has no
+    # other read of it.
+    assert body["tenant_name"] == provisioned_user.tenant_slug.title()
     # RBAC seam (PLAN 3.4): no permissions resolved yet, real empty list.
     assert body["permissions"] == []
 

@@ -61,6 +61,10 @@ class TokenResponse(ApiModel):
 class MeResponse(ApiModel):
     id: uuid.UUID
     tenant_id: uuid.UUID
+    #: The organisation's display name. The SPA has no other read of it (a tenant read is an
+    #: admin endpoint a server does not hold), and paper needs it: a printed check without the
+    #: property's name on it is not a check (#211).
+    tenant_name: str
     email: str
     full_name: str | None
     permissions: list[str]

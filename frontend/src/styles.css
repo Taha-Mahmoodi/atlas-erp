@@ -281,6 +281,7 @@ body {
    guest's check and the kitchen's chit (#211) — and the default print of any screen here is the
    sidebar, the nav and the buttons. Any page can opt in by marking its printable subtree
    `data-print-region` and anything inside it that is screen-only `data-print-hide`.
+   `data-print-region="receipt"` narrows it to a check.
 
    The visibility (rather than display) trick is deliberate: `display: none` on an ancestor would
    take the region down with it, so everything is hidden and the region is made visible again and
@@ -307,6 +308,16 @@ body {
   }
   [data-print-hide] {
     display: none !important;
+  }
+  /* A check is a receipt, not a report: one 80mm column, so the same markup reads correctly off
+     a thermal roll and off the top-left of an A4 sheet. The column count is forced because the
+     `sm:` breakpoint measures the PAGE (an A4 sheet is wide) and would otherwise spread four
+     columns of header across 80mm. */
+  [data-print-region="receipt"] {
+    width: 80mm;
+  }
+  [data-print-region="receipt"] dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   /* Cards and rules carry screen chrome that wastes toner and reads as noise on paper. */
   [data-print-region] .shadow-card,

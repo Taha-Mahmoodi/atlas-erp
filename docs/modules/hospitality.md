@@ -478,7 +478,7 @@ one screen in Atlas that refreshes itself).
 | `/hospitality/tickets` · `/tickets/new` · `/tickets/{id}` | checks: list, open, lines, the status flow | `ticket.read`; New/lines/fire/advance need `ticket.manage`; Settle needs `ticket.settle`. Dish NAMES and the price prefill also need `menu.read` — without it the check still opens, with item ids and an empty dish picker |
 | `/hospitality/kitchen` | the kitchen display | `ticket.read`; dragging a card needs `ticket.manage` |
 
-Four things about it are decisions rather than styling:
+Five things about it are decisions rather than styling:
 
 1. **The kitchen display polls, and it is the only thing in the frontend that does.** Three
    `useKdsColumn` queries on a 10 s `refetchInterval` with `staleTime: 0` — the global 30 s
@@ -496,6 +496,14 @@ Four things about it are decisions rather than styling:
    resolves price server-side instead, because that caller is untrusted. That menu read is the one
    query in the module with `throwOnError: false`: it is a label lookup, not the record the page is
    for, and a server holding only `ticket.*` must not be handed a full-page 403 for it.
+
+5. **The check prints from its own markup, not from a second rendering of it** (#211). `Print`
+   calls `window.print()`; `styles.css`'s `@media print` block hides the shell, keys off
+   `data-print-region="receipt"` for an 80 mm column, and drops anything marked `data-print-hide`
+   (the breadcrumb, the action row, the add-a-line form). A separate "printable view" component
+   would be a second place for the numbers to drift from §6 limit 3's pre-tax label. The paper
+   carries the property's name, which is why `GET /auth/me` returns `tenant_name`: it is the only
+   read of it the SPA has, and a tenant read is an admin endpoint a server does not hold.
 
 Known UI gaps, recorded not hidden: a kitchen card shows the check, the table, the covers and the
 time since it fired but **no line summary** (that would cost one `GET /tickets/{id}/lines` per card
