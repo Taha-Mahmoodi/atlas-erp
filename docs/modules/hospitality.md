@@ -222,7 +222,7 @@ different clocks.
 | GET | `/menu/at-risk` | `hospitality.menu.read` | advisory list, `threshold` + `limit`, worst first |
 | PUT | `/menu/{item_id}/availability` | `hospitality.menu.manage` | 86, countdown, or time-box. Replaces the one stored answer, so no idempotency key |
 | DELETE | `/menu/{item_id}/availability` | `hospitality.menu.manage` | 204; a no-op if never 86'd |
-| POST | `/tickets` | `hospitality.ticket.manage` | 201, **idempotent** (`hospitality.order_ticket.create`) |
+| POST | `/tickets` | `hospitality.ticket.manage` | 201, **idempotent** (`hospitality.order_ticket.create`). No service date in the body: the server stamps today (#207) |
 | GET | `/tickets` | `hospitality.ticket.read` | `Page[OrderTicketRead]`, filter by `status` / `opened_on` |
 | GET | `/tickets/{id}` · `/tickets/{id}/lines` | `hospitality.ticket.read` | the KDS is a status-filtered query over these, not new infrastructure |
 | POST | `/tickets/{id}/lines` | `hospitality.ticket.manage` | OPEN only (`hospitality.ticket_not_open`) |
@@ -413,7 +413,7 @@ Staff (`/api/v1/hospitality`, JWT or a staff-scoped key):
 | GET | `/reservations/{id}` | `hospitality.reservation.read` | |
 | POST | `/reservations` | `hospitality.reservation.manage` | 201, **idempotent** (`hospitality.table_reservation.create`); the same gate the website uses |
 | PATCH | `/reservations/{id}` | `hospitality.reservation.manage` | party size and/or slot; omitted fields unchanged |
-| POST | `/reservations/{id}/seat` | `hospitality.reservation.manage` | body `{table_code}`; opens the linked check |
+| POST | `/reservations/{id}/seat` | `hospitality.reservation.manage` | body `{table_code}`; opens the linked check. It carries the BOOKING's service date only while that service is running (a party seated at 23:50 orders onto the day it booked); otherwise today, like a walk-in's (#207) |
 | POST | `/reservations/{id}/no-show` · `/cancel` · `/complete` | `hospitality.reservation.manage` | the transitions above |
 | GET | `/reservation-settings` | `hospitality.reservation.read` | defaults applied; carries `slot_minutes` |
 | PUT | `/reservation-settings` | `hospitality.reservation.manage` | full replacement; no key needed (one row, same state) |
