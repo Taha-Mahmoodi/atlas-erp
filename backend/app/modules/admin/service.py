@@ -145,9 +145,28 @@ async def assign_role(
 ) -> UserRole:
     """Assign a role to a user and evict the cached resolution so the new permissions
     appear on the next request (D-009). token_version is passed so the exact cache key is
-    invalidated. Runs under system_context for explicit tenant stamping."""
-    assignment = UserRole(tenant_id=tenant_id, user_id=user_id, role_id=role_id)
+    invalidated. Runs under system_context for explicit tenant stamping.
+
+    Get-or-create (#226): assigning a role a user already holds returns the existing row
+    instead of inserting a duplicate that trips
+    ``uq_core_user_roles_tenant_id_user_id_role_id`` and surfaces as a 500. Idempotency
+    belongs here rather than in each caller — the endpoint, ``grant_admin_role``, the demo
+    seed and the test factories all route through this one function, and a re-run of any of
+    them is a legitimate no-op, not an error. No cache eviction on that path: nothing
+    changed."""
     with system_context():
+        existing = (
+            await session.execute(
+                select(UserRole).where(
+                    UserRole.tenant_id == tenant_id,
+                    UserRole.user_id == user_id,
+                    UserRole.role_id == role_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            return existing
+        assignment = UserRole(tenant_id=tenant_id, user_id=user_id, role_id=role_id)
         session.add(assignment)
         await session.flush()
     invalidate(tenant_id, user_id, token_version)
