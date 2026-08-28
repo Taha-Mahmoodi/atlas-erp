@@ -502,7 +502,12 @@ Five things about it are decisions rather than styling:
    `throwOnError: false` on the check screen: they are lookups, not the record the page is for, and
    a server holding only `ticket.*` must not be handed a full-page 403 for either. On
    `/hospitality/menu` the same board read keeps the default and takes the page, because there it
-   IS the record.
+   IS the record. The check screen reads one more thing that persona cannot read — the currency
+   CODE beside every total, from `GET /finance/currencies` under `finance.fx.manage` — and it
+   degrades the same way, in the shared `useFunctionalCurrency` hook rather than here, because 15
+   screens across 8 modules print that label (#237, docs/modules/finance.md §Permissions). Those
+   three reads are the whole reason the row above can promise a `ticket.read` server a check at
+   all.
 
 Known UI gaps, recorded not hidden: a kitchen card shows the check, the table, the covers and the
 time since it fired but **no line summary** (that would cost one `GET /tickets/{id}/lines` per card
