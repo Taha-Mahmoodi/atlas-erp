@@ -14,6 +14,8 @@ export interface DocFlowNode {
   /** Document number, e.g. "SO-00042". */
   number?: string;
   status?: string;
+  /** Override the pill's tone. Omit it and the canonical StatusPill table decides (issue #182)
+   * — which is what a caller rendering raw backend status literals wants. */
   statusTone?: "neutral" | "success" | "warn" | "danger";
   meta?: string;
 }
@@ -106,7 +108,12 @@ export function DocFlowViewer({ nodes, edges, currentId, onNodeClick }: DocFlowV
                 <>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-medium text-ink-muted">{node.kind}</span>
-                    {node.status && <StatusPill status={node.status} tone={TONE[node.statusTone ?? "neutral"]} />}
+                    {node.status && (
+                      <StatusPill
+                        status={node.status}
+                        {...(node.statusTone ? { tone: TONE[node.statusTone] } : {})}
+                      />
+                    )}
                   </div>
                   <div className="mt-0.5 text-sm font-semibold text-ink">{node.number ?? node.id}</div>
                   {node.meta && <div className="mt-0.5 text-xs text-ink-faint">{node.meta}</div>}

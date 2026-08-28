@@ -10,8 +10,10 @@ import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
+import { useDocumentFlow } from "@/lib/docflow";
 import { formatQuantity } from "@/lib/format";
 import { useMe } from "@/lib/session";
+import { DocFlowViewer } from "@/components/DocFlowViewer";
 import { StatusPill } from "@/components/StatusPill";
 import { useBinLookup, useItemLookup, useWarehouseLookup } from "@/modules/inventory/hooks";
 import { useCancelDelivery, useCustomerOptions, useDelivery, usePostDelivery } from "@/modules/sales/hooks";
@@ -29,6 +31,7 @@ export function DeliveryDetailPage() {
   const warehouses = useWarehouseLookup();
   const postDelivery = usePostDelivery(deliveryId ?? "");
   const cancelDelivery = useCancelDelivery(deliveryId ?? "");
+  const flow = useDocumentFlow(delivery.data?.document_id);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -153,6 +156,11 @@ export function DeliveryDetailPage() {
           ))}
         </tbody>
       </table>
+
+      <section className="mt-8">
+        <h2 className="mb-3.5 mono-caps text-ink-muted">Document flow</h2>
+        <DocFlowViewer {...flow} />
+      </section>
     </div>
   );
 }

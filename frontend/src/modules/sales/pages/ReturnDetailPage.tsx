@@ -11,8 +11,10 @@ import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
+import { useDocumentFlow } from "@/lib/docflow";
 import { formatMoney, formatQuantity } from "@/lib/format";
 import { useMe } from "@/lib/session";
+import { DocFlowViewer } from "@/components/DocFlowViewer";
 import { StatusPill } from "@/components/StatusPill";
 import { useBinLookup, useItemLookup, useWarehouseLookup } from "@/modules/inventory/hooks";
 import { useCancelReturn, useCustomerOptions, usePostReturn, useReturn } from "@/modules/sales/hooks";
@@ -30,6 +32,7 @@ export function ReturnDetailPage() {
   const warehouses = useWarehouseLookup();
   const postReturn = usePostReturn(returnId ?? "");
   const cancelReturn = useCancelReturn(returnId ?? "");
+  const flow = useDocumentFlow(returned.data?.document_id);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -158,6 +161,11 @@ export function ReturnDetailPage() {
           ))}
         </tbody>
       </table>
+
+      <section className="mt-8">
+        <h2 className="mb-3.5 mono-caps text-ink-muted">Document flow</h2>
+        <DocFlowViewer {...flow} />
+      </section>
     </div>
   );
 }

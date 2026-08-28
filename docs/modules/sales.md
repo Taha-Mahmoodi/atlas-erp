@@ -246,6 +246,11 @@ rolls the entire post back (no move, no journal, the delivery stays DRAFT).
 **Delivery↔move linkage = docflow, not a cross-module FK (D-045).** Inventory owns the move, so the
 delivery line carries no `stock_move_id`; the chain records order →`delivered_by`→ delivery
 →`moved_by`→ each stock move, and the DocFlow endpoint renders the full order → delivery → move chain.
+That chain is on screen: the **delivery, billing and return workbenches each end in a "Document flow"
+section** (issue #227) that fetches `GET /documents/{document_id}/chain` via `lib/docflow.ts` and
+renders it with `DocFlowViewer` — nodes click through to the document's own detail page where one
+exists. The quote and order pages have no such section yet because their read schemas do not expose
+`document_id` (issue #231).
 
 **Order status + the ATP shrink.** A post raises each order line's `delivered_quantity` and advances
 the order to **PARTIALLY_DELIVERED** (any line still open) or **DELIVERED** (every line fully
