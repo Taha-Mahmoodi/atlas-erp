@@ -493,9 +493,21 @@ Five things about it are decisions rather than styling:
 4. **Ticket line prices are typed, prefilled from the menu read.** The staff service trusts a
    caller-supplied `unit_price` by contract, and there is no staff-side price-resolution endpoint —
    `/sales/price-quote` needs a customer id and a walk-in table has none. The website surface
-   resolves price server-side instead, because that caller is untrusted. That menu read is the one
-   query in the module with `throwOnError: false`: it is a label lookup, not the record the page is
-   for, and a server holding only `ticket.*` must not be handed a full-page 403 for it.
+   resolves price server-side instead, because that caller is untrusted.
+5. **The dish picker offers only what can be sold, and shows the 86 board on the options** (#208):
+   priced items only — `GET /menu` unfiltered returns every ACTIVE item, ingredients included,
+   which is honest for the website read and useless on a POS — with an 86'd dish rendered disabled
+   with its reason and a LIMITED one showing its count, rather than a pick that is refused at fire
+   time with the whole check. Both of the picker's reads are `menu.read`, so both carry
+   `throwOnError: false` on the check screen: they are lookups, not the record the page is for, and
+   a server holding only `ticket.*` must not be handed a full-page 403 for either. On
+   `/hospitality/menu` the same board read keeps the default and takes the page, because there it
+   IS the record. The check screen reads one more thing that persona cannot read — the currency
+   CODE beside every total, from `GET /finance/currencies` under `finance.fx.manage` — and it
+   degrades the same way, in the shared `useFunctionalCurrency` hook rather than here, because 15
+   screens across 8 modules print that label (#237, docs/modules/finance.md §Permissions). Those
+   three reads are the whole reason the row above can promise a `ticket.read` server a check at
+   all.
 
 5. **The check prints from its own markup, not from a second rendering of it** (#211). `Print`
    calls `window.print()`; `styles.css`'s `@media print` block hides the shell, keys off

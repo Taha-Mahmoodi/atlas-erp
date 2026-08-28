@@ -13,8 +13,9 @@
  * untrusted. There is no staff-side equivalent endpoint: `/sales/price-quote` needs a customer id
  * and a walk-in table has none.)
  *
- * The menu read is `hospitality.menu.read`, which a server may not hold — so it degrades to raw
- * item ids and a note rather than taking the whole check down (see `useMenu`'s `throwOnError`).
+ * BOTH reads here — the menu and the 86 board — are `hospitality.menu.read`, which a server may
+ * not hold, so both degrade to raw item ids and a note rather than taking the whole check down
+ * (see `throwOnError` on `useMenu` and on this component's `useAvailabilityBoard` call).
  *
  * The picker offers only what can be SOLD (#208): priced dishes, never the raw ingredients the
  * unfiltered menu read also returns, and an 86'd dish is disabled with its reason on the option
@@ -44,7 +45,9 @@ export function TicketLinesEditor({
   editable: boolean;
 }) {
   const menu = useMenu();
-  const board = useAvailabilityBoard();
+  // Same 403 as the menu read above and the same answer: `menu.read` gates both, so a server
+  // without it must still get the check (with ids and no picker options) rather than an error page.
+  const board = useAvailabilityBoard({ throwOnError: false });
   const addLines = useAddTicketLines(ticketId);
   const [itemId, setItemId] = useState("");
   const [quantity, setQuantity] = useState("1");

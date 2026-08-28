@@ -356,6 +356,18 @@ items are keyed by the opaque `partner_id` (D-029) — finance never FK-referenc
 | `finance.asset.manage` | create, edit and activate assets |
 | `finance.depreciation.run` | run depreciation for a fiscal period (posts a journal) |
 
+One consequence of `finance.fx.manage` guarding `GET /currencies` (#237): the console reads that
+list on ~15 screens across 8 modules for one thing only — the CODE it prints next to a money
+amount — and none of those personas administer FX. So `useFunctionalCurrency`
+(`frontend/src/modules/finance/hooks/reference.ts`) is the one finance hook that sets
+`throwOnError: false`: its 403 degrades the label to the same `—` an unconfigured tenant sees
+rather than replacing a check, a stock valuation or a maintenance order with a full-page error,
+which is what D-067 means by "the record the page is for". `useCurrencyOptions`
+(`hooks/settings.ts`) reads the same endpoint and keeps the default, because on the exchange-rate
+form the currency list is exactly that record. Widening the endpoint to a `finance.fx.read` is the
+alternative fix, and it is not taken: currency rows carry rate-relevant configuration, and adding a
+permission key changes every tenant's role data.
+
 ## API (`/api/v1/finance`)
 
 - `GET/POST /accounts`, `GET/PATCH /accounts/{id}` — list uses cursor pagination + the `Page`
