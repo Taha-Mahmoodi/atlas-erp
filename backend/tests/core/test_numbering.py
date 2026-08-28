@@ -9,14 +9,18 @@ claim-timing rule); tenants with the same sequence name keep independent counter
 ensure_sequence is idempotent.
 """
 
+import subprocess
+import sys
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import date
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
+from app.core import docflow
 from app.core.db import build_session_factory
 from app.core.exceptions import NotFoundError
 from app.core.numbering import (
@@ -260,3 +264,84 @@ async def test_backdated_claims_continue_their_own_year(
 
     assert first_2025 == "INV-2025-00001"
     assert second_2025 == "INV-2025-00002"
+
+
+# --- issue #216: a year whose counter was lost must not re-issue its numbers ----
+
+
+async def test_a_year_missing_its_counter_resumes_above_the_numbers_it_issued(
+    db_session: AsyncSession, tenant_a: uuid.UUID, make_sequence: SequenceFactory
+) -> None:
+    """The #216 shape: a tenant bitten by #209 issued TKT-2022-000001 from the single old-schema
+    counter, the operator repaired that counter back to the live year, and migration 0051 could
+    only carry across the year that survived — so 2022 has documents and no counter. Opening
+    that counter at 1 re-hands a number already sitting on a committed document, which is the
+    same unique-index 500 D-079 exists to remove. It must resume ABOVE what 2022 issued."""
+    await make_sequence(tenant_a, name="hospitality.order_ticket", prefix="TKT", padding=6)
+    with tenant_context(tenant_a):
+        await docflow.register_document(
+            db_session,
+            tenant_a,
+            "hospitality.order_ticket",
+            uuid.uuid4(),
+            doc_number="TKT-2022-000001",
+            status="open",
+        )
+        await db_session.commit()
+
+        # No 2022 counter exists — this claim opens it.
+        claimed = await claim_number(
+            db_session, tenant_a, "hospitality.order_ticket", on_date=date(2022, 2, 2)
+        )
+        assert claimed == "TKT-2022-000002"
+
+        # And the number is actually usable: registering it does NOT hit the partial unique
+        # (tenant_id, doc_number) index, which is the 500 the reporter saw.
+        await docflow.register_document(
+            db_session,
+            tenant_a,
+            "hospitality.order_ticket",
+            uuid.uuid4(),
+            doc_number=claimed,
+            status="open",
+        )
+        await db_session.commit()
+
+
+async def test_another_tenants_documents_never_seed_a_counter(
+    db_session: AsyncSession,
+    tenant_a: uuid.UUID,
+    tenant_b: uuid.UUID,
+    make_sequence: SequenceFactory,
+) -> None:
+    """The seed reads issued numbers, so it reads a tenant-scoped table — and must stay inside
+    the claiming tenant (D-007). Tenant B's 2022 documents leave tenant A's 2022 series at 1."""
+    await make_sequence(tenant_a, name="hospitality.order_ticket", prefix="TKT", padding=6)
+    await make_sequence(tenant_b, name="hospitality.order_ticket", prefix="TKT", padding=6)
+    with tenant_context(tenant_b):
+        await docflow.register_document(
+            db_session,
+            tenant_b,
+            "hospitality.order_ticket",
+            uuid.uuid4(),
+            doc_number="TKT-2022-000009",
+            status="open",
+        )
+        await db_session.commit()
+
+    assert await _claim(db_session, tenant_a, "hospitality.order_ticket", 2022) == "TKT-2022-000001"
+
+
+def test_numbering_imports_whichever_core_module_python_loads_first() -> None:
+    """The seed reads ``core_documents``, so numbering now depends on docflow — and core/models.py
+    trailing-imports docflow BEFORE numbering to register both on Base.metadata. A module-scope
+    import of docflow from numbering therefore breaks ``import app.core.docflow`` on a partially
+    initialised module: green everywhere the app happens to import models first, and an
+    ImportError at whatever entry point does not. Loading docflow first must simply work."""
+    result = subprocess.run(
+        [sys.executable, "-c", "import app.core.docflow"],
+        cwd=Path(__file__).resolve().parents[2],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr

@@ -20,7 +20,7 @@ concept lives with its claim logic). Noted in DECISIONS.md.
 """
 
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 
 import sqlalchemy as sa
 from sqlalchemy import select
@@ -81,7 +81,10 @@ class NumberSequenceCounter(UuidPKMixin, TenantMixin, TimestampMixin, Base):
     accounting work, and the year segment exists precisely so each year carries its own series.
 
     So each year gets its own gapless counter, created on first claim (no rollover job, per D-012),
-    and a claim can never disturb another year's numbers. ``year`` is 0 — never NULL — for a
+    and a claim can never disturb another year's numbers. A counter is born ABOVE the highest
+    number that year already issued rather than at 1 (#216, see :func:`_create_counter`), so a
+    year whose counter was lost — the state #209 left behind and migration 0051 could not see —
+    resumes its series instead of re-issuing it. ``year`` is 0 — never NULL — for a
     sequence that does not year-reset, so the unique constraint below stays meaningful on both
     dialects (NULLs compare distinct in a UNIQUE index, which would let duplicate counters exist).
     """
@@ -119,13 +122,17 @@ class NumberSequenceCounter(UuidPKMixin, TenantMixin, TimestampMixin, Base):
 _NO_YEAR = 0
 
 
+def _number_head(prefix: str, year: int | None) -> str:
+    """Everything a number carries BEFORE its padded counter value: ``'INV-2026-'``, or
+    ``'SO-'`` for a sequence that does not year-reset. One place knows the shape, so the
+    formatter and the already-issued lookup below can never disagree about it."""
+    return f"{prefix}-" if year is None else f"{prefix}-{year}-"
+
+
 def _format_number(prefix: str, padding: int, value: int, year: int | None) -> str:
     """Render ``{prefix}-{year?}-{padded value}`` — the year segment is present only when
     the sequence year-resets (D-012). e.g. ('INV', 5, 1, 2026) -> 'INV-2026-00001'."""
-    padded = str(value).zfill(padding)
-    if year is None:
-        return f"{prefix}-{padded}"
-    return f"{prefix}-{year}-{padded}"
+    return f"{_number_head(prefix, year)}{str(value).zfill(padding)}"
 
 
 async def ensure_sequence(
@@ -175,7 +182,8 @@ async def ensure_sequence(
         session,
         tenant_id,
         sequence_id,
-        date.today().year if year_reset else _NO_YEAR,
+        prefix,
+        date.today().year if year_reset else None,
     )
     return (
         await session.execute(
@@ -235,7 +243,7 @@ async def claim_number(
     # serve a case that arises once a year (it broke the depreciation run's query budget).
     claimed_value = await _increment(session, tenant_id, sequence.id, bucket)
     if claimed_value is None:
-        await _create_counter(session, tenant_id, sequence.id, bucket)
+        await _create_counter(session, tenant_id, sequence.id, sequence.prefix, claim_year)
         claimed_value = await _increment(session, tenant_id, sequence.id, bucket)
     if claimed_value is None:  # pragma: no cover — the row was just created or already existed
         raise NotFoundError(
@@ -270,9 +278,28 @@ async def _increment(
 
 
 async def _create_counter(
-    session: AsyncSession, tenant_id: uuid.UUID, sequence_id: uuid.UUID, year: int
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    sequence_id: uuid.UUID,
+    prefix: str,
+    year: int | None,
 ) -> None:
-    """Open this year's counter, without ever losing a race.
+    """Open this year's counter ABOVE anything that year already issued, without losing a race.
+
+    ``year`` is the year segment of the number (None for a sequence that does not year-reset);
+    the counter row itself buckets that as ``_NO_YEAR``.
+
+    The counter opens at ``highest already issued + 1``, not at 1 (#216). A counter that this
+    tenant lost — every tenant bitten by #209 lost one, because the corrupting claim overwrote
+    the single old-schema counter's year and migration 0051 could only carry across the one year
+    that survived — would otherwise be reborn at 1 and re-hand a number sitting on a committed
+    document, which is the same unique-index 500 on the same document type that D-079 exists to
+    remove. Seeding from the documents is what makes that unrecoverable state heal itself the
+    moment the year is used again, rather than only in tenants an operator thought to inspect.
+
+    The high-water mark is read INSIDE the insert (``INSERT ... SELECT``), not by a preceding
+    SELECT, so this stays exactly ONE statement — D-079's cost argument survives untouched, and
+    so does the depreciation run's query budget that rejected the extra-SELECT design there.
 
     A plain INSERT inside a SAVEPOINT rather than an upsert: ``ON CONFLICT`` spells differently on
     Postgres and SQLite and this module stays dialect-portable (D-012). The savepoint matters —
@@ -280,16 +307,75 @@ async def _create_counter(
     writes are in it. The loser of a race rolls back only the nested block and re-runs the atomic
     increment against the winner's row.
     """
+    counters = NumberSequenceCounter.__table__
+    now = datetime.now(UTC)
+    seed = select(
+        sa.literal(uuid.uuid4(), sa.Uuid),
+        sa.literal(tenant_id, sa.Uuid),
+        sa.literal(sequence_id, sa.Uuid),
+        sa.literal(_NO_YEAR if year is None else year, sa.Integer),
+        _highest_issued(tenant_id, prefix, year) + 1,
+        sa.literal(now, sa.DateTime(timezone=True)),
+        sa.literal(now, sa.DateTime(timezone=True)),
+    )
     try:
         async with session.begin_nested():
             await session.execute(
-                sa.insert(NumberSequenceCounter.__table__).values(
-                    id=uuid.uuid4(),
-                    tenant_id=tenant_id,
-                    sequence_id=sequence_id,
-                    year=year,
-                    next_value=1,
+                counters.insert().from_select(
+                    [
+                        "id",
+                        "tenant_id",
+                        "sequence_id",
+                        "year",
+                        "next_value",
+                        "created_at",
+                        "updated_at",
+                    ],
+                    seed,
                 )
             )
     except IntegrityError:
         pass  # a concurrent claimer created it first; its row is the one we increment
+
+
+def _highest_issued(tenant_id: uuid.UUID, prefix: str, year: int | None) -> sa.ColumnElement[int]:
+    """Scalar subquery for the largest counter value this tenant has already handed out under
+    ``prefix``/``year``, or 0 when it has handed out none (an aggregate with no GROUP BY always
+    yields exactly one row, so the enclosing INSERT ... SELECT always inserts exactly one).
+
+    Read from the D-012 registry, not from any module's own table: every numbered document
+    writes its number to ``core_documents.doc_number`` in the transaction that claims it, so
+    core can see every issued number WITHOUT knowing which table a sequence numbers — and
+    ``core_documents``' partial unique ``(tenant_id, doc_number)`` index is the very index a
+    re-issued number collides on, so this reads exactly the set of strings a new counter could
+    collide with. Numbers claimed by documents that stay OUT of the registry (HR's leave
+    requests, timesheets and payroll runs carry plain number columns, not a registration) are
+    invisible here and their counters still open at 1.
+
+    Portable on both dialects (D-003): ``substr`` compares the fixed head rather than a LIKE
+    pattern (no wildcard escaping, and every head ends in ``-`` so no head is a prefix of
+    another), and the tail is CAST to INTEGER so a value that outgrew its padding still compares
+    numerically. A NULL ``doc_number`` (a document registered but not yet numbered) fails the
+    head comparison and drops out.
+    """
+    # Imported at CALL time, not module scope: core/models.py trailing-imports docflow and then
+    # numbering to register both on Base.metadata, so a module-scope import here would make
+    # ``import app.core.docflow`` (docflow first) fail on a partially-initialised module. By the
+    # time a number is claimed both modules are fully loaded.
+    from app.core.docflow import Document
+
+    head = _number_head(prefix, year)
+    documents = Document.__table__
+    return sa.func.coalesce(
+        select(
+            sa.func.max(
+                sa.cast(sa.func.substr(documents.c.doc_number, len(head) + 1), sa.Integer)
+            )
+        )
+        .where(
+            documents.c.tenant_id == tenant_id,
+            sa.func.substr(documents.c.doc_number, 1, len(head)) == head,
+        )
+        .scalar_subquery(),
+        0,
+    )
