@@ -413,7 +413,7 @@ Staff (`/api/v1/hospitality`, JWT or a staff-scoped key):
 | GET | `/reservations/{id}` | `hospitality.reservation.read` | |
 | POST | `/reservations` | `hospitality.reservation.manage` | 201, **idempotent** (`hospitality.table_reservation.create`); the same gate the website uses |
 | PATCH | `/reservations/{id}` | `hospitality.reservation.manage` | party size and/or slot; omitted fields unchanged |
-| POST | `/reservations/{id}/seat` | `hospitality.reservation.manage` | body `{table_code}`; opens the linked check |
+| POST | `/reservations/{id}/seat` | `hospitality.reservation.manage` | body `{table_code}`; opens the linked check. It carries the BOOKING's service date only while that service is running (a party seated at 23:50 orders onto the day it booked); otherwise today, like a walk-in's (#207) |
 | POST | `/reservations/{id}/no-show` · `/cancel` · `/complete` | `hospitality.reservation.manage` | the transitions above |
 | GET | `/reservation-settings` | `hospitality.reservation.read` | defaults applied; carries `slot_minutes` |
 | PUT | `/reservation-settings` | `hospitality.reservation.manage` | full replacement; no key needed (one row, same state) |

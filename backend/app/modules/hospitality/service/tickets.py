@@ -203,9 +203,13 @@ async def create_ticket(
     lock as what serializes every other posting in the tenant — including the hotel's. A rejected
     order must therefore never have taken it.
 
-    The service date is TODAY. It is NOT a request field (#207) — a restaurant sells today, and a
-    backdated check claims a number from another year's counter (#209). Only seating passes
-    ``opened_on``, so a party sitting at 23:50 orders onto the service day it booked.
+    The service date is TODAY. It is NOT a request field (#207): a restaurant sells today, so a
+    check dated yesterday or next week is a mistake, and letting the client pick would also let it
+    pick which year's TKT- counter the number comes from (numbering is correct about that since
+    D-079 — backdating across a year boundary is sanctioned work, it is just not service-floor
+    work). ``opened_on`` is for the ONE in-module exception, ``reservations.seat_reservation``,
+    which passes it only while the booked service is the one running, so a party sitting at 23:50
+    orders onto the service day it booked.
     """
     ticket_id = uuid.uuid4()
     opened_on = opened_on or date.today()

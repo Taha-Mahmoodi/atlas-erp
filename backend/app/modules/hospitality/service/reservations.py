@@ -259,6 +259,26 @@ async def amend_reservation(
     return reservation
 
 
+async def _service_date_if_running(
+    session: AsyncSession, tenant_id: uuid.UUID, reservation: TableReservation
+) -> date | None:
+    """The booking's service date IF that service is the one being run right now, else None — and
+    ``create_ticket`` then stamps today (#207).
+
+    Seating is the one caller allowed to date a check off anything but the clock, and the reason is
+    narrow: a party seated at 23:50 orders onto the service day it booked, which is a different
+    calendar date from ``date.today()`` for every service that crosses UTC midnight. The reason
+    stops there. A booking is takeable ``booking_horizon_days`` ahead and seating it is a second
+    call under the SAME permission, so passing the date through unbounded would let a host stamp any
+    date inside the horizon onto a check — the field #207 took off the request body, back through
+    the side door. The service window is what "the service running now" means everywhere else in
+    this module (it is ``pacing.require_bookable_slot``'s floor), so it is what is asked here.
+    """
+    settings = await pacing.get_settings(session, tenant_id)
+    opens_at, closes_at = pacing.service_window(settings, reservation.service_date)
+    return reservation.service_date if opens_at <= utcnow() < closes_at else None
+
+
 async def seat_reservation(
     session: AsyncSession,
     tenant_id: uuid.UUID,
@@ -288,9 +308,9 @@ async def seat_reservation(
             guest_count=reservation.party_size,
             notes=f"Reservation {reservation.reservation_number} — {reservation.guest_name}",
         ),
-        # The booking's service date, not today: a party seated at 23:50 orders onto the service
-        # day it booked. This is the only caller allowed to say (#207) — no request body can.
-        opened_on=reservation.service_date,
+        # The booking's date only while ITS service is the one running (#207); otherwise the
+        # check opens today, exactly as a walk-in's does.
+        opened_on=await _service_date_if_running(session, tenant_id, reservation),
     )
     reservation.ticket_id = ticket.id
     await _apply_transition(session, tenant_id, reservation, ReservationStatus.SEATED)

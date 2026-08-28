@@ -72,18 +72,21 @@ async def test_open_a_check_over_the_wire(hospitality_api: HospitalityApi) -> No
 
 
 async def test_a_backdated_service_date_cannot_be_posted(hospitality_api: HospitalityApi) -> None:
-    """#207: the API takes no service date, so a backdated body still opens TODAY's check.
+    """#207: the API takes no service date at all — a backdated body is REFUSED, and the check the
+    server does open is dated today.
 
-    A UI that merely hides the field is bypassed by one curl, and a check dated last year claims a
-    number from last year's counter (#209). The server stamps the date; the request cannot.
+    A UI that merely hides the field is bypassed by one curl. The 422 rather than a silent 201 is
+    the ``WebsiteOrderCreate`` argument: an integrator sending ``opened_on`` believes it chose the
+    service date, and a check quietly opened on another day is the worst of both worlds.
     """
-    response = await hospitality_api.client.post(
+    refused = await hospitality_api.client.post(
         "/api/v1/hospitality/tickets",
         json={"table_code": "T12", "guest_count": 2, "opened_on": "2020-01-02", "lines": []},
         headers={"Idempotency-Key": uuid.uuid4().hex},
     )
-    assert response.status_code == 201, response.text
-    assert response.json()["opened_date"] == date.today().isoformat()
+    assert refused.status_code == 422, refused.text
+    assert "opened_on" in refused.text
+    assert (await _open_ticket(hospitality_api))["opened_date"] == date.today().isoformat()
 
 
 async def test_ticket_lines_read_back(hospitality_api: HospitalityApi) -> None:

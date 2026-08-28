@@ -780,14 +780,47 @@ async def test_seating_opens_a_ticket_linked_to_the_reservation(
 
     assert reservation.status == ReservationStatus.SEATED
     assert (ticket.table_code, ticket.guest_count) == ("T12", 5)
-    # The check carries the BOOKING's service date, the one exception to #207's server-stamped
-    # today: a party seated at 23:50 orders onto the service day it booked.
-    assert ticket.opened_date == reservation.service_date
     assert {node.doc_type for node in chain.nodes} == {
         "hospitality.table_reservation",
         "hospitality.order_ticket",
     }
     assert [edge.link_type for edge in chain.edges] == ["seated_as"]
+
+
+async def test_seating_dates_the_check_by_the_service_actually_running(
+    db_session: AsyncSession, tenant_a: uuid.UUID, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Seating is the one path that may date a check off something other than the clock (#207), and
+    it may do so ONLY for the service being run right now.
+
+    Both calls sit under ONE permission, so an unbounded pass-through would be the removed request
+    field again: book the horizon's last night, seat the party immediately, and the check carries a
+    date three months out — the number, the day's takings and every ``opened_on`` report with it.
+    The exception itself still has to hold, so the second half seats a party while the clock is
+    INSIDE the window of the service it booked and ``date.today()`` says another day — the 23:50
+    case the exception exists for.
+    """
+    far = await book(db_session, tenant_a, service_date=a_service_date(days_ahead=89))
+    with tenant_context(tenant_a):
+        await reservations.seat_reservation(db_session, tenant_a, far.id, table_code="T1")
+        await db_session.commit()
+        opened_far = (await tickets.get_ticket(db_session, tenant_a, far.ticket_id)).opened_date
+    assert opened_far == date.today(), "a booking's date must not travel onto the check"
+    assert opened_far != far.service_date
+
+    # The clock is inside this booking's own service window, and its service date is two days out
+    # so it cannot coincide with today under any UTC offset — the assertion means what it says.
+    running = await book(db_session, tenant_a, service_date=a_service_date(days_ahead=2))
+    monkeypatch.setattr(
+        reservations,
+        "utcnow",
+        lambda: datetime.combine(running.service_date, time(19, 30), tzinfo=UTC),
+    )
+    with tenant_context(tenant_a):
+        await reservations.seat_reservation(db_session, tenant_a, running.id, table_code="T2")
+        await db_session.commit()
+        seated = await tickets.get_ticket(db_session, tenant_a, running.ticket_id)
+    assert seated.opened_date == running.service_date != date.today()
 
 
 # --- Illegal transitions ------------------------------------------------------
