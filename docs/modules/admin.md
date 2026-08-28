@@ -42,7 +42,7 @@ and — for lists — keyset-paginated (D-014, `?cursor=&limit=`), N+1-free (≤
 | `POST /users` | `admin.user.manage` | create a user (reuses `service.provision_user`, argon2id) |
 | `GET /users/{id}` | `admin.user.manage` | one user (404 `admin.user_not_found`) |
 | `GET /users/{id}/roles` | `admin.user.manage` | the user's assigned roles (one JOIN) |
-| `POST /users/assign-role` | `admin.user.manage` | assign a role to a user (evicts the RBAC cache) |
+| `POST /users/assign-role` | `admin.user.manage` | assign a role to a user (evicts the RBAC cache); idempotent — re-assigning a held role is a no-op |
 | `GET /roles` | `admin.role.manage` | list the tenant's roles |
 | `POST /roles` | `admin.role.manage` | create a role + grant permission keys (unknown key → 422 `rbac.unknown_permission`) |
 | `GET /roles/{id}` | `admin.role.manage` | one role WITH its permission keys (404 `admin.role_not_found`) |

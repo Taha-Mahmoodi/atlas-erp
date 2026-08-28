@@ -55,6 +55,35 @@ async def test_get_user_and_assign_role(admin_client):
     assert [row["name"] for row in roles.json()] == ["Auditor"]
 
 
+async def test_assign_role_twice_is_idempotent(admin_client):
+    """#226: re-assigning a role the user already holds is a no-op, not a 500.
+
+    The demo seed re-runs `assign-role` on every pass, so an unconditional INSERT tripped
+    uq_core_user_roles_tenant_id_user_id_role_id and made `docker compose up` fail against an
+    already-seeded volume.
+    """
+    user_id = (
+        await admin_client.post(
+            f"{_ADMIN}/users", json={"email": "dana@acme.test", "password": "correcthorse1"}
+        )
+    ).json()["id"]
+    role_id = (
+        await admin_client.post(
+            f"{_ADMIN}/roles", json={"name": "Reviewer", "permissions": ["admin.audit.read"]}
+        )
+    ).json()["id"]
+    body = {"user_id": user_id, "role_id": role_id}
+
+    first = await admin_client.post(f"{_ADMIN}/users/assign-role", json=body)
+    assert first.status_code == 201, first.text
+    again = await admin_client.post(f"{_ADMIN}/users/assign-role", json=body)
+    assert again.status_code == 201, again.text
+
+    # Still exactly one assignment — the second call reused the row, it did not duplicate it.
+    roles = await admin_client.get(f"{_ADMIN}/users/{user_id}/roles")
+    assert [row["name"] for row in roles.json()] == ["Reviewer"]
+
+
 async def test_get_unknown_user_is_404(admin_client):
     resp = await admin_client.get(f"{_ADMIN}/users/{uuid.uuid4()}")
     assert resp.status_code == 404
