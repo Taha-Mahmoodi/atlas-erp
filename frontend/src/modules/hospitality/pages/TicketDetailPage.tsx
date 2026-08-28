@@ -36,8 +36,13 @@ export function TicketDetailPage() {
   const data = ticket.data;
 
   return (
-    <div className="mx-auto max-w-4xl" data-print-region>
+    <div className="mx-auto max-w-4xl" data-print-region="receipt">
       <header className="mb-6">
+        {/* The letterhead, print only: paper leaves the building, and a check with no property
+            name on it is not a check. On screen the shell already says where you are. */}
+        <p className="hidden text-[13px] font-semibold text-ink print:block">
+          {me.data?.tenant_name ?? ""}
+        </p>
         <p className="text-[12px] text-ink-muted" data-print-hide>
           <Link to="/hospitality/tickets" className="hover:underline">
             Tickets

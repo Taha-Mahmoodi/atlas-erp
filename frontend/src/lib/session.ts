@@ -18,6 +18,8 @@ export function useIsAuthenticated(): boolean {
 export interface Me {
   id: string;
   tenant_id: string;
+  /** The organisation's display name — the letterhead of anything this app puts on paper (#211). */
+  tenant_name: string;
   email: string;
   full_name: string | null;
   permissions: string[];

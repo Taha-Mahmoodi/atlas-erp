@@ -21,6 +21,7 @@ from app.core.exceptions import AuthError
 from app.core.models import RefreshSession, User
 from app.core.schemas import LoginRequest, MeResponse, TokenResponse
 from app.core.tenancy import current_tenant_id, system_context
+from app.modules.admin.models import Tenant
 from app.modules.admin.service import find_tenant_by_slug, find_user_by_email
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
@@ -258,13 +259,20 @@ async def me(
     current: CurrentUserDep,
     session: SessionDep,
 ) -> MeResponse:
-    # get_current_user already set the tenant context, so this select is scoped.
-    user = (
-        await session.execute(select(User).where(User.id == current.user_id))
-    ).scalar_one()
+    # get_current_user already set the tenant context, so this select is scoped. The tenant
+    # join stays in the SAME statement (PERFORMANCE §6): Tenant is the tenancy root and carries
+    # no tenant_id, so the D-007 filter leaves it alone and the FK does the scoping.
+    user, tenant_name = (
+        await session.execute(
+            select(User, Tenant.name).join(Tenant, Tenant.id == User.tenant_id).where(
+                User.id == current.user_id
+            )
+        )
+    ).one()
     return MeResponse(
         id=user.id,
         tenant_id=user.tenant_id,
+        tenant_name=tenant_name,
         email=user.email,
         full_name=user.full_name,
         permissions=sorted(current.permissions),
