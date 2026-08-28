@@ -14,6 +14,8 @@ export interface DocFlowNode {
   /** Document number, e.g. "SO-00042". */
   number?: string;
   status?: string;
+  /** Override the pill's tone. Omit it and the canonical StatusPill table decides (issue #182)
+   * — which is what a caller rendering raw backend status literals wants. */
   statusTone?: "neutral" | "success" | "warn" | "danger";
   meta?: string;
 }
@@ -31,6 +33,13 @@ export interface DocFlowViewerProps {
   /** The document whose page we're on — visually anchored. */
   currentId?: string;
   onNodeClick?: (node: DocFlowNode) => void;
+  /** The chain is still being fetched. Distinct from an empty chain (issue #227). */
+  loading?: boolean;
+  /** Why the chain could not be fetched. An audit trail must never answer "this document
+   * produced nothing" when what it actually means is "I don't know" — so an error outranks
+   * both the empty state and the loading state. Caller-supplied text: the viewer stays
+   * ERP-ignorant (STRUCTURE §4) and never inspects an error object. */
+  error?: string;
 }
 
 /** The viewer's caller-facing tone vocabulary, mapped onto the shared pill's (issue #182). */
@@ -67,7 +76,28 @@ export function computeLevels(nodes: DocFlowNode[], edges: DocFlowEdge[]): Map<s
   return levels;
 }
 
-export function DocFlowViewer({ nodes, edges, currentId, onNodeClick }: DocFlowViewerProps) {
+export function DocFlowViewer({
+  nodes,
+  edges,
+  currentId,
+  onNodeClick,
+  loading,
+  error,
+}: DocFlowViewerProps) {
+  if (error) {
+    return (
+      <p role="alert" className="rounded-control bg-danger-tint px-3 py-2 text-sm text-danger">
+        {error}
+      </p>
+    );
+  }
+  if (loading) {
+    return (
+      <p className="rounded-card border border-dashed border-line p-6 text-center text-sm text-ink-muted">
+        Loading…
+      </p>
+    );
+  }
   if (nodes.length === 0) {
     return (
       <p className="rounded-card border border-dashed border-line p-6 text-center text-sm text-ink-muted">
@@ -106,7 +136,12 @@ export function DocFlowViewer({ nodes, edges, currentId, onNodeClick }: DocFlowV
                 <>
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-medium text-ink-muted">{node.kind}</span>
-                    {node.status && <StatusPill status={node.status} tone={TONE[node.statusTone ?? "neutral"]} />}
+                    {node.status && (
+                      <StatusPill
+                        status={node.status}
+                        {...(node.statusTone ? { tone: TONE[node.statusTone] } : {})}
+                      />
+                    )}
                   </div>
                   <div className="mt-0.5 text-sm font-semibold text-ink">{node.number ?? node.id}</div>
                   {node.meta && <div className="mt-0.5 text-xs text-ink-faint">{node.meta}</div>}

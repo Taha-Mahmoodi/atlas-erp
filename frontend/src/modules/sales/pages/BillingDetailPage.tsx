@@ -3,7 +3,8 @@
  * — it publishes BillingInvoiced in the same transaction, which finance turns into a real
  * posted CustomerInvoice (Dr AR control gross / Cr sales revenue net / Cr output tax). There is
  * no "view AR invoice" link here since the two are only connected via docflow, not a shared id
- * (D-042 precedent) — the resulting invoice is visible via finance's own AR pages. POSTED is
+ * (D-042 precedent) — the resulting invoice is reachable through the document-flow section at
+ * the foot of the page (issue #227), and via finance's own AR pages. POSTED is
  * terminal (corrections happen via a return); CANCELLED only from DRAFT.
  */
 
@@ -11,8 +12,10 @@ import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { getErrorMessage } from "@/lib/apiClient";
+import { useDocumentFlow } from "@/lib/docflow";
 import { formatMoney, formatQuantity } from "@/lib/format";
 import { useMe } from "@/lib/session";
+import { DocFlowViewer } from "@/components/DocFlowViewer";
 import { StatusPill } from "@/components/StatusPill";
 import { useItemLookup } from "@/modules/inventory/hooks";
 import { useBilling, useCancelBilling, useCustomerOptions, usePostBilling } from "@/modules/sales/hooks";
@@ -28,6 +31,7 @@ export function BillingDetailPage() {
   const customers = useCustomerOptions();
   const postBilling = usePostBilling(billingId ?? "");
   const cancelBilling = useCancelBilling(billingId ?? "");
+  const flow = useDocumentFlow(billing.data?.document_id);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -144,6 +148,11 @@ export function BillingDetailPage() {
           ))}
         </tbody>
       </table>
+
+      <section className="mt-8">
+        <h2 className="mb-3.5 mono-caps text-ink-muted">Document flow</h2>
+        <DocFlowViewer {...flow} />
+      </section>
     </div>
   );
 }

@@ -6,12 +6,26 @@
  * and 4xx responses never retry (they are deterministic).
  */
 
-import { QueryClient } from "@tanstack/react-query";
+import { MutationCache, QueryClient } from "@tanstack/react-query";
 
 import { ApiError } from "@/lib/apiClient";
 import { isAuthenticated, onSessionChange } from "@/lib/auth";
 
 export const queryClient = new QueryClient({
+  // #227: a document's flow chain (`["documents", <id>, "chain"]`, lib/docflow.ts) is written
+  // by `core/docflow.py` from inside EVERY module's service and event handlers — posting one
+  // delivery sets the registry status, links order→delivery, and lets inventory add the move
+  // edges and finance the COGS journal. There is therefore no enumerable set of mutations that
+  // change a chain, and a post hook that forgot to invalidate would leave the audit trail
+  // asserting "this document produced nothing". The registry is cross-cutting, so its
+  // invalidation lives here with the other cross-cutting cache policies rather than being
+  // re-remembered in every module's hooks. `mutationCache` (not `defaultOptions.mutations`)
+  // because a per-mutation `onSuccess` REPLACES the default one — these fire in addition to it.
+  // The key matches only `useDocumentFlow`, so at most one small query refetches, and only
+  // while a document-flow section is actually on screen.
+  mutationCache: new MutationCache({
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["documents"] }),
+  }),
   defaultOptions: {
     queries: {
       staleTime: 30_000,

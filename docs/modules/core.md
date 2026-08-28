@@ -16,7 +16,7 @@ The core package is the cross-cutting foundation every business module builds on
 | `audit.py` | split-phase before/after diff capture, request context | D-010 |
 | `db_guards.py` | per-dialect trigger DDL helpers for migrations (append-only, period close, immutability) | D-022 |
 | `events.py` | in-process domain-event bus, `run_in_uow()` | D-011 |
-| `docflow.py` + `docflow_router.py` | document registry, predecessor/successor links, chain traversal | D-012 |
+| `docflow.py` + `docflow_router.py` | document registry, predecessor/successor links, chain traversal (`GET /api/v1/documents/{document_id}/chain`; the console calls it through `frontend/src/lib/docflow.ts`, which maps a chain onto `DocFlowViewer`) | D-012 |
 | `numbering.py` | gapless per-tenant document sequences | D-012 |
 | `idempotency.py` | reservation-based idempotency keys | D-013 |
 | `pagination.py` | keyset (cursor) pagination | D-014 |
