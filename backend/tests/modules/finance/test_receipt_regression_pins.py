@@ -312,7 +312,7 @@ async def test_receipt_amount_must_equal_allocation_sum_today(
     unapplied); the updated pin asserts over-allocation is still refused.
 
     Both directions are pinned because they part company under the widening: amount ABOVE the
-    allocation sum becomes legal (the shortfall lands unapplied) while amount BELOW it stays
+    allocation sum becomes legal (the excess lands unapplied) while amount BELOW it stays
     refused — allocating cash the receipt never received is the #73 phantom-FX bug with the sign
     flipped."""
     invoice = await _create_and_post_invoice(db_session, ar_setup, _invoice_payload(ar_setup))
@@ -415,8 +415,10 @@ async def test_a_fully_allocated_receipt_keeps_its_whole_posted_shape(
     assert Decimal(str(ar_line.transaction_credit_amount)) == Decimal("100.00")
     assert Decimal(str(bank_line.transaction_debit_amount)) == Decimal("100.00")
 
-    # COUNTED, not set-compared: a set cannot tell one link from three, so a rewrite that linked
-    # only pairs[0][0] would stay green against ``== {"posts", "receipts"}``.
+    # COUNTED, not set-compared, for the same reason the two-invoice pin counts: a set of link
+    # types cannot see HOW MANY of each there are. With one invoice a duplicate link is impossible
+    # anyway (the docflow unique constraint refuses it), so this is consistency here; the counting
+    # bite is in test_a_receipt_clearing_two_invoices_writes_one_row_and_one_link_per_invoice.
     outgoing = [
         edge.link_type
         for edge in chain.edges
