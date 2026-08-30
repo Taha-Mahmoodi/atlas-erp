@@ -260,8 +260,10 @@ HOUSEKEEPING_FLOW: dict[HousekeepingStatus, frozenset[HousekeepingStatus]] = {
     HousekeepingStatus.OUT_OF_ORDER: frozenset({HousekeepingStatus.DIRTY}),
 }
 
-# The states in which a room may NOT be sold. A named set rather than a literal at each caller,
-# because Task 4's ``rooms_sellable`` count and any later arrival gate must agree on one list.
+# The states in which a room may NOT be sold. Declared here with no consumer YET and that is
+# deliberate: it is the contract PLAN 20.2's ``rooms_sellable`` count and
+# ``rooms.set_housekeeping_status``'s counter hook must both read, and a set each of them derived
+# for itself is exactly how an oversell gets in. D-085 names it; 20.2 is what imports it.
 HOUSEKEEPING_UNSELLABLE: frozenset[HousekeepingStatus] = frozenset(
     {HousekeepingStatus.OUT_OF_ORDER}
 )
