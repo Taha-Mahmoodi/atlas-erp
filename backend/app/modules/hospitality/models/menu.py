@@ -1,9 +1,11 @@
 """The restaurant's own MENU structure: sections, a dish's place in them, and free tags (#212).
 
-A SIBLING of ``models.py`` rather than more of it (the Phase 21 ``reservation_*`` precedent, and
-STRUCTURE §8.4: ``models.py`` is already at the 400-line cap — see #176). What lives here is one
-concept: how a property ORGANISES the dishes it sells, which is a different concern from the
-availability and ticket state next door.
+One file of the ``models/`` package rather than more of ``ordering.py``, because what lives here is
+one concept: how a property ORGANISES the dishes it sells, which is a different concern from the
+availability and ticket state next door. It was a ``menu_models.py`` sibling while hospitality still
+had a single ``models.py`` at the 400-line cap (#176); the package is that workaround's proper home,
+and moving it in is also what puts these three tables on the ``Base.metadata`` that
+``alembic/env.py`` autogenerates against — the sibling was reachable only through the router.
 
 **Why hospitality owns this and inventory does not.** A dish is an ordinary ``Item`` and its
 ``ItemCategory`` decides how it is VALUED — costing method, inventory/COGS/price-difference

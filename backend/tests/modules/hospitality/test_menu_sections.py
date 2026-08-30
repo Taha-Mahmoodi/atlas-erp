@@ -23,7 +23,7 @@ from app.core.exceptions import ConflictError, NotFoundError, ValidationFailedEr
 from app.core.rbac import catalog_keys
 from app.core.tenancy import tenant_context
 from app.modules.hospitality import queries
-from app.modules.hospitality.menu_models import MenuItemTag, MenuPlacement
+from app.modules.hospitality.models import MenuItemTag, MenuPlacement
 from app.modules.hospitality.service import menu
 
 

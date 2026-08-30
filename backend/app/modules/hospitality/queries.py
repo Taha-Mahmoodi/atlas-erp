@@ -43,9 +43,11 @@ from app.core.pagination import (
 )
 from app.core.schemas import Page
 from app.modules.hospitality.constants import OrderTicketStatus, ReservationStatus
-from app.modules.hospitality.menu_models import MenuItemTag, MenuPlacement, MenuSection
 from app.modules.hospitality.models import (
     MenuAvailability,
+    MenuItemTag,
+    MenuPlacement,
+    MenuSection,
     OrderTicket,
     ServiceSlot,
     TableReservation,

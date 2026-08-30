@@ -29,7 +29,10 @@ payment, split checks, and tax on a check (see *Known limits*).
 | File | Concern | Key decision |
 |---|---|---|
 | `constants.py` | `AvailabilityState` / `AvailabilitySource` / `OrderTicketStatus` + `TICKET_FLOW`, the five permission keys (registered at import), the doc type / number sequence / event keys, `DEPLETE_MAX_COMPONENTS_PER_JOB` | D-009, D-012, D-072 |
-| `models.py` | `MenuAvailability` (`hsp_menu_availability`), `OrderTicket` (`hsp_order_tickets`), `OrderTicketLine` (`hsp_order_ticket_lines`) — flat, under the 600-line split rule | D-007, D-015, D-029 |
+| `models/ordering.py` | `MenuAvailability` (`hsp_menu_availability`), `OrderTicket` (`hsp_order_tickets`), `OrderTicketLine` (`hsp_order_ticket_lines`) | D-007, D-015, D-029 |
+| `models/menu.py` | `MenuSection` (`hsp_menu_sections`), `MenuPlacement` (`hsp_menu_placements`), `MenuItemTag` (`hsp_menu_item_tags`) | D-081 |
+| `models/table_reservations.py` | `ReservationSettings` (`hsp_reservation_settings`), `ServiceSlot` (`hsp_service_slots`), `TableReservation` (`hsp_table_reservations`) | D-007, D-012 |
+| `models/__init__.py` | the one import surface — `from app.modules.hospitality.models import X` for every model above; a `models/` package rather than one file because Phase 21 took `models.py` to 451 lines, past the STRUCTURE §8.4 cap (#176) | STRUCTURE §3, §8.4 |
 | `schemas.py` | staff shapes first, then the website surface; the website request shapes set `extra="forbid"` | D-014, D-015 |
 | `events.py` | `RestaurantOrderFired`, `RestaurantOrderSettled`, `TicketIngredientsConsumed` | D-011 |
 | `handlers.py` | `submit_ticket_depletion` — subscribes to `RestaurantOrderFired`, explodes the recipe and submits the depletion job(s) in the fire's own transaction | D-011, D-072 |

@@ -1,8 +1,9 @@
 """Hospitality wire shapes (Pydantic v2 on the ``ApiModel`` base) for PLAN 19.
 
-A SINGLE file, matching the flat ``models.py`` next to it (STRUCTURE §8.4: split into a package at
-the 400-line cap, not before). Two audiences share it, separated by the section rule below: STAFF
-shapes first, then the WEBSITE surface Task 7 exposes to a machine credential.
+A SINGLE file: STRUCTURE §8.4 splits into a package AT the 400-line cap, not before, and this one is
+still under it — which is why ``models/`` next to it is already a package (it reached 451) and this
+is not. Two audiences share it, separated by the section rule below: STAFF shapes first, then the
+WEBSITE surface Task 7 exposes to a machine credential.
 
 Every schema here has an endpoint that renders it — a response model with no route is the dead
 config STRUCTURE §8.3 forbids.
