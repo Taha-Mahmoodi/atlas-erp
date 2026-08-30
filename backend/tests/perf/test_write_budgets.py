@@ -24,6 +24,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.events import run_in_uow
 from app.core.tenancy import tenant_context
 from app.main import register_event_handlers
+from app.modules.finance.receivables_schemas import (
+    CustomerInvoiceCreate,
+    CustomerInvoiceLineCreate,
+    CustomerReceiptCreate,
+    ReceiptAllocationCreate,
+)
+from app.modules.finance.service import customer_invoices, customer_receipts
 from app.modules.hospitality.constants import AvailabilityState
 from app.modules.hospitality.reservation_schemas import TableReservationCreate
 from app.modules.hospitality.service import availability, depletion, reservations, tickets
@@ -31,6 +38,7 @@ from app.modules.inventory import service
 from app.modules.inventory.constants import MoveType
 from app.modules.inventory.schemas import StockMoveCreate
 from tests.conftest import QueryCounter
+from tests.modules.finance.factories import build_ar_setup
 from tests.modules.hospitality.factories import build_kitchen, build_open_ticket
 from tests.modules.inventory.factories import build_stock, build_stock_setup
 
@@ -78,6 +86,10 @@ DEPLETION_JOB_CEILING = 140
 # which is a one-time cost per tenant and identical on ``create_ticket``; the test warms it so the
 # two measurements differ in nothing but party size and book depth.
 TABLE_BOOKING_CEILING = 16
+
+# Phase 20 Task 1's ratchet on the SHIPPED AR money path, pinned before Task 2 (PLAN 20.4) widens
+# the receipt. See the test's docstring for what the measured number is made of.
+AR_ROUND_TRIP_CEILING = 85
 
 # The service window a tenant that has never configured one books inside (constants.DEFAULT_*), and
 # the grid step. Spelled here rather than imported so the ratchet keeps measuring the same shape
@@ -350,3 +362,86 @@ async def test_the_depletion_job_pays_for_its_rerun_guard_once_per_job(
         f"(ceiling {DEPLETION_JOB_CEILING}):\n" + "\n".join(counted.statements)
     )
     print(f"\n[perf] depletion job, 3 ingredients: {counted.count} statements")
+
+
+async def test_an_invoice_to_cleared_receipt_round_trip_stays_within_its_ceiling(
+    db_session: AsyncSession,
+    tenant_a: uuid.UUID,
+    query_counter: Callable[[], QueryCounter],
+) -> None:
+    """The order-to-cash money path end to end: create + post one customer invoice, then clear it
+    in full with a customer receipt.
+
+    Pinned BEFORE Phase 20 Task 2 (PLAN 20.4) widens ``CustomerReceipt`` into an unapplied/
+    on-account receipt, because that task rewrites the receipt's validation spine and its journal
+    build on a SHIPPED, seeded path. Its own tests will prove the new behaviour; nothing would
+    prove the ALLOCATED path still costs what it costs, and an extra per-allocation read or a
+    re-read of the invoice's control line is invisible to every behavioural test.
+
+    MEASURED on this branch at 75 statements for a one-line, tax-free invoice cleared by a
+    single-allocation receipt: the two documents' registry INSERTs and read-backs, both gapless
+    sequences bootstrapped and claimed (INV- and RCT- — a one-time-per-tenant cost this round trip
+    deliberately includes, since the seed pays it once per tenant too), the two journal entries
+    with their lines and posting reads, the invoice INSERT + audit row, the receipt's frozen-rate
+    read of the AR control line (D-019), the allocation INSERT, the open-amount UPDATE and the
+    three docflow links. Headroom for incidental growth only.
+
+    Nothing subscribes to ``CustomerInvoicePosted`` or ``CustomerReceiptPosted`` today
+    (``core/bootstrap.py:168``), so this is the cost of the write itself; a handler added later
+    lands inside this ceiling, which is where it should be argued for.
+    """
+    setup = await build_ar_setup(db_session, tenant_a)
+    partner_id = uuid.uuid4()
+    holder: dict[str, uuid.UUID] = {}
+
+    async def bill() -> None:
+        invoice = await customer_invoices.create_customer_invoice(
+            db_session,
+            tenant_a,
+            CustomerInvoiceCreate(
+                partner_id=partner_id,
+                partner_name="Globex Inc",
+                invoice_date=date(2026, 3, 1),
+                due_date=date(2026, 3, 31),
+                currency_code="USD",
+                ar_account_id=setup.accounts["1200"],
+                description="Consulting services",
+                lines=[
+                    CustomerInvoiceLineCreate(
+                        account_id=setup.accounts["4000"], net_amount=Decimal("100.00")
+                    )
+                ],
+            ),
+        )
+        await customer_invoices.post_customer_invoice(db_session, tenant_a, invoice.id)
+        holder["invoice_id"] = invoice.id
+
+    async def receive() -> None:
+        await customer_receipts.create_and_post_receipt(
+            db_session,
+            tenant_a,
+            CustomerReceiptCreate(
+                partner_id=partner_id,
+                partner_name="Globex Inc",
+                receipt_date=date(2026, 3, 15),
+                currency_code="USD",
+                bank_account_id=setup.accounts["1000"],
+                amount=Decimal("100.00"),
+                allocations=[
+                    ReceiptAllocationCreate(
+                        invoice_id=holder["invoice_id"], amount=Decimal("100.00")
+                    )
+                ],
+            ),
+        )
+
+    with query_counter() as counted, tenant_context(tenant_a):
+        await run_in_uow(db_session, bill)
+        await run_in_uow(db_session, receive)
+
+    assert counted.count <= AR_ROUND_TRIP_CEILING, (
+        f"one invoice -> receipt -> cleared round trip now costs {counted.count} statements "
+        f"(ceiling {AR_ROUND_TRIP_CEILING}); this is the shipped AR money path Phase 20 Task 2 "
+        "rewrites:\n" + "\n".join(counted.statements)
+    )
+    print(f"\n[perf] invoice -> receipt -> cleared round trip: {counted.count} statements")
