@@ -15,7 +15,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, NotFoundError, ValidationFailedError
-from app.modules.hospitality.menu_models import (
+from app.modules.hospitality.models import (
     MAX_SECTION_DEPTH,
     MenuItemTag,
     MenuPlacement,
