@@ -368,7 +368,8 @@ export interface CustomerReceiptCreate {
   bank_account_id: string;
   amount: string;
   description?: string | null;
-  allocations: ReceiptAllocationCreate[];
+  /** Optional since PLAN 20.4: omitted (or short of `amount`) makes the receipt unapplied. */
+  allocations?: ReceiptAllocationCreate[];
 }
 
 export interface ReceiptAllocation {
@@ -387,6 +388,8 @@ export interface CustomerReceipt {
   currency_code: string;
   bank_account_id: string;
   amount: string;
+  /** The part of `amount` that cleared no invoice — on-account money (PLAN 20.4). */
+  unapplied_amount: string;
   journal_entry_id: string | null;
   status: ReceiptStatus;
   description: string | null;
