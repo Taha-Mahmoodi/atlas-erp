@@ -36,6 +36,7 @@ from app.modules.finance.receivables_schemas import (
     ReceiptAllocationCreate,
 )
 from tests.modules.finance.conftest import ArSetup
+from tests.modules.finance.factories import seed_advance_account
 
 _INVOICE_DATE = date(2026, 3, 1)
 _DUE_DATE = date(2026, 3, 31)
@@ -323,29 +324,57 @@ async def test_cannot_overreceive_an_invoice(
     assert exc.value.code == "finance.receipt_overallocated"
 
 
-async def test_receipt_amount_must_equal_allocation_sum(
+async def test_an_overpayment_lands_unapplied_and_never_in_a_phantom_fx_line(
     db_session: AsyncSession, ar_setup: ArSetup
 ) -> None:
-    """Regression for #73: a same-currency overpayment (amount > sum of allocations) used to
-    post the difference as a phantom realized-FX gain instead of being rejected."""
+    """Regression for #73, restated for PLAN 20.4 (D-084). #73 was never "over-payment is illegal"
+    — it was "the difference must not be misbooked as a realized FX gain". The widening keeps that
+    invariant and gives the difference a real home: 110 received against a 100 invoice clears the
+    invoice, credits 10 to the advance control, and posts NO FX line in a single-currency tenant.
+
+    A tenant that never mapped ``customer_advances`` gets a loud 422 instead of a guessed account —
+    asserted first, because that is what every existing AR tenant sees the day this ships."""
     invoice = await _create_and_post_invoice(db_session, ar_setup, _invoice_payload(ar_setup))
+    payload = CustomerReceiptCreate(
+        partner_id=invoice.partner_id,
+        partner_name=invoice.partner_name,
+        receipt_date=_RECEIPT_DATE,
+        currency_code="USD",
+        bank_account_id=ar_setup.accounts["1000"],
+        amount=Decimal("110.00"),
+        allocations=[ReceiptAllocationCreate(invoice_id=invoice.id, amount=Decimal("100.00"))],
+    )
     with tenant_context(ar_setup.tenant_id), pytest.raises(ValidationFailedError) as exc:
-        await service.create_and_post_receipt(
-            db_session,
-            ar_setup.tenant_id,
-            CustomerReceiptCreate(
-                partner_id=invoice.partner_id,
-                partner_name=invoice.partner_name,
-                receipt_date=_RECEIPT_DATE,
-                currency_code="USD",
-                bank_account_id=ar_setup.accounts["1000"],
-                amount=Decimal("110.00"),
-                allocations=[
-                    ReceiptAllocationCreate(invoice_id=invoice.id, amount=Decimal("100.00"))
-                ],
-            ),
+        await service.create_and_post_receipt(db_session, ar_setup.tenant_id, payload)
+    assert exc.value.code == "finance.posting_default_unmapped"
+
+    advance_id = await seed_advance_account(db_session, ar_setup.tenant_id)
+    holder: dict[str, uuid.UUID] = {}
+    with tenant_context(ar_setup.tenant_id):
+
+        async def work() -> None:
+            receipt = await service.create_and_post_receipt(
+                db_session, ar_setup.tenant_id, payload
+            )
+            holder["receipt_id"] = receipt.id
+
+        await run_in_uow(db_session, work)
+        await db_session.refresh(invoice)
+        receipt = await service.get_customer_receipt(
+            db_session, ar_setup.tenant_id, holder["receipt_id"]
         )
-    assert exc.value.code == "finance.receipt_allocation_sum_mismatch"
+        lines = (
+            await db_session.execute(
+                select(JournalLine).where(JournalLine.journal_entry_id == receipt.journal_entry_id)
+            )
+        ).scalars().all()
+
+    assert invoice.status == InvoiceStatus.PAID.value
+    assert Decimal(str(receipt.unapplied_amount)) == Decimal("10.00")
+    # Three lines exactly: Dr bank 110, Cr AR 100, Cr advance 10. A fourth would BE the #73 bug.
+    assert len(lines) == 3
+    advance_line = next(line for line in lines if line.account_id == advance_id)
+    assert Decimal(str(advance_line.transaction_credit_amount)) == Decimal("10.00")
 
 
 # --- dunning ------------------------------------------------------------------

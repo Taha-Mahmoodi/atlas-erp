@@ -409,8 +409,10 @@ permission key changes every tenant's role data.
 - `POST /customer-invoices` (create draft, `finance.ar.manage`), `POST /customer-invoices/{id}/post`
   (**idempotent**, `finance.ar.manage`), `GET /customer-invoices` (paginated),
   `GET /customer-invoices/{id}` (with lines) — `finance.ar.read` (PLAN 4.6).
-- `POST /customer-receipts` (create + post a receipt with allocations; **idempotent**,
-  `finance.ar.collect`), `GET /customer-receipts` (paginated, `finance.ar.read`).
+- `POST /customer-receipts` (create + post a receipt; allocations OPTIONAL since PLAN 20.4 — the
+  excess is unapplied/on-account; **idempotent**, `finance.ar.collect`),
+  `POST /customer-receipts/{id}/applications` (apply an unapplied balance to open invoices;
+  **idempotent**, `finance.ar.collect`), `GET /customer-receipts` (paginated, `finance.ar.read`).
 - `POST /dunning-runs` (advance dunning levels on overdue invoices; **idempotent**,
   `finance.ar.collect`) and `GET /ar-aging?as_of=&partner_id=` (`finance.ar.read`). The AR endpoints
   live in `ar_router.py` and mount into the finance router (same one-surface pattern as FX/tax/AP).
@@ -529,6 +531,27 @@ engine's `skip_translation`; the realized-FX line is denominated in the function
 realized-FX math is shared with AP in `service/clearing_fx.py` (AP debits the control to clear, AR
 credits it — `control_is_debit` flips the sign; the gain/loss direction inverts accordingly). When
 the receipt currency *is* the functional currency, R1 = R2 and there is no FX line.
+
+**Unapplied (on-account) receipts — deposits (PLAN 20.4, D-084).** `allocations` is optional and
+`amount` need only be **>=** their sum. The excess is the receipt's `unapplied_amount`, credited to
+the `customer_advances` posting-default account (a LIABILITY — money taken before an invoice exists
+is owed back, not earned) on a line carrying `partner_type` + `partner_id`, so the pooled control
+reconciles per customer. A receipt with NO allocations is a pure advance deposit. `amount` *below*
+the allocation sum is still refused (`finance.receipt_allocation_sum_mismatch`) — that is #73 with
+the sign flipped. A tenant that never mapped `customer_advances` gets
+`finance.posting_default_unmapped` (422) the first time it takes on-account money; the
+allocation-for-allocation path is unchanged, including its statement budget.
+
+`POST /customer-receipts/{id}/applications` (idempotent, `finance.ar.collect`) spends that balance:
+it validates the target invoices exactly as a direct allocation does (open, same partner, same
+currency, not over the open amount), refuses more than `unapplied_amount`
+(`finance.receipt_apply_exceeds_unapplied`), and posts ONE reclass entry through the same
+`clearing_fx` builder — **Dr** advance control (at the rate the deposit was booked at) + **Cr** AR
+control (at each invoice's frozen rate) + the realized-FX line for the difference. The receipt keeps
+pointing at the entry that received the cash (a posted entry is immutable, D-017); the reclass is
+reachable through the doc flow. `queries.customer_unapplied_balance(...)` reads a partner's
+on-account money — deliberately a separate number from `customer_open_balance`, since a deposit is a
+liability, not a negative receivable.
 
 **Dunning.** `POST /dunning-runs` advances reminder levels. For each OPEN overdue invoice it computes
 the level its days-overdue earns from `DUNNING_THRESHOLDS` (level 1 at 7 days past due, 2 at 30, 3 at

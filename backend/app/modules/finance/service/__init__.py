@@ -124,6 +124,7 @@ from app.modules.finance.service.posting_defaults import (
     list_posting_defaults,
     set_posting_default,
 )
+from app.modules.finance.service.receipt_advances import apply_receipt
 from app.modules.finance.service.receipts_read import (
     get_customer_receipt,
     get_receipt_allocations,
@@ -165,6 +166,7 @@ from app.modules.finance.service.vendor_payments import (
 
 __all__ = [
     "activate_asset",
+    "apply_receipt",
     "assert_period_closable",
     "asset_register",
     "balance_sheet",

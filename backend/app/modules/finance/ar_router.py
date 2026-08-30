@@ -38,6 +38,7 @@ from app.modules.finance.receivables_schemas import (
     DunningRunRequest,
     DunningRunResult,
     ReceiptAllocationRead,
+    ReceiptApplyRequest,
 )
 
 ar_router = APIRouter(tags=["finance-ar"])
@@ -46,6 +47,7 @@ CursorParamsDep = Depends(cursor_params)
 _CreateInvoiceIdempotentDep = Depends(Idempotent("finance.ar.invoice.create"))
 _PostInvoiceIdempotentDep = Depends(Idempotent("finance.ar.invoice.post"))
 _ReceiptIdempotentDep = Depends(Idempotent("finance.ar.receipt"))
+_ApplyReceiptIdempotentDep = Depends(Idempotent("finance.ar.receipt.apply"))
 _DunningIdempotentDep = Depends(Idempotent("finance.ar.dunning_run"))
 
 
@@ -192,6 +194,39 @@ async def create_customer_receipt(
 
     async def work() -> None:
         receipt = await service.create_and_post_receipt(session, current.tenant_id, payload)
+        detail = await _receipt_detail(session, current.tenant_id, receipt.id)
+        holder["read"] = await idem.capture(detail, status_code=201)
+
+    await run_in_uow(session, work)
+    return holder["read"]
+
+
+@ar_router.post(
+    "/customer-receipts/{receipt_id}/applications",
+    response_model=CustomerReceiptDetail,
+    status_code=201,
+    dependencies=[Depends(require_permission(FINANCE_AR_COLLECT))],
+)
+async def apply_customer_receipt(
+    receipt_id: uuid.UUID,
+    payload: ReceiptApplyRequest,
+    current: CurrentUserDep,
+    session: SessionDep,
+    idem: IdempotentDep = _ApplyReceiptIdempotentDep,
+) -> CustomerReceiptDetail:
+    """Apply a receipt's unapplied (on-account) balance to open invoices (PLAN 20.4, D-084).
+    IDEMPOTENT (D-013): it posts a reclass journal entry + clears open items, so a retried request
+    must not spend the deposit twice."""
+    holder: dict[str, CustomerReceiptDetail] = {}
+
+    async def work() -> None:
+        receipt = await service.apply_receipt(
+            session,
+            current.tenant_id,
+            receipt_id,
+            payload.allocations,
+            application_date=payload.application_date,
+        )
         detail = await _receipt_detail(session, current.tenant_id, receipt.id)
         holder["read"] = await idem.capture(detail, status_code=201)
 

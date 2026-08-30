@@ -175,6 +175,13 @@ class CustomerReceipt(UuidPKMixin, TenantMixin, AuditMixin, TimestampMixin, Docu
     currency_code: Mapped[str] = mapped_column(sa.String(3), nullable=False)
     bank_account_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, nullable=False)
     amount: Mapped[object] = mapped_column(MoneyType(), nullable=False)
+    # The part of ``amount`` that cleared no invoice — an advance deposit, or the excess of an
+    # over-payment (PLAN 20.4, D-084). Credited to the ``customer_advances`` control at posting and
+    # reduced by ``apply_receipt`` as it is spent on invoices; 0 on a fully allocated receipt.
+    # It is a BALANCE, not a total: allocations only ever subtract from it, never re-derive it.
+    unapplied_amount: Mapped[object] = mapped_column(
+        MoneyType(), nullable=False, default=0, server_default="0"
+    )
     journal_entry_id: Mapped[uuid.UUID | None] = mapped_column(sa.Uuid, nullable=True)
     status: Mapped[str] = mapped_column(
         sa.String(20), nullable=False, default=ReceiptStatus.POSTED.value, server_default="POSTED"

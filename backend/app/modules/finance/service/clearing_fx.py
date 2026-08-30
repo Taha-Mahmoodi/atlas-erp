@@ -39,6 +39,12 @@ from app.modules.finance.service import fx
 from app.modules.finance.service.journal_read import load_lines
 from app.modules.finance.service.posting_defaults import get_posting_default
 
+# The realized-FX line's descriptions. Constants because they are also how the line is IDENTIFIED
+# after posting (``set_fx_line_currency``): it used to be "the third line", which held only while
+# every clearing entry had exactly two other lines — an unapplied receipt (D-084) appends a fourth.
+FX_GAIN_DESCRIPTION = "Realized FX gain"
+FX_LOSS_DESCRIPTION = "Realized FX loss"
+
 
 @dataclass(frozen=True)
 class ClearedItem:
@@ -198,13 +204,13 @@ async def _fx_line(
     if realized > 0:
         line = JournalLineCreate(
             account_id=fx_account_id,
-            description="Realized FX gain",
+            description=FX_GAIN_DESCRIPTION,
             transaction_credit_amount=amount,
         )
         return line, (Decimal(0), amount)
     line = JournalLineCreate(
         account_id=fx_account_id,
-        description="Realized FX loss",
+        description=FX_LOSS_DESCRIPTION,
         transaction_debit_amount=amount,
     )
     return line, (amount, Decimal(0))
@@ -213,13 +219,19 @@ async def _fx_line(
 async def set_fx_line_currency(
     session: AsyncSession, tenant_id: uuid.UUID, entry_id: uuid.UUID
 ) -> None:
-    """Denominate the realized-FX line (the 3rd line, if any) in the functional currency (D-019) —
-    it is a functional gain/loss, not a foreign cash flow. Cosmetic vs the entry currency on the
-    line; mutate the loaded object so the change is captured. No-op when no FX line exists."""
+    """Denominate the realized-FX line (if any) in the functional currency (D-019) — it is a
+    functional gain/loss, not a foreign cash flow. Cosmetic vs the entry currency on the line;
+    mutate the loaded object so the change is captured. No-op when no FX line exists.
+
+    The line is found by the description ``_fx_line`` gave it, not by position: "the third line"
+    was true only while a clearing entry was exactly control + bank + FX, and an unapplied customer
+    receipt (D-084) posts a fourth. Same two queries either way."""
     func_code = await fx.functional_currency_or_none(session, tenant_id)
     if func_code is None:
         return
     lines = await load_lines(session, tenant_id, entry_id)
-    if len(lines) >= 3:
-        lines[2].currency_code = func_code
-        await session.flush()
+    for line in lines:
+        if line.description in (FX_GAIN_DESCRIPTION, FX_LOSS_DESCRIPTION):
+            line.currency_code = func_code
+            await session.flush()
+            return
