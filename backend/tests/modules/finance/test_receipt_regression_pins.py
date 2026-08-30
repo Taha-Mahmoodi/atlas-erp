@@ -21,6 +21,10 @@ The rules pinned (``service/customer_receipts.py``, in the order the service che
   9. finance.receipt_allocation_sum_mismatch  RELAXED (== becomes >=; over-allocation still refused)
  10. the posted shape of a fully allocated receipt (journal, allocation row, invoice flip, gapless
      number, docflow links, event)            KEPT
+ 11. the same shape PER INVOICE when one receipt clears TWO (one allocation row and one 'receipts'
+     link each, both ids on the event)        KEPT — the shape Task 2's `amount == sum` -> `>=`
+                                              split actually operates on, and the one shape no
+                                              test in this repo posted before
 
 Invoice helpers are imported from test_receivables.py rather than rebuilt (the
 test_bank_reconcile.py precedent) so both suites post the same invoice.
@@ -51,6 +55,7 @@ from tests.modules.finance.test_receivables import (
     _RECEIPT_DATE,
     _create_and_post_invoice,
     _invoice_payload,
+    _receive_invoice,
 )
 
 
@@ -261,7 +266,14 @@ async def test_an_allocation_cannot_exceed_the_invoices_open_amount(
     db_session: AsyncSession, ar_setup: ArSetup
 ) -> None:
     """Pins finance.receipt_overallocated (customer_receipts.py:105-111). Task 2 must NOT relax
-    this — the excess cash becomes unapplied_amount, it never over-clears an invoice."""
+    this — the excess cash becomes unapplied_amount, it never over-clears an invoice.
+
+    The SECOND half is the one that pins the boundary. On a FRESH invoice ``open == gross``, so a
+    pin that only over-receives a fresh invoice passes just as well against a guard reading
+    ``invoice.gross_amount`` — the whole finance suite does, which is why this shape existed
+    nowhere. A PARTIALLY_PAID invoice separates the two: 100 billed, 40 received, 80 attempted is
+    under gross and over open, and it is exactly the boundary Task 2's "the excess becomes
+    unapplied_amount, it never over-clears" logic straddles."""
     invoice = await _create_and_post_invoice(db_session, ar_setup, _invoice_payload(ar_setup))
     code = await _refused(
         db_session,
@@ -275,6 +287,22 @@ async def test_an_allocation_cannot_exceed_the_invoices_open_amount(
         ValidationFailedError,
     )
     assert code == "finance.receipt_overallocated"
+
+    await _receive_invoice(db_session, ar_setup, invoice, "40.00")
+    assert invoice.status == InvoiceStatus.PARTIALLY_PAID.value
+    assert Decimal(str(invoice.open_amount)) == Decimal("60.00")
+    partial = await _refused(
+        db_session,
+        ar_setup,
+        _receipt(
+            ar_setup,
+            partner_id=invoice.partner_id,
+            amount="80.00",
+            allocations=[_alloc(invoice.id, "80.00")],
+        ),
+        ValidationFailedError,
+    )
+    assert partial == "finance.receipt_overallocated"
 
 
 async def test_receipt_amount_must_equal_allocation_sum_today(
@@ -387,14 +415,105 @@ async def test_a_fully_allocated_receipt_keeps_its_whole_posted_shape(
     assert Decimal(str(ar_line.transaction_credit_amount)) == Decimal("100.00")
     assert Decimal(str(bank_line.transaction_debit_amount)) == Decimal("100.00")
 
-    outgoing = {
+    # COUNTED, not set-compared: a set cannot tell one link from three, so a rewrite that linked
+    # only pairs[0][0] would stay green against ``== {"posts", "receipts"}``.
+    outgoing = [
         edge.link_type
         for edge in chain.edges
         if edge.predecessor_document_id == receipt.document_id
-    }
-    assert outgoing == {"posts", "receipts"}
+    ]
+    assert sorted(outgoing) == ["posts", "receipts"]
 
     assert len(captured) == 1
     assert captured[0].receipt_id == receipt.id
     assert captured[0].amount == Decimal("100.00")
     assert captured[0].cleared_invoice_ids == (invoice.id,)
+
+
+async def test_a_receipt_clearing_two_invoices_writes_one_row_and_one_link_per_invoice(
+    db_session: AsyncSession, ar_setup: ArSetup
+) -> None:
+    """The multi-allocation shape — the one NO test in this repo posted before, and the one Task
+    2's `amount == sum(allocations)` -> `amount >= sum(allocations)` split actually operates on.
+
+    Single-allocation pins cannot see the per-invoice half of the contract: with one allocation,
+    ``allocated_amount=amount`` and ``allocated_amount=receipt_amount`` are the same number, and
+    linking ``pairs[0][0]`` is the same as linking every pair. Two invoices of DIFFERENT amounts
+    separate them, so this pins, per cleared invoice: its own allocation row carrying ITS OWN
+    amount, its own ``receipts`` docflow edge (COUNTED — a set of link types cannot count), and its
+    id on ``CustomerReceiptPosted.cleared_invoice_ids``.
+
+    Task 2 must KEEP all three. An unapplied receipt adds a residual on TOP of these rows; it must
+    not fold them into one aggregate allocation or one representative link."""
+    partner_id = uuid.uuid4()
+    first = await _create_and_post_invoice(
+        db_session, ar_setup, _invoice_payload(ar_setup, net="100.00", partner_id=partner_id)
+    )
+    second = await _create_and_post_invoice(
+        db_session, ar_setup, _invoice_payload(ar_setup, net="50.00", partner_id=partner_id)
+    )
+    captured: list[CustomerReceiptPosted] = []
+
+    async def _capture(_s: AsyncSession, event: CustomerReceiptPosted) -> None:
+        captured.append(event)
+
+    subscribe(CustomerReceiptPosted.key, _capture)
+    holder: dict[str, uuid.UUID] = {}
+    with tenant_context(ar_setup.tenant_id):
+
+        async def work() -> None:
+            receipt = await service.create_and_post_receipt(
+                db_session,
+                ar_setup.tenant_id,
+                _receipt(
+                    ar_setup,
+                    partner_id=partner_id,
+                    amount="150.00",
+                    allocations=[_alloc(first.id, "100.00"), _alloc(second.id, "50.00")],
+                ),
+            )
+            holder["receipt_id"] = receipt.id
+
+        await run_in_uow(db_session, work)
+        await db_session.refresh(first)
+        await db_session.refresh(second)
+
+        receipt = await service.get_customer_receipt(
+            db_session, ar_setup.tenant_id, holder["receipt_id"]
+        )
+        allocations = (
+            await db_session.execute(
+                select(CustomerReceiptAllocation).where(
+                    CustomerReceiptAllocation.receipt_id == receipt.id
+                )
+            )
+        ).scalars().all()
+        chain = await docflow.get_document_chain(
+            db_session, ar_setup.tenant_id, receipt.document_id
+        )
+
+    assert first.status == second.status == InvoiceStatus.PAID.value
+
+    # ONE allocation row per invoice, each carrying ITS OWN amount — not the receipt's total and
+    # not one aggregate row.
+    by_invoice = {
+        allocation.customer_invoice_id: Decimal(str(allocation.allocated_amount))
+        for allocation in allocations
+    }
+    assert len(allocations) == 2
+    assert by_invoice == {first.id: Decimal("100.00"), second.id: Decimal("50.00")}
+
+    # ONE 'receipts' edge per cleared invoice, COUNTED per successor: a set of link types is blind
+    # to a rewrite that links only the first pair.
+    receipts_edges = [
+        edge.successor_document_id
+        for edge in chain.edges
+        if edge.predecessor_document_id == receipt.document_id
+        and edge.link_type == "receipts"
+    ]
+    assert sorted(receipts_edges, key=str) == sorted(
+        [first.document_id, second.document_id], key=str
+    )
+
+    assert len(captured) == 1
+    assert set(captured[0].cleared_invoice_ids) == {first.id, second.id}

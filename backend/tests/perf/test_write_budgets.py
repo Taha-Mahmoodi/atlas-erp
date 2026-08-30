@@ -386,10 +386,14 @@ async def test_an_invoice_to_cleared_receipt_round_trip_stays_within_its_ceiling
     read of the AR control line (D-019), the allocation INSERT, the open-amount UPDATE and the
     three docflow links. Headroom for incidental growth only.
 
-    Nothing subscribes to ``CustomerInvoicePosted`` or ``CustomerReceiptPosted`` today
-    (``core/bootstrap.py:168``), so this is the cost of the write itself; a handler added later
-    lands inside this ceiling, which is where it should be argued for.
+    Nothing subscribes to ``CustomerInvoicePosted`` or ``CustomerReceiptPosted`` today, so this is
+    the cost of the write itself. The real registry is installed anyway (the sibling ISSUE ratchet's
+    house rule: the autouse ``clear_event_subscriptions`` empties the bus, so a service-level test
+    that does not re-register measures a write with ZERO handlers FOREVER, and a Phase 20
+    folio/deposit handler on ``CustomerReceiptPosted`` would land outside this ceiling instead of
+    inside it, which is where it should be argued for).
     """
+    register_event_handlers()
     setup = await build_ar_setup(db_session, tenant_a)
     partner_id = uuid.uuid4()
     holder: dict[str, uuid.UUID] = {}
