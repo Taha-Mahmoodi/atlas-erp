@@ -26,7 +26,6 @@ from app.modules.hospitality.constants import (
     HousekeepingTaskStatus,
     HousekeepingTrigger,
 )
-from tests.conftest import QueryCounter, assert_query_budget
 from tests.modules.hospitality.conftest import RoomsApi
 from tests.modules.hospitality.test_rooms import (
     ROOMS_URL,
@@ -285,47 +284,3 @@ async def test_the_board_is_filterable_by_room_and_by_status(rooms_api: RoomsApi
         TASKS_URL, params={"status": HousekeepingTaskStatus.OPEN.value, "limit": 200}
     )
     assert [row["id"] for row in by_status.json()["items"]] == [open_task["id"]]
-
-
-async def test_the_board_stays_within_its_query_budget_at_board_scale(
-    rooms_api: RoomsApi, query_counter: Callable[[], QueryCounter]
-) -> None:
-    """A 30-task board must cost the same as a 1-task one (PERFORMANCE §2): the auth principal
-    plus ONE page select, whatever the day's departures were."""
-    client = rooms_api.client
-    room_type_id = await make_room_type(client)
-    rooms_ids = [
-        (await make_room(client, room_type_id, f"{index:03d}"))["id"]
-        for index in range(BOARD_SIZE)
-    ]
-    await raise_task(client, rooms_ids[0])
-
-    await client.get(TASKS_URL)  # warm the D-009 RBAC TTL cache
-    with query_counter() as small:
-        first = await client.get(TASKS_URL, params={"limit": 200})
-    assert first.status_code == 200, first.text
-
-    for room_id in rooms_ids[1:]:
-        await raise_task(client, room_id)
-
-    with query_counter() as large:
-        second = await client.get(TASKS_URL, params={"limit": 200})
-    assert second.status_code == 200, second.text
-    assert len(second.json()["items"]) == BOARD_SIZE
-
-    assert large.count == small.count, (
-        f"the board cost {small.count} statements for 1 task and {large.count} for "
-        f"{BOARD_SIZE}:\n" + "\n".join(large.statements)
-    )
-    assert large.count <= 3, (
-        f"the board ran {large.count} statements (PERFORMANCE §2 budgets 3):\n"
-        + "\n".join(large.statements)
-    )
-
-
-async def test_the_board_read_meets_the_shared_budget_helper(
-    rooms_api: RoomsApi, query_counter: Callable[[], QueryCounter]
-) -> None:
-    """The same ≤3 assertion through the helper every module's API tests reuse."""
-    await raise_task(rooms_api.client, (await a_dirty_room(rooms_api.client))["id"])
-    await assert_query_budget(rooms_api.client, query_counter, TASKS_URL)

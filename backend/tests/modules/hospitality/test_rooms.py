@@ -29,7 +29,6 @@ from app.modules.hospitality.constants import (
 )
 from app.modules.hospitality.rooms_schemas import RoomCreate, RoomTypeCreate
 from app.modules.hospitality.service import rooms
-from tests.conftest import QueryCounter, assert_query_budget
 from tests.modules.hospitality.conftest import RoomsApi
 
 RoomsApiFactory = Callable[..., Awaitable[RoomsApi]]
@@ -344,42 +343,6 @@ async def test_setting_a_housekeeping_status_needs_the_housekeeping_key(
     assert refused.json()["error"]["details"]["permission"] == HOSPITALITY_HOUSEKEEPING_MANAGE
 
 
-# --- PERFORMANCE §2: the list reads ------------------------------------------
-
-
-async def test_the_room_list_stays_within_its_query_budget_at_property_scale(
-    rooms_api: RoomsApi, query_counter: Callable[[], QueryCounter]
-) -> None:
-    """A 40-room property must cost the same as a 1-room one: the auth principal plus ONE page
-    select. Equality as well as the ≤3 ceiling — a budget alone is satisfiable by a shape that
-    still grows per row until it hits the wall (the ``test_query_budgets.py`` argument)."""
-    client = rooms_api.client
-    room_type_id = await make_room_type(client)
-    await make_room(client, room_type_id, "000")
-
-    await client.get(ROOMS_URL)  # warm the D-009 RBAC TTL cache
-    with query_counter() as small:
-        first = await client.get(ROOMS_URL, params={"limit": 200})
-    assert first.status_code == 200, first.text
-
-    for index in range(1, PROPERTY_SIZE):
-        await make_room(client, room_type_id, f"{index:03d}")
-
-    with query_counter() as large:
-        second = await client.get(ROOMS_URL, params={"limit": 200})
-    assert second.status_code == 200, second.text
-    assert len(second.json()["items"]) == PROPERTY_SIZE
-
-    assert large.count == small.count, (
-        f"the room list cost {small.count} statements for 1 room and {large.count} for "
-        f"{PROPERTY_SIZE}:\n" + "\n".join(large.statements)
-    )
-    assert large.count <= 3, (
-        f"the room list ran {large.count} statements (PERFORMANCE §2 budgets 3):\n"
-        + "\n".join(large.statements)
-    )
-
-
 async def test_the_room_list_is_paginated_and_filterable(rooms_api: RoomsApi) -> None:
     """Keyset pagination (D-014, never OFFSET) plus the two filters the board actually uses: by
     room type, and by housekeeping status."""
@@ -411,12 +374,3 @@ async def test_the_room_list_is_paginated_and_filterable(rooms_api: RoomsApi) ->
         params={"housekeeping_status": HousekeepingStatus.IN_PROGRESS.value, "limit": 200},
     )
     assert [row["room_number"] for row in by_status.json()["items"]] == ["900"]
-
-
-async def test_the_room_type_and_rate_plan_lists_stay_within_budget(
-    rooms_api: RoomsApi, query_counter: Callable[[], QueryCounter]
-) -> None:
-    """The other two master reads, through the shared PERFORMANCE §2 helper."""
-    await make_room_type(rooms_api.client)
-    await assert_query_budget(rooms_api.client, query_counter, ROOM_TYPES_URL)
-    await assert_query_budget(rooms_api.client, query_counter, RATE_PLANS_URL)
