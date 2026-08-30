@@ -20,12 +20,11 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import docflow
 from app.core.events import publish
-from app.core.exceptions import ConflictError, NotFoundError, ValidationFailedError
+from app.core.exceptions import ConflictError, ValidationFailedError
 from app.core.money import currency_decimals, quantize_money
 from app.core.numbering import claim_number, ensure_sequence
 from app.modules.finance.constants import (
@@ -329,57 +328,3 @@ async def _record_receipt(
         ),
     )
     return receipt
-
-
-async def get_customer_receipt(
-    session: AsyncSession, tenant_id: uuid.UUID, receipt_id: uuid.UUID
-) -> CustomerReceipt:
-    receipt = await session.get(CustomerReceipt, receipt_id)
-    if receipt is None or receipt.tenant_id != tenant_id:
-        raise NotFoundError(
-            message="Customer receipt not found", code="finance.customer_receipt_not_found"
-        )
-    return receipt
-
-
-async def get_receipt_allocations(
-    session: AsyncSession, tenant_id: uuid.UUID, receipt_id: uuid.UUID
-) -> list[CustomerReceiptAllocation]:
-    stmt = (
-        select(CustomerReceiptAllocation)
-        .where(
-            CustomerReceiptAllocation.tenant_id == tenant_id,
-            CustomerReceiptAllocation.receipt_id == receipt_id,
-        )
-        .order_by(CustomerReceiptAllocation.created_at)
-    )
-    return list((await session.execute(stmt)).scalars().all())
-
-
-async def list_customer_receipts(
-    session: AsyncSession,
-    tenant_id: uuid.UUID,
-    *,
-    cursor: str | None,
-    limit: int,
-    partner_id: uuid.UUID | None = None,
-) -> object:
-    """Keyset-paginated receipt list, newest receipt_date first (D-014). ``partner_id`` folds into
-    the cursor fingerprint."""
-    from app.core.pagination import OrderKey, SortDirection, filter_fingerprint, paginate
-
-    stmt = select(CustomerReceipt).where(CustomerReceipt.tenant_id == tenant_id)
-    if partner_id is not None:
-        stmt = stmt.where(CustomerReceipt.partner_id == partner_id)
-    return await paginate(
-        session,
-        stmt,
-        order_by=[
-            OrderKey(CustomerReceipt.receipt_date, SortDirection.DESC),
-            OrderKey(CustomerReceipt.created_at, SortDirection.DESC),
-        ],
-        pk=CustomerReceipt.id,
-        cursor=cursor,
-        limit=limit,
-        filters=filter_fingerprint(partner_id),
-    )

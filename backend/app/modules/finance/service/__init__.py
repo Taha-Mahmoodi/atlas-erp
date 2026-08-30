@@ -72,9 +72,6 @@ from app.modules.finance.service.customer_invoices import (
 )
 from app.modules.finance.service.customer_receipts import (
     create_and_post_receipt,
-    get_customer_receipt,
-    get_receipt_allocations,
-    list_customer_receipts,
 )
 from app.modules.finance.service.depreciation import (
     count_eligible_assets,
@@ -126,6 +123,11 @@ from app.modules.finance.service.posting_defaults import (
     get_posting_default,
     list_posting_defaults,
     set_posting_default,
+)
+from app.modules.finance.service.receipts_read import (
+    get_customer_receipt,
+    get_receipt_allocations,
+    list_customer_receipts,
 )
 from app.modules.finance.service.statements import (
     balance_sheet,
