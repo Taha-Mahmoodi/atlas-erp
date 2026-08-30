@@ -25,6 +25,7 @@ from app.modules.hospitality.reservation_router import (
 from app.modules.hospitality.reservation_website_router import (
     website_router as hospitality_reservation_website_router,
 )
+from app.modules.hospitality.rooms_router import router as hospitality_rooms_router
 from app.modules.hospitality.router import router as hospitality_router
 from app.modules.hospitality.website_router import router as hospitality_website_router
 from app.modules.hr.router import router as hr_router
@@ -146,6 +147,14 @@ def mount_routers(app: FastAPI) -> None:
     # number for the night (D-069/D-070). Staff first, matching the pair above.
     app.include_router(hospitality_reservation_router)
     app.include_router(hospitality_reservation_website_router)
+    # Phase 20.1's HOTEL masters + the housekeeping board: a fourth sibling router on the same
+    # prefix, for the same D-030/D-031 reason (router.py is at the §8.4 cap) and a fourth audience —
+    # the property setting up the rooms it sells and the supervisor running housekeeping. STAFF
+    # ONLY: availability and booking are Task 4's website surface, while the room master, the rate
+    # sheet and the board are internal (D-069's narrowing rule — a leaked website credential must
+    # never read that six rooms are out of order). No route here collides with the three above: the
+    # prefixes /room-types, /rooms, /rate-plans and /housekeeping-tasks are all new.
+    app.include_router(hospitality_rooms_router)
     # Industry module (PLAN 14.1): the INDUSTRY CONFIGURATION LAYER at /api/v1/industry — the YAML
     # template catalog + the idempotent apply endpoint (D-060). Mounted last; it imports core +
     # admin (it applies to a tenant + writes settings) and PUBLISHES IndustryTemplateApplying for

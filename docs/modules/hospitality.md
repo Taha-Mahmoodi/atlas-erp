@@ -18,8 +18,10 @@ means default capacity) and **D-077** (no TENTATIVE state; the counter matrix) i
 
 ## Status
 
-**PLAN 19.1–19.5 and 21.1–21.4 shipped.** Rooms, folio, deposits, the business date and the
-room-charge bridge are **Phase 20** and nothing here anticipates them beyond publishing
+**PLAN 19.1–19.5, 21.1–21.4 and 20.1 shipped.** 20.1 is the first slice of the HOTEL half — room
+types, rooms, manual rate plans and the housekeeping task document (§9). Availability, the allotment
+counter and the room reservation are **PLAN 20.2**; the folio, deposits, the business date and the
+room-charge bridge are 20.3–20.6, and nothing here anticipates them beyond publishing
 `RestaurantOrderSettled`, which has no subscriber yet.
 
 Deliberately **not** in this phase: modifier-level 86 (Atlas has no modifier model), day-part menus
@@ -28,7 +30,7 @@ payment, split checks, and tax on a check (see *Known limits*).
 
 | File | Concern | Key decision |
 |---|---|---|
-| `constants.py` | `AvailabilityState` / `AvailabilitySource` / `OrderTicketStatus` + `TICKET_FLOW`, the five permission keys (registered at import), the doc type / number sequence / event keys, `DEPLETE_MAX_COMPONENTS_PER_JOB` | D-009, D-012, D-072 |
+| `constants/` | a PACKAGE since 20.1 (the single file hit the §8.4 cap, the `sales/constants/` precedent): `enums.py` (`AvailabilityState` / `AvailabilitySource` / `OrderTicketStatus` + `TICKET_FLOW`, and every later lifecycle with its transition table), `permissions.py` (the keys, registered at import), `documents.py` (doc types, number sequences, docflow link types, event and job keys). `__init__` re-exports everything, so `from ...constants import X` is unchanged | D-009, D-012, D-072, STRUCTURE §8.4 |
 | `models/ordering.py` | `MenuAvailability` (`hsp_menu_availability`), `OrderTicket` (`hsp_order_tickets`), `OrderTicketLine` (`hsp_order_ticket_lines`) | D-007, D-015, D-029 |
 | `models/menu.py` | `MenuSection` (`hsp_menu_sections`), `MenuPlacement` (`hsp_menu_placements`), `MenuItemTag` (`hsp_menu_item_tags`) | D-081 |
 | `models/table_reservations.py` | `ReservationSettings` (`hsp_reservation_settings`), `ServiceSlot` (`hsp_service_slots`), `TableReservation` (`hsp_table_reservations`) | D-007, D-012 |
@@ -525,3 +527,125 @@ time since it fired but **no line summary** (that would cost one `GET /tickets/{
 per poll); there is **no prep-station filter**, because nothing in Phase 19 stores a station; and
 `available_until` is entered as a date and sent as the end of that day, because the shared
 FormBuilder has no datetime control.
+
+## 9. Rooms, rates and housekeeping (Phase 20.1)
+
+The first slice of the **hotel** half. Three masters and one document — enough for a property to
+describe what it sells and keep its rooms serviceable. It deliberately sells **nothing** yet:
+availability, the allotment counter and the room reservation are Phase 20 Task 4, and the folio,
+deposits and the night audit are Tasks 5–7.
+
+| File | Concern |
+|---|---|
+| `constants/` | the package `constants.py` became at the §8.4 cap — `enums.py` (every status enum + its transition table + the numeric defaults), `permissions.py` (the keys, registered at import), `documents.py` (doc types, sequences, link and event keys). `__init__` re-exports everything, so every `from ...constants import X` still resolves from one surface |
+| `models/rooms.py` | `RoomType` (`hsp_room_types`), `Room` (`hsp_rooms`), `RatePlan` (`hsp_rate_plans`), `HousekeepingTask` (`hsp_housekeeping_tasks`) |
+| `rooms_schemas.py` | the wire shapes; a fourth schemas sibling (D-030/D-031) |
+| `service/rooms.py` | the three masters' CRUD + paginated reads, and `set_housekeeping_status` |
+| `service/housekeeping.py` | the task document: raise, move, reassign, board read |
+| `rooms_router.py` | staff REST under `/api/v1/hospitality` — a fourth router, no website half |
+
+Migration: `0054_hsp_rooms`.
+
+### Rooms sell by TYPE, not by room
+
+The guest buys "a double" and the physical room is assigned at check-in (spec Q3). So `RatePlan`
+prices a room **type** and `Room` carries no price at all — a per-room price would turn the front
+desk's room assignment into a pricing decision. `base_capacity` is what Task 4 will validate a
+booking's party size against; extra beds are a rate question v1 does not model.
+
+Rates are **manual**: one nightly amount per plan over a validity window, no rate calendar, no yield
+rules, no length-of-stay pricing. A seasonal rate is a second plan with a second window. The only
+rule the database enforces about the window is that it is not backwards
+(`hospitality.rate_plan_window_invalid`, with the CHECK as the backstop).
+
+### `Room.housekeeping_status` has exactly one writer, and that is the point
+
+`DIRTY → IN_PROGRESS → CLEAN → INSPECTED`, with `OUT_OF_ORDER` reachable from every state (a pipe
+bursts whatever condition the room was in) and leaving only to `DIRTY` (a room that has been out of
+service is cleaned before it is sold, not declared sellable by a supervisor). A new room starts
+`DIRTY`: nobody has made it up, and starting sellable is the assumption that walks a guest into an
+unserviced room.
+
+`OUT_OF_ORDER` is the one state with a revenue consequence — Phase 20 Task 4 decrements
+`rooms_sellable` on the future dates a room out of service covers, and raises it again when the room
+comes back. That works only if the column has ONE writer, which is why:
+
+* `RoomUpdate` has no `housekeeping_status` field and forbids extras, so a PATCH that tries to move
+  it is a **422**, not a silent no-op;
+* the housekeeping board never writes the column either — starting a task calls
+  `rooms.set_housekeeping_status`, and so does finishing one;
+* every move is checked against `HOUSEKEEPING_FLOW` inside that function, so starting work on a room
+  the property has taken out of service is refused with the ROOM's error code
+  (`hospitality.room_not_transitionable`) rather than quietly returning it to sale.
+
+**Task 4's hook is that function's transition branch**, comparing the old and new status against
+`HOUSEKEEPING_UNSELLABLE`. No caller has to change.
+
+### The task and the room are two different facts
+
+`HousekeepingTask.status` (`OPEN → IN_PROGRESS → DONE | CANCELLED`) is the work order's progress;
+`Room.housekeeping_status` is the room's condition. Starting the work moves both; finishing it makes
+the room CLEAN. **Cancelling never makes a room clean** — but it does put a room the cancelled task
+had *started* back to DIRTY, because the alternative strands it in IN_PROGRESS with no open task and
+no transition left that reaches it. Cancelling a task nobody picked up changes nothing.
+
+`DONE` and `CANCELLED` are terminal: a room needing more work gets a NEW task, so the board shows
+what is outstanding rather than reopened history.
+
+The task is a **D-012 document** — registered in `core_documents`, numbered `HKT-2026-000001` at
+creation (the order-ticket branch: the board quotes the number the moment the work is raised), and
+doc-flow linked to whatever caused it through `predecessor_document_id`. Task 4's check-out passes
+the departing reservation's registry id through that same field, and the chain then reads
+reservation → housekeeping task with no change here.
+
+### Endpoints (`/api/v1/hospitality`, staff only)
+
+| Method | Path | Permission |
+|---|---|---|
+| GET/POST | `/room-types`, PATCH `/room-types/{id}` | `rooms.read` / `rooms.manage` |
+| GET/POST | `/rooms`, GET/PATCH `/rooms/{id}` | `rooms.read` / `rooms.manage` |
+| POST | `/rooms/{id}/housekeeping-status` | `housekeeping.manage` |
+| GET/POST | `/rate-plans`, PATCH `/rate-plans/{id}` | `rooms.read` / `rooms.manage` |
+| GET/POST | `/housekeeping-tasks`, GET/PATCH `/housekeeping-tasks/{id}` | `rooms.read` / `housekeeping.manage` |
+
+**No website half.** A guest site asks about availability and books, which is Task 4's surface; the
+room master, the rate sheet and the housekeeping board are internal, and a leaked website credential
+must never be able to read that a property has six rooms out of order (D-069's narrowing rule).
+
+`housekeeping.manage` is a third key rather than a slice of `rooms.manage`, on the `ticket.settle`
+precedent: taking a room out of service has a revenue consequence, and that is a different authority
+from editing the room master. Reading is one key — an attendant's device needs the room list and the
+board together.
+
+Only `POST /housekeeping-tasks` takes an idempotency key (D-013): it is the only write here that
+registers a document and burns a gapless number. The masters claim no number, and re-sending a
+housekeeping status is refused by the transition table as an illegal move, so a retry cannot double
+anything.
+
+### Error codes
+
+| Code | Status | Meaning |
+|---|---|---|
+| `hospitality.room_type_not_found` / `room_not_found` / `rate_plan_not_found` / `housekeeping_task_not_found` | 404 | unknown in this tenant (a foreign id reads the same) |
+| `hospitality.room_type_code_conflict` / `rate_plan_code_conflict` | 409 | the code is taken in this tenant |
+| `hospitality.room_number_conflict` | 409 | the property already has that room number |
+| `hospitality.rate_plan_window_invalid` | 422 | `valid_to` is before `valid_from` |
+| `hospitality.room_not_transitionable` | 409 | the housekeeping move is not in `HOUSEKEEPING_FLOW` |
+| `hospitality.housekeeping_task_not_transitionable` | 409 | the task move is not in `HOUSEKEEPING_TASK_FLOW` |
+
+### Known limits (Phase 20.1, recorded not hidden)
+
+1. **No delete or deactivate on any of the three masters.** A typo is fixed by PATCH; a room type
+   the property stopped selling stays on the list. A rate plan expires through its window and a room
+   goes `OUT_OF_ORDER`, so only the room TYPE has no way off the list at all.
+2. **`assigned_user_id` is not validated.** It is a plain `adm_users` id with no FK, the
+   `QualityInspection.decision_by` / journal `posted_by` precedent, so a wrong id is stored and
+   reads back as an unresolvable assignee rather than a refusal.
+3. **No rate resolution.** Nothing yet answers "what does a double cost on 3 March"; overlapping
+   plans for one room type are allowed, and Task 4/5 decide which one a booking takes.
+4. **No room attributes** — floor, view, connecting rooms, accessibility. Every one of them is a
+   filter somebody will want at assignment time, and none of them has a consumer until check-in
+   exists.
+5. **The housekeeping board is not scheduled.** `SCHEDULED` is a trigger a human selects; nothing
+   raises a stayover clean on its own, because Atlas has no scheduler (the same argument that makes
+   the 86 time box lazily evaluated).

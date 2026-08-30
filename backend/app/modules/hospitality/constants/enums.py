@@ -204,3 +204,109 @@ DEFAULT_PARTIES_MAX = 12
 DEFAULT_MIN_PARTY = 1
 DEFAULT_MAX_PARTY = 12
 DEFAULT_BOOKING_HORIZON_DAYS = 90
+
+
+# --- Rooms and housekeeping (Phase 20.1) --------------------------------------
+
+
+class HousekeepingStatus(StrEnum):
+    """What state a PHYSICAL room is in. A column on the ROOM, not on a task.
+
+    The room is what is sellable or not, so the state has to live on the room: a task is a work
+    order that may not exist (a manager can mark a room clean without one) and may be cancelled,
+    while the room's condition is always true of it. ``HousekeepingTaskStatus`` below is that work
+    order's own progress, and the two are kept in step by ``service/housekeeping.py`` routing every
+    room-state change through ONE function — never by writing the column twice.
+
+    - **DIRTY** — the guest has gone, the room needs making up. The state a checkout leaves behind,
+      and the state a room returns to from out of order.
+    - **IN_PROGRESS** — an attendant is in the room.
+    - **CLEAN** — made up, sellable.
+    - **INSPECTED** — a supervisor has checked it. A property that does not inspect simply never
+      uses the state; one that does gates arrivals on it. Both are ordinary.
+    - **OUT_OF_ORDER** — not sellable at all: a burst pipe, a refit. This is the one state with a
+      revenue consequence, and Phase 20 Task 4 hangs it off the allotment counter — a room out of
+      order lowers ``rooms_sellable`` on the future dates it covers, and coming back raises it. The
+      hook belongs in ``rooms.set_housekeeping_status``, which is why every path that moves this
+      column goes through that one function.
+    """
+
+    DIRTY = "DIRTY"
+    IN_PROGRESS = "IN_PROGRESS"
+    CLEAN = "CLEAN"
+    INSPECTED = "INSPECTED"
+    OUT_OF_ORDER = "OUT_OF_ORDER"
+
+
+# The legal moves, one frozenset per state — the ``RESERVATION_FLOW`` shape, written out because a
+# housekeeping cycle branches rather than marching. No state is terminal: a room is reused forever.
+#
+# OUT_OF_ORDER is reachable from EVERYWHERE (a pipe bursts whatever the room's condition was) and
+# leaves only to DIRTY: a room that has been out of service is not sellable on a supervisor's word,
+# it is cleaned first. CLEAN and INSPECTED fall back to DIRTY, which is the ordinary checkout.
+HOUSEKEEPING_FLOW: dict[HousekeepingStatus, frozenset[HousekeepingStatus]] = {
+    HousekeepingStatus.DIRTY: frozenset(
+        {HousekeepingStatus.IN_PROGRESS, HousekeepingStatus.OUT_OF_ORDER}
+    ),
+    HousekeepingStatus.IN_PROGRESS: frozenset(
+        {HousekeepingStatus.CLEAN, HousekeepingStatus.DIRTY, HousekeepingStatus.OUT_OF_ORDER}
+    ),
+    HousekeepingStatus.CLEAN: frozenset(
+        {HousekeepingStatus.INSPECTED, HousekeepingStatus.DIRTY, HousekeepingStatus.OUT_OF_ORDER}
+    ),
+    HousekeepingStatus.INSPECTED: frozenset(
+        {HousekeepingStatus.DIRTY, HousekeepingStatus.OUT_OF_ORDER}
+    ),
+    HousekeepingStatus.OUT_OF_ORDER: frozenset({HousekeepingStatus.DIRTY}),
+}
+
+# The states in which a room may NOT be sold. A named set rather than a literal at each caller,
+# because Task 4's ``rooms_sellable`` count and any later arrival gate must agree on one list.
+HOUSEKEEPING_UNSELLABLE: frozenset[HousekeepingStatus] = frozenset(
+    {HousekeepingStatus.OUT_OF_ORDER}
+)
+
+
+class HousekeepingTrigger(StrEnum):
+    """WHY a housekeeping task exists — stored on the task, never inferred.
+
+    A departure clean, a planned service and a guest's mid-stay request produce identical work and
+    are counted separately by every property that measures housekeeping; the reservation that
+    caused a CHECKOUT task is off the board by the time anybody asks.
+
+    - **CHECKOUT** — the departure clean, the bulk of the day's work. Task 4's check-out raises it
+      and passes the reservation's document id, so the chain reads reservation -> task.
+    - **SCHEDULED** — a stayover service or a deep clean the property planned.
+    - **GUEST_REQUEST** — the guest asked, mid-stay.
+    """
+
+    CHECKOUT = "CHECKOUT"
+    SCHEDULED = "SCHEDULED"
+    GUEST_REQUEST = "GUEST_REQUEST"
+
+
+class HousekeepingTaskStatus(StrEnum):
+    """The work order's own progress. Distinct from ``HousekeepingStatus``: a task can be CANCELLED
+    while the room stays exactly as dirty as it was, and a room can be made CLEAN with no task at
+    all. Branching, so it gets a transition table like the reservation's rather than
+    ``TICKET_FLOW``'s index arithmetic."""
+
+    OPEN = "OPEN"
+    IN_PROGRESS = "IN_PROGRESS"
+    DONE = "DONE"
+    CANCELLED = "CANCELLED"
+
+
+# An attendant who has started can still be pulled off the room, which cancels the WORK and leaves
+# the room DIRTY — because it is. DONE and CANCELLED are terminal: a room needing more work gets a
+# NEW task, so the board always shows what is outstanding rather than reopened history.
+HOUSEKEEPING_TASK_FLOW: dict[HousekeepingTaskStatus, frozenset[HousekeepingTaskStatus]] = {
+    HousekeepingTaskStatus.OPEN: frozenset(
+        {HousekeepingTaskStatus.IN_PROGRESS, HousekeepingTaskStatus.CANCELLED}
+    ),
+    HousekeepingTaskStatus.IN_PROGRESS: frozenset(
+        {HousekeepingTaskStatus.DONE, HousekeepingTaskStatus.CANCELLED}
+    ),
+    HousekeepingTaskStatus.DONE: frozenset(),
+    HousekeepingTaskStatus.CANCELLED: frozenset(),
+}

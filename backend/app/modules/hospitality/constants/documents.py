@@ -61,3 +61,21 @@ TABLE_RESERVATION_NUMBER_PADDING = 6
 # The docflow link type joining a seated reservation to the check opened for that party, so
 # ``GET /api/v1/documents/{id}/chain`` renders reservation -> ticket -> (Phase 20 folio line).
 RESERVATION_SEATED_AS_TICKET_LINK = "seated_as"
+
+
+# --- Housekeeping task (Phase 20.1, D-012) ------------------------------------
+# A housekeeping task is a document: the board quotes its number, an attendant is assigned to it, a
+# supervisor closes it, and a guest complaint about a room is answered by pointing at the task that
+# says who serviced it. Numbered AT CREATION on the order-ticket branch — it is referenceable the
+# moment it is raised, so there is no draft phase to defer the claim to. The prefix/padding are the
+# CODE defaults ``ensure_sequence`` falls back to, in the same shape as the ticket's.
+HOUSEKEEPING_TASK_DOC_TYPE = "hospitality.housekeeping_task"
+HOUSEKEEPING_TASK_SEQUENCE_NAME = "hospitality.housekeeping_task"
+HOUSEKEEPING_TASK_NUMBER_PREFIX = "HKT"
+HOUSEKEEPING_TASK_NUMBER_PADDING = 6
+
+# The docflow link type joining whatever RAISED a task to the task, so
+# ``GET /api/v1/documents/{id}/chain`` renders reservation -> housekeeping task once Task 4's
+# check-out passes the departing reservation's document id through
+# ``HousekeepingTaskCreate.predecessor_document_id``.
+HOUSEKEEPING_TRIGGERED_BY_LINK = "triggers_housekeeping"

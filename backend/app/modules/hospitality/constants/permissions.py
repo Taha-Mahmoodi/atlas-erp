@@ -56,3 +56,34 @@ register_permissions(
         HOSPITALITY_RESERVATION_BOOK: "Check reservation availability and book a table",
     },
 )
+
+
+# --- Rooms and housekeeping (Phase 20.1) --------------------------------------
+# Two keys for the master data and a THIRD for housekeeping, on the ``ticket.settle`` precedent: the
+# action with an operational consequence gets its own key, so a floor supervisor can run the board —
+# raise tasks, start them, mark a room clean or out of order — without being able to edit room
+# types, rooms, or the rates they sell at. Taking a room OUT_OF_ORDER stops it being sold, which
+# Phase 20 Task 4 turns into a decrement of the per-date allotment: a revenue consequence, and a
+# different authority from editing the master.
+#
+# Reading is ONE key: an attendant's device needs the room list and the board together, and there is
+# nothing a reader of one should be denied of the other. No website-facing key here — availability
+# and booking are Task 4's surface; the room master, the rate sheet and the board are internal, and
+# a leaked website credential must never read that a property has six rooms out of order (D-069's
+# narrowing rule).
+HOSPITALITY_ROOMS_READ = "hospitality.rooms.read"
+HOSPITALITY_ROOMS_MANAGE = "hospitality.rooms.manage"
+HOSPITALITY_HOUSEKEEPING_MANAGE = "hospitality.housekeeping.manage"
+
+register_permissions(
+    HOSPITALITY_ROOMS_READ,
+    HOSPITALITY_ROOMS_MANAGE,
+    HOSPITALITY_HOUSEKEEPING_MANAGE,
+    descriptions={
+        HOSPITALITY_ROOMS_READ: "Read room types, rooms, rate plans and the housekeeping board",
+        HOSPITALITY_ROOMS_MANAGE: "Create and edit room types, rooms and rate plans",
+        HOSPITALITY_HOUSEKEEPING_MANAGE: (
+            "Raise, assign and close housekeeping tasks; set a room's housekeeping status"
+        ),
+    },
+)
