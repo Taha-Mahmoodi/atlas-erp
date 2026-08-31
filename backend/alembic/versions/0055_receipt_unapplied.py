@@ -18,7 +18,7 @@ or a later folio path — may leave a customer owed a negative deposit. It is NO
 concurrent applications from spending the same balance (they each store a non-negative
 ``500 - 300``); the ``with_for_update`` row lock in ``apply_receipt`` does that, and the two guards
 are deliberately not substitutes. A single-column comparison is exact and portable on both engines
-(D-003/D-015: PG NUMERIC and SQLite micro-unit INTEGER), and the identifier is 46 chars, inside
+(D-003/D-015: PG NUMERIC and SQLite micro-unit INTEGER), and the identifier is 47 chars, inside
 PG's 63-char cap.
 
 ``fin_customer_receipts`` is audited (D-010) but carries NO database trigger — the audit rows are
@@ -50,7 +50,7 @@ from app.core.money import MoneyType
 
 # revision identifiers, used by Alembic.
 revision: str = "0055"
-down_revision: str | None = "0053"
+down_revision: str | None = "0054"
 branch_labels: str | None = None
 depends_on: str | None = None
 

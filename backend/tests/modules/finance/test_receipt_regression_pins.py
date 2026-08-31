@@ -8,7 +8,7 @@ the change — a rule nobody named is a rule the widening can move silently.
 Each docstring states the handoff: RELAXED means Task 2 changes the rule and must update the pin in
 the SAME commit (never delete it); KEPT means the rule survives the widening unchanged and a pin
 turning red is a bug in Task 2, not a stale test. Task 2 has landed: the two RELAXED pins below now
-assert the NEW contract, and the eight KEPT ones are unchanged from the day they were written.
+assert the NEW contract, and the nine KEPT ones are unchanged from the day they were written.
 
 The rules pinned (``service/customer_receipts.py``, in the order the service checks them):
   1. finance.ar_bank_account_not_found        KEPT (and checked FIRST, before any allocation)

@@ -166,10 +166,12 @@ class CustomerReceipt(UuidPKMixin, TenantMixin, AuditMixin, TimestampMixin, Docu
         # is the with_for_update lock's job, not this one's — they are complementary, not
         # substitutes. A single-column comparison, exact on PG NUMERIC and SQLite micro-unit
         # INTEGER alike (D-003/D-015), the inv_stock_quants on-hand precedent (D-020/D-036).
-        sa.CheckConstraint(
-            "unapplied_amount >= 0",
-            name="ck_fin_customer_receipts_unapplied_non_negative",
-        ),
+        # The bare name, NOT a pre-prefixed one: NAMING_CONVENTION's "ck" template is
+        # ck_%(table_name)s_%(constraint_name)s (core/models.py), so passing the full
+        # ck_fin_customer_receipts_... here double-prefixes it to 72 chars — over PG's 63-char cap,
+        # where it silently comes back machine-truncated with a hash suffix and no longer matches
+        # the name the migration creates.
+        sa.CheckConstraint("unapplied_amount >= 0", name="unapplied_non_negative"),
         tenant_unique(),
         tenant_fk("adm_tenants"),
         document_fk(),
