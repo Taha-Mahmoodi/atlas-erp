@@ -14,11 +14,12 @@ package ``__init__``'s D-007 registration hook — registers all tables on ``Bas
   document (Phase 21). Named for its tables, not "reservations", because Phase 20's ROOM booking is
   a different concept in ``rooms.py``.
 
-- ``rooms``: the HOTEL side (Phase 20.1) — the room type a night is sold of, the physical room, the
-  manual rate plan, and the housekeeping task document. Task 4's ``RoomTypeInventory`` allotment
-  counter and its ROOM reservation document join it (or a ``room_inventory.py`` sibling if the
-  §8.4 cap is close by then), and Task 5's ``Folio``/``FolioLine`` plus Task 6's business-date row
-  get a ``folio.py``.
+- ``rooms``: the HOTEL side's MASTERS (Phase 20.1) — the room type a night is sold of, the physical
+  room, the manual rate plan, and the housekeeping task document.
+- ``room_inventory``: the HOTEL side's BOOKING GATE (Phase 20.2) — the per-date allotment counter
+  and the ``RoomReservation`` document that consumes it. Its own file because ``rooms.py`` could not
+  take them under the §8.4 cap, which is the sibling that file's docstring already reserved. Task
+  5's ``Folio``/``FolioLine`` plus Task 6's business-date row get a ``folio.py``.
 
 Each new model is imported and listed below in the same shape; nothing outside this package
 declares a hospitality table. That is not cosmetic: ``alembic/env.py`` imports only this package,
@@ -35,6 +36,10 @@ from app.modules.hospitality.models.ordering import (
     MenuAvailability,
     OrderTicket,
     OrderTicketLine,
+)
+from app.modules.hospitality.models.room_inventory import (
+    RoomReservation,
+    RoomTypeInventory,
 )
 from app.modules.hospitality.models.rooms import (
     HousekeepingTask,
@@ -60,7 +65,9 @@ __all__ = [
     "RatePlan",
     "ReservationSettings",
     "Room",
+    "RoomReservation",
     "RoomType",
+    "RoomTypeInventory",
     "ServiceSlot",
     "TableReservation",
 ]

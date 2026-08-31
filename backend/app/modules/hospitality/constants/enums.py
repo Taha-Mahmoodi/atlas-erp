@@ -329,3 +329,69 @@ HOUSEKEEPING_TASK_FLOW: dict[HousekeepingTaskStatus, frozenset[HousekeepingTaskS
     HousekeepingTaskStatus.DONE: frozenset(),
     HousekeepingTaskStatus.CANCELLED: frozenset(),
 }
+
+
+# --- The HOTEL booking (Phase 20.2) -------------------------------------------
+
+
+class RoomReservationStatus(StrEnum):
+    """Lifecycle of a ROOM reservation — the HOTEL booking, not the restaurant's table.
+
+    Named in full, next to ``ReservationStatus`` (the TABLE booking's), because this module holds
+    both and a reader must never have to guess which one a bare ``Reservation`` meant.
+
+    - **TENTATIVE** — asked for, holding NOTHING. A property takes unconfirmed enquiries (a website
+      booking with no deposit, a corporate hold), so unlike the restaurant — where passing the
+      pacing gate IS the confirmation — this booking has a state before the counter is touched.
+    - **CONFIRMED** — what confirming enters, and the moment the gate is passed.
+    - **CHECKED_IN** — the guest is in a physical room (``room_id`` is set). Still holding: the
+      nights are being consumed, not released.
+    - **CHECKED_OUT** — terminal, bookkeeping only.
+    - **NO_SHOW** — terminal, and it releases NOTHING: the opposite of the restaurant's rule, and
+      deliberate. The room stood empty and unsellable all night, so nothing is left to resell, and
+      the property's protection against that loss is ``overbooking_limit`` — the no-show buffer it
+      sold into in advance. Releasing here would spend that buffer twice.
+    - **CANCELLED** — called off, releasing whatever it held. Unlike a table, a room-night cancelled
+      at any point before arrival is genuinely resellable.
+    """
+
+    TENTATIVE = "TENTATIVE"
+    CONFIRMED = "CONFIRMED"
+    CHECKED_IN = "CHECKED_IN"
+    CHECKED_OUT = "CHECKED_OUT"
+    NO_SHOW = "NO_SHOW"
+    CANCELLED = "CANCELLED"
+
+
+# The legal moves, one frozenset per state; an empty set is terminal. Branching, so it is written
+# out like RESERVATION_FLOW next door — and written ONCE, so the service, the router and the docs
+# cannot disagree. A CHECKED_IN booking cannot be cancelled: the guest is in the room, and the
+# correction wanted then is on their folio (Task 5).
+ROOM_RESERVATION_FLOW: dict[RoomReservationStatus, frozenset[RoomReservationStatus]] = {
+    RoomReservationStatus.TENTATIVE: frozenset(
+        {RoomReservationStatus.CONFIRMED, RoomReservationStatus.CANCELLED}
+    ),
+    RoomReservationStatus.CONFIRMED: frozenset(
+        {
+            RoomReservationStatus.CHECKED_IN,
+            RoomReservationStatus.NO_SHOW,
+            RoomReservationStatus.CANCELLED,
+        }
+    ),
+    RoomReservationStatus.CHECKED_IN: frozenset({RoomReservationStatus.CHECKED_OUT}),
+    RoomReservationStatus.CHECKED_OUT: frozenset(),
+    RoomReservationStatus.NO_SHOW: frozenset(),
+    RoomReservationStatus.CANCELLED: frozenset(),
+}
+
+# The states that HOLD room-nights on the allotment counter, so "does this booking still own its
+# nights" is written once and cannot drift between confirm, cancel, no-show and the date change.
+# TENTATIVE is absent because it never took them; NO_SHOW and CHECKED_OUT because they spent them.
+ROOM_RESERVATION_HOLDS_ALLOTMENT: frozenset[RoomReservationStatus] = frozenset(
+    {RoomReservationStatus.CONFIRMED, RoomReservationStatus.CHECKED_IN}
+)
+
+# What a room type's allotment row is born with when no manager has set one: no buffer at all.
+# Overbooking is a deliberate revenue decision a property makes per room type per night, and a
+# non-zero default would sell rooms nobody chose to oversell.
+DEFAULT_OVERBOOKING_LIMIT = 0

@@ -92,6 +92,13 @@ _CLASSIFIED_KEYS = frozenset(
         "hospitality.reservation.book",
         "hospitality.reservation.manage",
         "hospitality.reservation.read",
+        # PLAN 20.2's three. GRANTED, like the table booking's three above and for the same reason:
+        # the Owner runs the property, and a room reservation carries no pay and no PII beyond the
+        # guest name the desk already needs. ``.book`` is the key a WEBSITE credential is narrowed
+        # to (D-069), not one the Owner is denied — the Owner holds it as part of holding the rest.
+        "hospitality.room_reservation.book",
+        "hospitality.room_reservation.manage",
+        "hospitality.room_reservation.read",
         "hospitality.rooms.manage",
         "hospitality.rooms.read",
         "hospitality.ticket.manage",

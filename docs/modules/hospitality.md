@@ -18,11 +18,12 @@ means default capacity) and **D-077** (no TENTATIVE state; the counter matrix) i
 
 ## Status
 
-**PLAN 19.1–19.5, 21.1–21.4 and 20.1 shipped.** 20.1 is the first slice of the HOTEL half — room
-types, rooms, manual rate plans and the housekeeping task document (§9). Availability, the allotment
-counter and the room reservation are **PLAN 20.2**; the folio, deposits, the business date and the
-room-charge bridge are 20.3–20.6, and nothing here anticipates them beyond publishing
-`RestaurantOrderSettled`, which has no subscriber yet.
+**PLAN 19.1–19.5, 21.1–21.4, 20.1 and 20.2 shipped.** 20.1 is the HOTEL half's masters — room
+types, rooms, manual rate plans and the housekeeping task document (§9); 20.2 is the BOOKING GATE —
+the per-date allotment counter and the room reservation (§10). The folio, deposits, the business
+date and the room-charge bridge are 20.3–20.6, and nothing here anticipates them beyond publishing
+`RestaurantOrderSettled`, which has no subscriber yet. The guest-facing room-AVAILABILITY read is
+Task 9; 20.2 ships the booking WRITE only.
 
 Deliberately **not** in this phase: modifier-level 86 (Atlas has no modifier model), day-part menus
 beyond what `available_until` half-covers, third-party delivery injection, KDS hardware, card
@@ -34,6 +35,11 @@ payment, split checks, and tax on a check (see *Known limits*).
 | `models/ordering.py` | `MenuAvailability` (`hsp_menu_availability`), `OrderTicket` (`hsp_order_tickets`), `OrderTicketLine` (`hsp_order_ticket_lines`) | D-007, D-015, D-029 |
 | `models/menu.py` | `MenuSection` (`hsp_menu_sections`), `MenuPlacement` (`hsp_menu_placements`), `MenuItemTag` (`hsp_menu_item_tags`) | D-081 |
 | `models/table_reservations.py` | `ReservationSettings` (`hsp_reservation_settings`), `ServiceSlot` (`hsp_service_slots`), `TableReservation` (`hsp_table_reservations`) | D-007, D-012 |
+| `models/room_inventory.py` | `RoomTypeInventory` (`hsp_room_type_inventory`) — the allotment counter — and `RoomReservation` (`hsp_room_reservations`), the HOTEL booking. A sibling of `rooms.py` rather than more of it: that file could not take them under the §8.4 cap | D-007, D-012, D-087 |
+| `service/allotment.py` | `adjust_allotment`, `adjust_sellable`, `stay_nights`, `RoomTypeSoldOutError` — the booking gate, and the only code that moves `rooms_sold` | D-003, D-020/D-036, D-087 |
+| `service/room_reservations.py` | the `TENTATIVE → CONFIRMED → CHECKED_IN → CHECKED_OUT \| NO_SHOW \| CANCELLED` lifecycle, and where each transition touches the counter | D-012, D-087 |
+| `service/rate_plans.py` | rate-plan CRUD, moved out of `service/rooms.py` when 20.2's allotment hook took that file to the §8.4 cap; it imports `require_code_free` / `sent_fields` / `get_room_type` from there | STRUCTURE §3, §8.4 |
+| `room_reservation_router.py` | the desk's book (`/room-reservations`) and the ONE website route (`/website/room-reservations`), two `APIRouter`s in one file because the website's surface here is a single route sharing the desk's create | D-009, D-013, D-069 |
 | `models/__init__.py` | the one import surface — `from app.modules.hospitality.models import X` for every model above; a `models/` package rather than one file because Phase 21 took `models.py` to 451 lines, past the STRUCTURE §8.4 cap (#176) | STRUCTURE §3, §8.4 |
 | `schemas.py` | staff shapes first, then the website surface; the website request shapes set `extra="forbid"` | D-014, D-015 |
 | `events.py` | `RestaurantOrderFired`, `RestaurantOrderSettled`, `TicketIngredientsConsumed` | D-011 |
@@ -658,3 +664,165 @@ anything.
 5. **The housekeeping board is not scheduled.** `SCHEDULED` is a trigger a human selects; nothing
    raises a stayover clean on its own, because Atlas has no scheduler (the same argument that makes
    the 86 time box lazily evaluated).
+---
+
+## 10. The booking gate and the room reservation (PLAN 20.2, spec Q3, **D-087**)
+
+A property can now take a room booking, sell it against a per-night allotment, put the guest in a
+room and close the stay — without ever selling the same room-night twice.
+
+### Two reservations in one module, named apart
+
+This module holds two unrelated bookings, so **neither is a bare `Reservation`**:
+
+| | restaurant (Phase 21) | hotel (Phase 20.2) |
+|---|---|---|
+| model | `TableReservation` | `RoomReservation` |
+| table | `hsp_table_reservations` | `hsp_room_reservations` |
+| status | `ReservationStatus` | `RoomReservationStatus` |
+| number | `RSV-2026-000001` | `RMR-2026-000001` |
+| permissions | `hospitality.reservation.*` | `hospitality.room_reservation.*` |
+| the unit it holds | one 15-minute pacing slot | one room-night per night slept |
+
+The two number series are deliberately distinct: a number a guest quotes down the phone must be
+exactly one document.
+
+### The gate is a per-date counter, not an interval lock
+
+One `hsp_room_type_inventory` row per `(room_type_id, stay_date)`, carrying three integers that mean
+three different things:
+
+- `rooms_sellable` — the physical supply, a SNAPSHOT seeded at materialisation from a COUNT of the
+  type's rooms outside `HOUSEKEEPING_UNSELLABLE`, and moved thereafter only by
+  `rooms.set_housekeeping_status` (D-085's single writer).
+- `rooms_sold` — what confirmed bookings hold. The only column a booking moves.
+- `overbooking_limit` — how far past the supply the property will sell, per night. **Zero by
+  default**, and it is what pays for a no-show releasing nothing.
+
+`adjust_allotment(session, tenant_id, room_type_id, stay_dates, delta, *, released_dates=())` is the
+ONE helper every counter touch routes through. Three phases, and the order is the contract: **lock**
+every night in ONE ascending `stay_date` pass (materialising a missing row on the lock, under a
+SAVEPOINT, so two guests booking the same untouched night do not race the unique constraint into a
+500), **check** every night, then **apply**. Refusing before any counter has moved is what lets a
+caller promise a refused booking left the book exactly as it was.
+
+Q3's rejected alternative was `EXCLUDE USING gist` over a daterange: PostgreSQL-only, so the SQLite
+suite (D-003) could not exercise the invariant the money path depends on. The shape actually copied
+is `inventory/service/stock_quants.apply_bin_delta` (D-020/D-036) — locked read, pre-flight refusal,
+upsert-on-lock, portable CHECK backstop. One pattern, now four counters.
+
+### A missing allotment row means DEFAULT supply, not zero
+
+Nothing pre-creates the grid — that would be one row per room type per night forever, for nights
+nobody books — so **every first booking of a night reads no row at all**. If absence read as
+"nothing on sale" (the `StockQuant` meaning, where a missing quant really is zero on hand) a
+property could never take a booking, and one that materialised 90 days could never take a booking on
+day 91. This is D-076's rule for `ServiceSlot`, restated: absence of a counter is absence of a
+BOOKING, never absence of a room.
+
+### A stay is `[arrival, departure)`
+
+The departure date is never a night sold. A guest arriving on the 3rd and leaving on the 5th sleeps
+two nights, and a guest arriving on the 5th buys a different night of the same room — back-to-back
+availability with no interval arithmetic at all. `CHECK (departure_date > arrival_date)` and a
+readable `hospitality.stay_range_invalid` both refuse a stay that sleeps nobody.
+
+### The transition / counter matrix
+
+| transition | counter |
+|---|---|
+| create (TENTATIVE) | **nothing** — an enquiry is not a sale |
+| CONFIRMED | `rooms_sold += 1` on every night, or `hospitality.room_type_sold_out` |
+| CANCELLED from CONFIRMED / CHECKED_IN | release every night, at any time before it is slept |
+| CANCELLED from TENTATIVE | nothing — it never took them |
+| **NO_SHOW** | **NOTHING RELEASED** |
+| CHECKED_IN, CHECKED_OUT | nothing — the nights are consumed, not re-sold |
+| date change | release the old nights, take the new, in ONE locked ascending pass |
+| room → `OUT_OF_ORDER` | `rooms_sellable -= 1` on materialised FUTURE nights; back on return |
+
+**NO_SHOW is the row that differs from the restaurant, and it is not an oversight in either
+direction.** A table no-showed before its slot is still resellable, so D-077 gives the covers back;
+a room stood empty and unsellable all night, so there is nothing to give back, and what pays for
+that loss is `overbooking_limit` — the buffer the property sold into in advance. Releasing here
+would spend it twice. `test_a_hotel_no_show_keeps_the_night_while_the_restaurant_gives_covers_back`
+drives BOTH modules in one test, so unifying the two rules fails loudly whichever way it is done.
+
+**A date change passes both night sets to one call.** Two calls would be two lock passes starting at
+different points — the deadlock D-020/D-036 forbids, reaching a receptionist as a 500 rather than a
+409. Nights the stay KEEPS net to a delta of zero and are neither re-checked nor re-written, so a
+full property can still shift a booking by a day. Changing the ROOM TYPE is deliberately not
+offered: two counters rather than one, and it re-prices the stay, so it is a cancel and a re-book.
+
+**Taking the last sellable room off a fully sold night is REFUSED**, not recorded. Pushing the row
+past its CHECK would be a 500 on the housekeeping board; recording the oversell would leave a guest
+booked into a room the property cannot give them, and Atlas has no walk-the-guest flow to resolve
+one. So the manager is told which night to move a booking off first.
+
+### Endpoints
+
+Desk (`/api/v1/hospitality`, `hospitality.room_reservation.read` / `.manage`):
+
+| method | path | notes |
+|---|---|---|
+| GET | `/room-reservations` | the arrivals book; `status`, `arriving_from`, `arriving_to`; keyset-paginated, ≤3 queries |
+| GET | `/room-reservations/{id}` | one booking |
+| POST | `/room-reservations` | takes a TENTATIVE booking; **idempotent** (D-013) |
+| PATCH | `/room-reservations/{id}` | dates and party size, in one locked pass |
+| POST | `/room-reservations/{id}/confirm` | the sale — the counter touch |
+| POST | `/room-reservations/{id}/check-in` | body `{room_id}`; the room must be of the booked type and sellable |
+| POST | `/room-reservations/{id}/check-out` | terminal |
+| POST | `/room-reservations/{id}/cancel` | releases whatever it held |
+| POST | `/room-reservations/{id}/no-show` | releases nothing |
+
+Website (machine credential, `hospitality.room_reservation.book` and nothing else):
+
+| method | path | notes |
+|---|---|---|
+| POST | `/website/room-reservations` | takes a **TENTATIVE** booking; idempotent; cannot confirm |
+
+The website key cannot confirm, cannot read the book, and cannot assert a `status` (the request
+shapes have no such field and `extra="forbid"` makes the attempt a 422). That is
+`place_website_order`'s acknowledgment rule: an external client never silently skips a human check,
+and it is told the state its booking is actually in. What confirms a stay is a member of staff or —
+from PLAN 20.4 — a recorded deposit; taking payment on the booking is out until a payment provider
+exists.
+
+### Error codes
+
+| code | status | when |
+|---|---|---|
+| `hospitality.room_type_sold_out` | 422 | no room-night left on that night (naming the night), or a room going `OUT_OF_ORDER` on one |
+| `hospitality.room_reservation_not_found` | 404 | unknown id, or another tenant's |
+| `hospitality.room_reservation_not_transitionable` | 409 | the move is not in `ROOM_RESERVATION_FLOW`, or the booking is past amending |
+| `hospitality.stay_range_invalid` | 422 | departure on or before arrival |
+| `hospitality.rate_plan_room_type_mismatch` | 422 | the rate plan prices a different room type |
+| `hospitality.party_size_exceeds_capacity` | 422 | the party is larger than the type's `base_capacity` |
+| `hospitality.room_type_mismatch` | 422 | check-in into a room of the wrong type |
+| `hospitality.room_not_sellable` | 422 | check-in into an `OUT_OF_ORDER` room |
+
+### Write budget
+
+`tests/perf/test_write_budgets.py` pins the shape, not just a ceiling: a 3-night confirmation costs
+12 statements and each further night costs exactly 2, so a 14-night one costs 34. The assertion is
+on the DIFFERENCE, because the two regressions that matter — a room COUNT per night instead of one
+per call, and a per-night document read — are invisible to every behavioural test and satisfy a
+plain ceiling.
+
+### Known limits (PLAN 20.2, recorded not hidden)
+
+1. **No guest-facing availability read.** The website can book but cannot ask what is bookable;
+   that is Task 9 (`GET /website/room-availability`), and until it ships a site must know the room
+   type and rate plan ids out of band.
+2. **No rate resolution and no window check.** A booking names a rate plan and the service only
+   checks it prices the booked room TYPE — not that its validity window covers the stay. Overlapping
+   plans are still allowed (20.1 limit 3), so which one applies is the caller's choice.
+3. **"Future nights" is `date.today()`, not a business date.** `adjust_sellable` rewrites nights
+   from today forward; PLAN 20.5a introduces the business date and this is where it will land.
+4. **No room-type change on an amend.** Two counters and a re-price, so it is a cancel and a
+   re-book.
+5. **No group bookings, no allotment blocks, no rooming lists.** One reservation is one room; a
+   party needing three rooms is three bookings. PLAN 20.5c.
+6. **`overbooking_limit` has no endpoint.** The column exists and the gate honours it, but nothing
+   yet lets a manager set it per night — it is written only by the migration's default of zero.
+7. **Check-out raises no housekeeping task and opens no folio.** Both are Task 5; check-out today is
+   a status move, and the `HOUSEKEEPING_TRIGGERED_BY_LINK` edge 20.1 declared still has no writer.

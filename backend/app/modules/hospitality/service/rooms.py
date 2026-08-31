@@ -20,13 +20,14 @@ each sits next to the writes it pages over.
 allotment counter off OUT_OF_ORDER — a room taken out of service must lower ``rooms_sellable`` on
 the future dates it covers, and coming back must raise it. That is a set-based counter touch, and
 it only works if the column has ONE writer. So: the update schema cannot carry the column, the
-housekeeping board calls this function rather than writing the room itself, and Task 4 adds its
-``adjust_allotment`` call inside the ``if`` below without touching any caller.
+housekeeping board calls this function rather than writing the room itself, and PLAN 20.2 added
+its ``allotment`` call inside that function without touching a single caller (D-085).
 """
 
 from __future__ import annotations
 
 import uuid
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,7 +35,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import ConflictError, NotFoundError
 from app.core.pagination import DEFAULT_LIMIT, OrderKey, SortDirection, filter_fingerprint, paginate
 from app.core.schemas import ApiModel, Page
-from app.modules.hospitality.constants import HOUSEKEEPING_FLOW, HousekeepingStatus
+from app.modules.hospitality.constants import (
+    HOUSEKEEPING_FLOW,
+    HOUSEKEEPING_UNSELLABLE,
+    HousekeepingStatus,
+)
 from app.modules.hospitality.models import RatePlan, Room, RoomType
 from app.modules.hospitality.rooms_schemas import (
     RoomCreate,
@@ -42,6 +47,7 @@ from app.modules.hospitality.rooms_schemas import (
     RoomTypeUpdate,
     RoomUpdate,
 )
+from app.modules.hospitality.service import allotment
 
 
 async def require_code_free(
@@ -249,10 +255,16 @@ async def set_housekeeping_status(
     endpoint and the housekeeping board cannot disagree about whether a dirty room can be declared
     clean (it cannot: somebody has to be in it).
 
-    **This is the Task 4 hook.** Crossing into or out of ``HOUSEKEEPING_UNSELLABLE`` is the moment
-    the property's sellable-room count changes, so Task 4's ``adjust_allotment`` call goes in the
-    branch below — comparing ``current`` and ``to_status`` against that set — and every caller in
-    this module already routes through here. Nothing above needs to change.
+    **The allotment hook is here (D-085, PLAN 20.2).** Crossing into or out of
+    ``HOUSEKEEPING_UNSELLABLE`` is the moment the property's sellable-room count changes, so the
+    counter move is written once, in the branch below, against the SAME set ``allotment`` seeds a
+    new night's ``rooms_sellable`` from. Only the crossing counts: DIRTY -> IN_PROGRESS -> CLEAN
+    is the whole of an ordinary day and moves nothing on sale.
+
+    Taking the last room off sale on a night already fully sold is REFUSED
+    (``hospitality.room_type_sold_out``), not silently oversold — ``allotment.adjust_sellable``
+    is where that is argued. The refusal is raised before the column moves, so it leaves the room
+    exactly as it was.
     """
     room = await get_room(session, tenant_id, room_id)
     current = HousekeepingStatus(room.housekeeping_status)
@@ -265,6 +277,15 @@ async def set_housekeeping_status(
                 "housekeeping_status": current.value,
                 "requested_status": to_status.value,
             },
+        )
+    was_unsellable = current in HOUSEKEEPING_UNSELLABLE
+    if was_unsellable != (to_status in HOUSEKEEPING_UNSELLABLE):
+        await allotment.adjust_sellable(
+            session,
+            tenant_id,
+            room.room_type_id,
+            1 if was_unsellable else -1,
+            on_or_after=date.today(),
         )
     room.housekeeping_status = to_status.value
     await session.flush()
