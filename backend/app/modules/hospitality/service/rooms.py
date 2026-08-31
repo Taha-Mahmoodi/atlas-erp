@@ -66,6 +66,31 @@ async def _require_code_free(
         )
 
 
+async def _require_room_number_free(
+    session: AsyncSession, tenant_id: uuid.UUID, room_number: str
+) -> None:
+    """The same friendly 409 for the room's own unique column, which is not called ``code``.
+
+    Called by BOTH ``create_room`` and ``update_room``: ``room_number`` is the one code-like column
+    in this file that stays MUTABLE (a refit renumbers a floor; a room type's code and a rate
+    plan's code do not move, because they are quoted on rate sheets), so a renumber onto a number
+    already on a door is the same collision as creating a second one. Without this on the update
+    path ``uq_hsp_rooms_tenant_id_room_number`` is reached as an unhandled IntegrityError — a 500
+    on a value the caller supplied.
+    """
+    taken = (
+        await session.execute(
+            select(Room.id).where(Room.tenant_id == tenant_id, Room.room_number == room_number)
+        )
+    ).first()
+    if taken is not None:
+        raise ConflictError(
+            message=f"Room {room_number} already exists",
+            code="hospitality.room_number_conflict",
+            details={"room_number": room_number},
+        )
+
+
 # --- Room types ---------------------------------------------------------------
 
 
@@ -153,19 +178,7 @@ async def create_room(
 ) -> Room:
     """Add a physical room. It starts DIRTY (see ``HousekeepingStatus``): nobody has made it up,
     and starting sellable is the assumption that walks a guest into an unserviced room."""
-    taken = (
-        await session.execute(
-            select(Room.id).where(
-                Room.tenant_id == tenant_id, Room.room_number == payload.room_number
-            )
-        )
-    ).first()
-    if taken is not None:
-        raise ConflictError(
-            message=f"Room {payload.room_number} already exists",
-            code="hospitality.room_number_conflict",
-            details={"room_number": payload.room_number},
-        )
+    await _require_room_number_free(session, tenant_id, payload.room_number)
     await get_room_type(session, tenant_id, payload.room_type_id)
     room = Room(
         tenant_id=tenant_id,
@@ -182,11 +195,18 @@ async def update_room(
     session: AsyncSession, tenant_id: uuid.UUID, room_id: uuid.UUID, payload: RoomUpdate
 ) -> Room:
     """Renumber a room or move it to another type. It CANNOT move the housekeeping status — the
-    schema has no such field, so the attempt is a 422 rather than a silent no-op."""
+    schema has no such field, so the attempt is a 422 rather than a silent no-op.
+
+    Both columns are NOT NULL, so an explicitly-sent ``null`` is dropped rather than flushed into an
+    IntegrityError; ``exclude_unset`` is what distinguishes "not sent" from "sent as null", and
+    neither field has a meaning for null the way ``RatePlanUpdate.valid_to`` does.
+    """
     room = await get_room(session, tenant_id, room_id)
-    data = payload.model_dump(exclude_unset=True)
-    if data.get("room_type_id") is not None:
+    data = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
+    if "room_type_id" in data:
         await get_room_type(session, tenant_id, data["room_type_id"])
+    if "room_number" in data and data["room_number"] != room.room_number:
+        await _require_room_number_free(session, tenant_id, data["room_number"])
     for field, value in data.items():
         setattr(room, field, value)
     await session.flush()

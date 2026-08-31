@@ -17,6 +17,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+import pytest
 from httpx import AsyncClient, Response
 
 from app.modules.hospitality.constants import (
@@ -284,3 +285,58 @@ async def test_the_board_is_filterable_by_room_and_by_status(rooms_api: RoomsApi
         TASKS_URL, params={"status": HousekeepingTaskStatus.OPEN.value, "limit": 200}
     )
     assert [row["id"] for row in by_status.json()["items"]] == [open_task["id"]]
+
+
+@pytest.mark.parametrize(
+    ("trigger", "walk_to"),
+    [
+        (
+            HousekeepingTrigger.GUEST_REQUEST,
+            (HousekeepingStatus.IN_PROGRESS, HousekeepingStatus.CLEAN),
+        ),
+        (
+            HousekeepingTrigger.SCHEDULED,
+            (
+                HousekeepingStatus.IN_PROGRESS,
+                HousekeepingStatus.CLEAN,
+                HousekeepingStatus.INSPECTED,
+            ),
+        ),
+    ],
+)
+async def test_a_task_can_be_started_on_a_room_that_is_already_made_up(
+    rooms_api: RoomsApi,
+    trigger: HousekeepingTrigger,
+    walk_to: tuple[HousekeepingStatus, ...],
+) -> None:
+    """The two NON-CHECKOUT triggers, each on the room state it is actually raised from.
+
+    A guest asks for towels mid-stay and the room is CLEAN; a stayover service is planned on a room
+    a supervisor has already INSPECTED. Both need ``-> IN_PROGRESS`` out of a made-up room, and
+    without those two edges in ``HOUSEKEEPING_FLOW`` the board can RAISE either task and never
+    START it — the departure clean would be the only trigger that works, while the enum and the
+    module guide present all three as first-class.
+
+    Finishing lands the room on CLEAN whichever state it came from: somebody has been in the room
+    since the supervisor signed it off, so an INSPECTED room needs inspecting again.
+    """
+    client = rooms_api.client
+    room = await a_dirty_room(client)
+    for status in walk_to:
+        assert (await set_status(client, room["id"], status)).status_code == 200
+    assert (await client.get(f"{ROOMS_URL}/{room['id']}")).json()[
+        "housekeeping_status"
+    ] == walk_to[-1].value
+
+    task = await raise_task(client, room["id"], trigger=trigger)
+    started = await move_task(client, task["id"], status=HousekeepingTaskStatus.IN_PROGRESS.value)
+    assert started.status_code == 200, started.text
+    assert (await client.get(f"{ROOMS_URL}/{room['id']}")).json()[
+        "housekeeping_status"
+    ] == HousekeepingStatus.IN_PROGRESS.value
+
+    done = await move_task(client, task["id"], status=HousekeepingTaskStatus.DONE.value)
+    assert done.status_code == 200, done.text
+    assert (await client.get(f"{ROOMS_URL}/{room['id']}")).json()[
+        "housekeeping_status"
+    ] == HousekeepingStatus.CLEAN.value

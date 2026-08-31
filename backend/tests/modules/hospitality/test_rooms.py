@@ -302,6 +302,48 @@ async def test_editing_a_room_cannot_move_its_housekeeping_status(rooms_api: Roo
     assert renamed.json()["housekeeping_status"] == HousekeepingStatus.DIRTY.value
 
 
+async def test_renumbering_a_room_onto_a_taken_number_is_a_conflict(rooms_api: RoomsApi) -> None:
+    """The COLLIDING rename, which the create path has always refused and the update path did not.
+
+    ``uq_hsp_rooms_tenant_id_room_number`` is the backstop either way, but reaching it raises an
+    unhandled IntegrityError — a 500 on a value the caller supplied. Both paths go through the same
+    pre-check now, so a property that renumbers 402 onto 401 gets the same readable 409 it gets for
+    creating a second 401. Renumbering a room onto the number it already has stays a no-op.
+    """
+    client = rooms_api.client
+    room_type_id = await make_room_type(client)
+    first = await make_room(client, room_type_id, "401")
+    second = await make_room(client, room_type_id, "402")
+
+    refused = await client.patch(f"{ROOMS_URL}/{second['id']}", json={"room_number": "401"})
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["code"] == "hospitality.room_number_conflict"
+    assert (await client.get(f"{ROOMS_URL}/{second['id']}")).json()["room_number"] == "402"
+
+    idle = await client.patch(f"{ROOMS_URL}/{first['id']}", json={"room_number": "401"})
+    assert idle.status_code == 200, idle.text
+    assert idle.json()["room_number"] == "401"
+
+
+async def test_patching_a_room_field_to_null_leaves_it_alone(rooms_api: RoomsApi) -> None:
+    """Both columns are NOT NULL, so an explicit ``null`` must be dropped rather than flushed.
+
+    ``exclude_unset`` distinguishes "not sent" from "sent as null" and the PATCH shape accepts
+    either; setting the attribute to None reaches the NOT NULL constraint as an IntegrityError,
+    which is the same 500-on-a-supplied-value the renumber path had. Neither field has a meaning
+    for null the way ``RatePlanUpdate.valid_to`` does.
+    """
+    client = rooms_api.client
+    room = await make_room(client, await make_room_type(client), "403")
+
+    response = await client.patch(
+        f"{ROOMS_URL}/{room['id']}", json={"room_number": None, "room_type_id": None}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["room_number"] == "403"
+    assert response.json()["room_type_id"] == room["room_type_id"]
+
+
 # --- Permission gating (D-009) ------------------------------------------------
 
 

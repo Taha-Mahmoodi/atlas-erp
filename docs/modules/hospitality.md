@@ -566,6 +566,15 @@ service is cleaned before it is sold, not declared sellable by a supervisor). A 
 `DIRTY`: nobody has made it up, and starting sellable is the assumption that walks a guest into an
 unserviced room.
 
+`CLEAN` and `INSPECTED` also go back to `IN_PROGRESS`, and **that edge is what makes the two
+non-`CHECKOUT` triggers work**: a `GUEST_REQUEST` arrives mid-stay on a room that is `CLEAN` and a
+`SCHEDULED` stayover service lands on one a supervisor has `INSPECTED`, so without it either task
+could be raised and never started, and the departure clean would be the only trigger that
+functioned. An attendant standing in a made-up room *is* the `IN_PROGRESS` fact. The way back out is
+always `CLEAN` — never straight to `INSPECTED`, because somebody has been in the room since it was
+signed off, so it needs inspecting again. `DIRTY → CLEAN` stays absent: no path in the module
+declares a room clean without an attendant having been in it.
+
 `OUT_OF_ORDER` is the one state with a revenue consequence — Phase 20 Task 4 decrements
 `rooms_sellable` on the future dates a room out of service covers, and raises it again when the room
 comes back. That works only if the column has ONE writer, which is why:
@@ -628,7 +637,7 @@ anything.
 |---|---|---|
 | `hospitality.room_type_not_found` / `room_not_found` / `rate_plan_not_found` / `housekeeping_task_not_found` | 404 | unknown in this tenant (a foreign id reads the same) |
 | `hospitality.room_type_code_conflict` / `rate_plan_code_conflict` | 409 | the code is taken in this tenant |
-| `hospitality.room_number_conflict` | 409 | the property already has that room number |
+| `hospitality.room_number_conflict` | 409 | the property already has that room number — on `POST /rooms` and on a `PATCH` that renumbers, which share the pre-check (`room_number` is the one mutable code-like column here; a room type's and a rate plan's codes are immutable) |
 | `hospitality.rate_plan_window_invalid` | 422 | `valid_to` is before `valid_from` |
 | `hospitality.room_not_transitionable` | 409 | the housekeeping move is not in `HOUSEKEEPING_FLOW` |
 | `hospitality.housekeeping_task_not_transitionable` | 409 | the task move is not in `HOUSEKEEPING_TASK_FLOW` |

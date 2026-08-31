@@ -244,6 +244,14 @@ class HousekeepingStatus(StrEnum):
 # OUT_OF_ORDER is reachable from EVERYWHERE (a pipe bursts whatever the room's condition was) and
 # leaves only to DIRTY: a room that has been out of service is not sellable on a supervisor's word,
 # it is cleaned first. CLEAN and INSPECTED fall back to DIRTY, which is the ordinary checkout.
+#
+# CLEAN and INSPECTED also go back to IN_PROGRESS, and that edge is what makes the two NON-CHECKOUT
+# triggers work: a GUEST_REQUEST arrives mid-stay on a room that is CLEAN and a SCHEDULED stayover
+# service lands on one a supervisor has INSPECTED, so without it those tasks could be RAISED and
+# never STARTED and only the departure clean would function. An attendant standing in a made-up
+# room IS the IN_PROGRESS fact, and coming back out lands on CLEAN — never straight back to
+# INSPECTED, because somebody has been in the room since it was signed off. DIRTY -> CLEAN is still
+# absent, so nothing here lets a room be declared clean without an attendant in it.
 HOUSEKEEPING_FLOW: dict[HousekeepingStatus, frozenset[HousekeepingStatus]] = {
     HousekeepingStatus.DIRTY: frozenset(
         {HousekeepingStatus.IN_PROGRESS, HousekeepingStatus.OUT_OF_ORDER}
@@ -252,10 +260,19 @@ HOUSEKEEPING_FLOW: dict[HousekeepingStatus, frozenset[HousekeepingStatus]] = {
         {HousekeepingStatus.CLEAN, HousekeepingStatus.DIRTY, HousekeepingStatus.OUT_OF_ORDER}
     ),
     HousekeepingStatus.CLEAN: frozenset(
-        {HousekeepingStatus.INSPECTED, HousekeepingStatus.DIRTY, HousekeepingStatus.OUT_OF_ORDER}
+        {
+            HousekeepingStatus.IN_PROGRESS,
+            HousekeepingStatus.INSPECTED,
+            HousekeepingStatus.DIRTY,
+            HousekeepingStatus.OUT_OF_ORDER,
+        }
     ),
     HousekeepingStatus.INSPECTED: frozenset(
-        {HousekeepingStatus.DIRTY, HousekeepingStatus.OUT_OF_ORDER}
+        {
+            HousekeepingStatus.IN_PROGRESS,
+            HousekeepingStatus.DIRTY,
+            HousekeepingStatus.OUT_OF_ORDER,
+        }
     ),
     HousekeepingStatus.OUT_OF_ORDER: frozenset({HousekeepingStatus.DIRTY}),
 }
