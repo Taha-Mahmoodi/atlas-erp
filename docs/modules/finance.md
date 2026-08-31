@@ -546,12 +546,22 @@ allocation-for-allocation path is unchanged, including its statement budget.
 it validates the target invoices exactly as a direct allocation does (open, same partner, same
 currency, not over the open amount), refuses more than `unapplied_amount`
 (`finance.receipt_apply_exceeds_unapplied`), and posts ONE reclass entry through the same
-`clearing_fx` builder — **Dr** advance control (at the rate the deposit was booked at) + **Cr** AR
-control (at each invoice's frozen rate) + the realized-FX line for the difference. The receipt keeps
-pointing at the entry that received the cash (a posted entry is immutable, D-017); the reclass is
-reachable through the doc flow. `queries.customer_unapplied_balance(...)` reads a partner's
-on-account money — deliberately a separate number from `customer_open_balance`, since a deposit is a
-liability, not a negative receivable.
+`clearing_fx` builder — **Dr** advance control + **Cr** AR control (at each invoice's frozen rate) +
+the realized-FX line for the difference. The receipt keeps pointing at the entry that received the
+cash (a posted entry is immutable, D-017); the reclass is reachable through the doc flow, and the
+application publishes `CustomerReceiptPosted` the way a direct receipt does, so an invoice never
+flips to PAID silently. `queries.customer_unapplied_balance(...)` reads a partner's on-account money
+— deliberately a separate number from `customer_open_balance`, since a deposit is a liability, not a
+negative receivable.
+
+The advance leg's functional amount is **read back off the posted credit line and telescoped**, not
+recomputed as `amount x rate`: the liability was credited once as one quantized figure, so
+re-deriving each application's debit would quantize N times against that one rounding and a deposit
+applied in PARTS (check-in, then settlement) would never fully clear — EUR 100 at 1.20 applied
+33.33 / 33.33 / 33.34 debits 120.01 against a credit of 120.00, silently, because the realized-FX
+line absorbs the difference. The balance itself is drawn down under a `with_for_update` row lock
+(PG row lock, SQLite no-op — D-020/D-036) so two concurrent applications cannot both spend it, over
+a portable `CHECK (unapplied_amount >= 0)` floor.
 
 **Dunning.** `POST /dunning-runs` advances reminder levels. For each OPEN overdue invoice it computes
 the level its days-overdue earns from `DUNNING_THRESHOLDS` (level 1 at 7 days past due, 2 at 30, 3 at

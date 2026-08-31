@@ -161,6 +161,15 @@ class CustomerReceipt(UuidPKMixin, TenantMixin, AuditMixin, TimestampMixin, Docu
 
     __tablename__ = "fin_customer_receipts"
     __table_args__ = (
+        # The floor under the ``unapplied_amount`` draw-down (D-084): a customer can never be owed
+        # a negative deposit, whichever writer got there. Serializing two concurrent applications
+        # is the with_for_update lock's job, not this one's — they are complementary, not
+        # substitutes. A single-column comparison, exact on PG NUMERIC and SQLite micro-unit
+        # INTEGER alike (D-003/D-015), the inv_stock_quants on-hand precedent (D-020/D-036).
+        sa.CheckConstraint(
+            "unapplied_amount >= 0",
+            name="ck_fin_customer_receipts_unapplied_non_negative",
+        ),
         tenant_unique(),
         tenant_fk("adm_tenants"),
         document_fk(),

@@ -46,9 +46,14 @@ _URL = os.environ.get("ATLAS_DATABASE_URL", "")
 
 
 async def _post_eur_invoice(
-    session: AsyncSession, fx_setup: FxSetup, net: str = "100.00"
+    session: AsyncSession,
+    fx_setup: FxSetup,
+    net: str = "100.00",
+    partner_id: uuid.UUID | None = None,
 ) -> CustomerInvoice:
-    partner = uuid.uuid4()
+    # ``partner_id`` lets a caller post SEVERAL invoices for the SAME customer (the deposit
+    # applied in parts, D-084); omitted, each invoice gets its own customer as before.
+    partner = uuid.uuid4() if partner_id is None else partner_id
     with tenant_context(fx_setup.tenant_id):
         invoice = await service.create_customer_invoice(
             session,

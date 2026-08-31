@@ -227,8 +227,9 @@ PAYROLL_TAX_PAYABLE = "payroll_tax_payable"
 
 # Every known posting-default purpose: FX + the CO/bank/asset clearing accounts + GR-IR + PPV + AP +
 # the AR control + sales-revenue defaults the 7.4 sales billing / credit-note flow resolves + the
-# WIP clearing + production-variance defaults the 8.2 production-order flow resolves + the three
-# payroll defaults the 10.4 payroll-run → consolidated-journal flow resolves.
+# customer-advances control the 20.4 on-account receipt / deposit flow resolves + the WIP clearing +
+# production-variance defaults the 8.2 production-order flow resolves + the three payroll defaults
+# the 10.4 payroll-run → consolidated-journal flow resolves.
 POSTING_PURPOSES: frozenset[str] = FX_POSTING_PURPOSES | frozenset(
     {
         CO_ALLOCATION_CLEARING,

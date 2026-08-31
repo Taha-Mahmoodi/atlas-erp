@@ -19,7 +19,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.events import run_in_uow
+from app.core.events import run_in_uow, subscribe
 from app.core.exceptions import ValidationFailedError
 from app.core.tenancy import tenant_context
 from app.modules.finance import queries, service
@@ -28,6 +28,7 @@ from app.modules.finance.constants import (
     InvoiceStatus,
     ReceiptStatus,
 )
+from app.modules.finance.events import CustomerReceiptPosted
 from app.modules.finance.models import CustomerReceipt, JournalLine
 from app.modules.finance.receivables_schemas import (
     CustomerReceiptCreate,
@@ -421,3 +422,119 @@ async def test_partner_ledger_shows_the_unapplied_balance(
         assert await queries.customer_unapplied_balance(
             db_session, ar_setup.tenant_id, uuid.uuid4()
         ) == Decimal(0)
+
+
+async def test_a_foreign_deposit_applied_in_parts_leaves_nothing_on_the_advance_control(
+    db_session: AsyncSession, fx_setup: FxSetup
+) -> None:
+    """The residue bug, and the reason the advance leg is read back instead of re-rated (D-084).
+
+    A EUR 100 deposit at SPOT 1.20 is credited ONCE, as one quantized USD 120.00. Applying it in
+    three parts — 33.33 / 33.33 / 33.34, the shape Task 5's folio produces at check-in and
+    settlement — used to debit ``quantize(applied x 1.20)`` each time: 40.00 + 40.00 + 40.01 =
+    120.01 against a credit of 120.00, stranding -0.01 on a POOLED liability forever. Nothing
+    complained: the realized-FX line absorbed it, every entry balanced, the receipt read 0.00
+    unapplied and all three invoices read PAID. So the assertion is the control account's own net
+    balance, which is the only place the defect was ever visible.
+    """
+    advance_id = await seed_advance_account(db_session, fx_setup.tenant_id)
+    partner_id = uuid.uuid4()
+    parts = ("33.33", "33.33", "33.34")
+    invoices = [
+        await _post_eur_invoice(db_session, fx_setup, net=part, partner_id=partner_id)
+        for part in parts
+    ]
+
+    deposit = await _post_receipt(
+        db_session,
+        fx_setup.tenant_id,
+        CustomerReceiptCreate(
+            partner_id=partner_id,
+            partner_name="Euro Customer",
+            receipt_date=_R2_DATE,  # SPOT 1.20; the invoices froze at _R1_DATE's 1.10
+            currency_code="EUR",
+            bank_account_id=fx_setup.eur_bank_id,
+            amount=Decimal("100.00"),
+            allocations=[],
+        ),
+    )
+
+    for invoice, part in zip(invoices, parts, strict=True):
+
+        async def apply(invoice_id: uuid.UUID = invoice.id, amount: str = part) -> None:
+            await service.apply_receipt(
+                db_session,
+                fx_setup.tenant_id,
+                deposit.id,
+                [ReceiptAllocationCreate(invoice_id=invoice_id, amount=Decimal(amount))],
+            )
+
+        with tenant_context(fx_setup.tenant_id):
+            await run_in_uow(db_session, apply)
+
+    await db_session.refresh(deposit)
+    assert Decimal(str(deposit.unapplied_amount)) == Decimal("0.00")
+    for invoice in invoices:
+        await db_session.refresh(invoice)
+        assert invoice.status == InvoiceStatus.PAID.value
+
+    with tenant_context(fx_setup.tenant_id):
+        advance_lines = list(
+            (
+                await db_session.execute(
+                    select(JournalLine).where(JournalLine.account_id == advance_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    debit = sum((Decimal(str(line.functional_debit_amount)) for line in advance_lines), Decimal(0))
+    credit = sum(
+        (Decimal(str(line.functional_credit_amount)) for line in advance_lines), Decimal(0)
+    )
+    # The deposit was credited USD 120.00 once; the three applications must debit exactly that back.
+    assert credit == Decimal("120.00")
+    assert debit == Decimal("120.00")
+    assert debit - credit == Decimal(0)  # a fully-spent deposit owes the guest nothing
+
+
+async def test_applying_a_deposit_announces_the_clearing_like_any_other_receipt(
+    db_session: AsyncSession, ar_setup: ArSetup
+) -> None:
+    """An application flips an invoice to PAID, so it must not do it silently: ``apply_receipt``
+    publishes ``CustomerReceiptPosted`` the way ``create_and_post_receipt`` does. The event carries
+    the RECLASS entry (the one that did the clearing, not the one that took the cash) and the
+    amount THIS application moved, so Task 5's folio subscriber sees what actually happened."""
+    await seed_advance_account(db_session, ar_setup.tenant_id)
+    invoice = await _create_and_post_invoice(
+        db_session, ar_setup, _invoice_payload(ar_setup, net="300.00")
+    )
+    deposit = await _post_receipt(
+        db_session,
+        ar_setup.tenant_id,
+        _receipt(ar_setup, partner_id=invoice.partner_id, amount="500.00"),
+    )
+    captured: list[CustomerReceiptPosted] = []
+
+    async def _capture(_s: AsyncSession, event: CustomerReceiptPosted) -> None:
+        captured.append(event)
+
+    subscribe(CustomerReceiptPosted.key, _capture)
+    with tenant_context(ar_setup.tenant_id):
+
+        async def apply() -> None:
+            await service.apply_receipt(
+                db_session,
+                ar_setup.tenant_id,
+                deposit.id,
+                [ReceiptAllocationCreate(invoice_id=invoice.id, amount=Decimal("300.00"))],
+            )
+
+        await run_in_uow(db_session, apply)
+
+    assert len(captured) == 1
+    event = captured[0]
+    assert event.receipt_id == deposit.id
+    assert event.cleared_invoice_ids == (invoice.id,)
+    assert event.amount == Decimal("300.00")  # what was applied, not the 500 received
+    assert event.journal_entry_id != deposit.journal_entry_id  # the reclass, not the cash entry

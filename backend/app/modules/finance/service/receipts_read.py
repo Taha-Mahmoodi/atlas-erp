@@ -19,9 +19,24 @@ from app.modules.finance.models import CustomerReceipt, CustomerReceiptAllocatio
 
 
 async def get_customer_receipt(
-    session: AsyncSession, tenant_id: uuid.UUID, receipt_id: uuid.UUID
+    session: AsyncSession, tenant_id: uuid.UUID, receipt_id: uuid.UUID, *, for_update: bool = False
 ) -> CustomerReceipt:
-    receipt = await session.get(CustomerReceipt, receipt_id)
+    """One receipt, or 404. ``for_update`` takes the row lock before the caller reads
+    ``unapplied_amount`` to spend it (D-084): on Postgres a second application waits and then reads
+    the drawn-down balance, on SQLite FOR UPDATE is a no-op (D-020/D-036, the ``inv_stock_quants``
+    precedent) and the DB CHECK is the backstop. ``populate_existing`` is not optional here — a
+    plain re-SELECT returns the session's already-loaded row with its STALE balance, which is the
+    lost update the lock exists to prevent."""
+    if for_update:
+        stmt = (
+            select(CustomerReceipt)
+            .where(CustomerReceipt.tenant_id == tenant_id, CustomerReceipt.id == receipt_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        receipt = (await session.execute(stmt)).scalar_one_or_none()
+    else:
+        receipt = await session.get(CustomerReceipt, receipt_id)
     if receipt is None or receipt.tenant_id != tenant_id:
         raise NotFoundError(
             message="Customer receipt not found", code="finance.customer_receipt_not_found"

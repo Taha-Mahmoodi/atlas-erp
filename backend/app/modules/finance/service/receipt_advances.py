@@ -11,7 +11,9 @@ cash moves at application time.
 
 Nothing here re-derives a total: the receipt's ``unapplied_amount`` and each invoice's
 ``open_amount`` are balances that only ever get drawn down, and the journal remains the single
-financial source of truth for what the advance control holds.
+financial source of truth for what the advance control holds. That holds in FUNCTIONAL currency
+too, which is the whole reason ``_advance_functional`` exists: the advance leg's functional is READ
+BACK off the posted credit line and telescoped, never recomputed as ``amount x rate``.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import docflow
+from app.core.events import publish
 from app.core.exceptions import ValidationFailedError
 from app.core.money import currency_decimals, quantize_money
 from app.modules.finance.constants import (
@@ -32,6 +35,7 @@ from app.modules.finance.constants import (
     DocumentType,
     InvoiceStatus,
 )
+from app.modules.finance.events import CustomerReceiptPosted
 from app.modules.finance.models import (
     CustomerInvoice,
     CustomerReceipt,
@@ -39,8 +43,9 @@ from app.modules.finance.models import (
 )
 from app.modules.finance.receivables_schemas import ReceiptAllocationCreate
 from app.modules.finance.schemas import JournalEntryCreate
-from app.modules.finance.service import clearing_fx
+from app.modules.finance.service import clearing_fx, fx
 from app.modules.finance.service.journal import create_draft_entry, post_entry
+from app.modules.finance.service.journal_read import load_lines
 from app.modules.finance.service.posting_defaults import get_posting_default
 from app.modules.finance.service.receipt_clearing import (
     build_receipt_lines,
@@ -66,11 +71,17 @@ async def apply_receipt(
     financial-document effect.
 
     ``application_date`` is the posting date of the reclass entry (a hospitality caller passes its
-    business date); it defaults to the receipt's own date. The FX rate for the advance leg is always
-    the RECEIPT date's, whatever the posting date, because that is the rate the liability was booked
-    at — anything else would leave a residue on the control account that never clears.
+    business date); it defaults to the receipt's own date. The advance leg is valued at what the
+    RECEIPT date's rate actually BOOKED — read back off the credit line, not recomputed — whatever
+    the posting date, because anything else leaves a residue on the control that never clears.
+
+    The receipt row is taken ``with_for_update`` before its balance is read, so two applications
+    under different idempotency keys serialize instead of both spending the same 500 (a PG row lock;
+    SQLite omits the clause as a no-op, D-020/D-036 — the ``inv_stock_quants`` draw-down shape). The
+    loser waits, re-reads the drawn-down balance and refuses. ``CHECK (unapplied_amount >= 0)`` sits
+    under BOTH as the floor no writer may cross.
     """
-    receipt = await get_customer_receipt(session, tenant_id, receipt_id)
+    receipt = await get_customer_receipt(session, tenant_id, receipt_id, for_update=True)
     if not allocations:
         raise ValidationFailedError(
             message="An application must clear at least one invoice",
@@ -92,12 +103,29 @@ async def apply_receipt(
 
     # The receipt keeps pointing at the entry that RECEIVED the cash (D-017: a posted entry is
     # immutable, so the reclass is its own entry, reachable through the doc flow).
-    entry_document_id = await _post_reclass(
-        session, tenant_id, receipt, pairs, applied_total, application_date
+    entry_id, entry_document_id = await _post_reclass(
+        session, tenant_id, receipt, pairs, unapplied, applied_total, application_date
     )
     receipt.unapplied_amount = unapplied - applied_total
     await _record_application(session, tenant_id, receipt, pairs, entry_document_id)
     await session.flush()
+    # An application flips an invoice to PAID exactly as a direct receipt does, so it announces
+    # itself the same way (D-011: cross-module effects travel on events, never on a poll). The
+    # entry id is the RECLASS entry — the one that did the clearing — and the amount is what this
+    # application moved, not the cash the receipt originally received.
+    publish(
+        session,
+        CustomerReceiptPosted(
+            tenant_id=tenant_id,
+            receipt_id=receipt.id,
+            receipt_number=receipt.receipt_number or "",
+            journal_entry_id=entry_id,
+            partner_id=receipt.partner_id,
+            currency_code=receipt.currency_code,
+            amount=applied_total,
+            cleared_invoice_ids=tuple(invoice.id for invoice, _ in pairs),
+        ),
+    )
     return receipt
 
 
@@ -106,15 +134,17 @@ async def _post_reclass(
     tenant_id: uuid.UUID,
     receipt: CustomerReceipt,
     pairs: list[tuple[CustomerInvoice, Decimal]],
+    unapplied: Decimal,
     applied_total: Decimal,
     application_date: date | None,
-) -> uuid.UUID:
-    """Build + post the reclass entry and return its DOCUMENT id (for the doc-flow link).
+) -> tuple[uuid.UUID, uuid.UUID]:
+    """Build + post the reclass entry; return its (entry id, DOCUMENT id).
 
     The advance control takes the side the bank takes on a direct receipt, so the clearing builder
     is called verbatim with the advance account in the bank slot — same frozen-rate reads, same
     realized-FX line, same balance rules. The debit is partner-stamped for the same reason the
-    original credit was: the control is pooled per tenant, not per guest.
+    original credit was: the control is pooled per tenant, not per guest. Its functional amount is
+    the one thing NOT taken from the builder's default: see ``_advance_functional``.
     """
     advance_account_id = await get_posting_default(session, tenant_id, CUSTOMER_ADVANCES)
     lines, functional_amounts = await build_receipt_lines(
@@ -126,6 +156,9 @@ async def _post_reclass(
         receipt_amount=applied_total,
         receipt_date=receipt.receipt_date,
         bank_description="Customer advance applied",
+        bank_functional=await _advance_functional(
+            session, tenant_id, receipt, advance_account_id, unapplied, applied_total
+        ),
     )
     for line in lines:
         if line.account_id == advance_account_id:
@@ -145,7 +178,60 @@ async def _post_reclass(
     )
     await clearing_fx.set_fx_line_currency(session, tenant_id, entry.id)
     await post_entry(session, tenant_id, entry.id, skip_translation=True)
-    return entry.document_id
+    return entry.id, entry.document_id
+
+
+async def _advance_functional(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    receipt: CustomerReceipt,
+    advance_account_id: uuid.UUID,
+    unapplied: Decimal,
+    applied_total: Decimal,
+) -> Decimal | None:
+    """The functional amount to DEBIT off the advance control for this application, or None to let
+    the clearing builder value it as an ordinary cash movement (D-084).
+
+    The liability was credited ONCE, as one quantized ``original x rate``. Re-deriving each
+    application's debit as ``quantize(applied x rate)`` quantizes N times against that single
+    rounding, so a deposit applied in PARTS does not clear: EUR 100 at 1.20 applied 33.33 / 33.33 /
+    33.34 debits 120.01 against a credit of 120.00 and leaves a permanent -0.01 on a pooled control
+    — silently, because the realized-FX line absorbs it and every entry still balances. Task 5's
+    folio applies a deposit in parts by design (check-in, then settlement), so this is the normal
+    case, not a corner.
+
+    So the draw-down TELESCOPES against what was actually posted: this application takes
+    ``quantize(cumulative_after x rate) - quantize(cumulative_before x rate)``, whose intermediate
+    terms cancel, leaving exactly the booked functional once the balance reaches 0. Both the rate
+    and the original amount are read back off the posted credit line (functional / transaction) —
+    the same read-the-posting-back discipline ``frozen_functional_on_line`` gives the AR side, which
+    is why the AR side was already exact and this one was not.
+
+    Returns None — the ordinary valuation — when the receipt currency IS functional (rate 1, so
+    nothing rounds) or when no advance credit line can be found for this receipt.
+
+    The ITEM side of the same builder still re-derives (a foreign invoice settled by several
+    payments strands the same residue on the AP/AR control): shipped, pinned behaviour, filed as
+    #251 rather than changed under a Phase 20 PR.
+    """
+    func_code = await fx.functional_currency_or_none(session, tenant_id)
+    if func_code is None or func_code == receipt.currency_code:
+        return None
+    booked = None
+    for line in await load_lines(session, tenant_id, receipt.journal_entry_id):
+        credit = Decimal(str(line.transaction_credit_amount))
+        if line.account_id == advance_account_id and credit > 0:
+            booked = (credit, Decimal(str(line.functional_credit_amount)))
+            break
+    if booked is None:
+        return None
+    original, functional = booked
+    rate = functional / original
+    decimals = currency_decimals(func_code)
+    before = original - unapplied  # what earlier applications already drew down
+    return quantize_money((before + applied_total) * rate, decimals) - quantize_money(
+        before * rate, decimals
+    )
 
 
 async def _record_application(

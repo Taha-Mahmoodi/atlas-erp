@@ -117,6 +117,7 @@ async def build_clearing_lines(
     control_is_debit: bool,
     control_description: str,
     bank_description: str,
+    bank_functional: Decimal | None = None,
 ) -> tuple[list[JournalLineCreate], list[tuple[Decimal, Decimal]]]:
     """Build the balanced clearing journal lines + their explicit functional (debit, credit) amounts
     (D-019), aligned by index. The control side clears each item at its frozen rate; the bank side
@@ -125,7 +126,13 @@ async def build_clearing_lines(
     Cr bank; AR: Cr control / Dr bank). The realized-FX line is functional-valued but carries a
     positive transaction side so the per-line one-side CHECK holds (D-017); the entry need not
     balance in TRANSACTION terms (mixed currencies), only in functional — ``create_draft_entry``
-    checks the functional sums and ``post_entry`` runs with ``skip_translation``."""
+    checks the functional sums and ``post_entry`` runs with ``skip_translation``.
+
+    ``bank_functional`` overrides the bank side's functional amount for a caller that is DRAWING
+    DOWN a functional balance already booked rather than valuing a fresh cash movement (D-084's
+    advance application): re-deriving ``quantize(amount x rate)`` on every draw-down quantizes N
+    times against one quantized credit and leaves a residue on the control that never clears.
+    ``None`` keeps the cash-movement valuation every other caller wants."""
     func_code = await fx.functional_currency_or_none(session, tenant_id)
     func_decimals = currency_decimals(func_code) if func_code else currency_decimals(currency_code)
     is_foreign = func_code is not None and currency_code != func_code
@@ -147,7 +154,11 @@ async def build_clearing_lines(
             func_control += quantize_money(item.cleared * item_rate, func_decimals)
         else:
             func_control += item.cleared
-    func_bank = quantize_money(bank_amount * clearing_rate, func_decimals)
+    func_bank = (
+        quantize_money(bank_amount * clearing_rate, func_decimals)
+        if bank_functional is None
+        else bank_functional
+    )
 
     control_line = JournalLineCreate(
         account_id=control_account_id,
@@ -187,9 +198,11 @@ async def _fx_line(
     *,
     control_is_debit: bool,
 ) -> tuple[JournalLineCreate, tuple[Decimal, Decimal]] | None:
-    """The realized-FX line (third line) when the control and bank functional sides differ, else
-    None (D-019). The line balances the entry in functional and carries a positive transaction side
-    equal to its functional amount so the per-line one-side CHECK holds (D-017).
+    """The realized-FX line, when the control and bank functional sides differ, else None (D-019).
+    It is APPENDED last, and is found after posting by its description rather than its position —
+    an unapplied receipt (D-084) posts a fourth line, so "the third line" stopped being true. The
+    line balances the entry in functional and carries a positive transaction side equal to its
+    functional amount so the per-line one-side CHECK holds (D-017).
 
     For AP (control debit): realized = func_control − func_bank; positive means AP owed MORE than
     paid -> a GAIN (credit). For AR (control credit): realized = func_bank − func_control; positive

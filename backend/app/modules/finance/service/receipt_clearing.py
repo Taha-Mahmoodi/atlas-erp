@@ -107,11 +107,14 @@ async def build_receipt_lines(
     receipt_amount: Decimal,
     receipt_date: date,
     bank_description: str = "Bank receipt",
+    bank_functional: Decimal | None = None,
 ) -> tuple[list, list[tuple[Decimal, Decimal]]]:
     """Adapt the validated (invoice, amount) pairs into shared ``ClearedItem`` tuples and build the
     balanced receipt journal lines + explicit functional amounts via the shared FX helper (D-019).
     AR clears by CREDITING the AR control (Cr AR / Dr bank); each invoice's frozen functional is
-    read from the DEBIT side of its posting line."""
+    read from the DEBIT side of its posting line. ``bank_functional`` passes straight through: an
+    advance application (D-084) draws its already-booked functional down rather than re-deriving
+    it."""
     items: list[ClearedItem] = []
     for invoice, amount in pairs:
         frozen = await clearing_fx.frozen_functional_on_line(
@@ -142,6 +145,7 @@ async def build_receipt_lines(
         control_is_debit=False,
         control_description="AR clearing",
         bank_description=bank_description,
+        bank_functional=bank_functional,
     )
 
 
