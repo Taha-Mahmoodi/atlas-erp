@@ -21,6 +21,7 @@ from app.modules.finance.constants import (
 )
 from app.modules.finance.schemas import AccountCreate, FiscalYearCreate
 from tests.conftest import QueryCounter, assert_query_budget
+from tests.modules.finance.factories import seed_advance_account
 
 
 async def _bootstrap(db_session: AsyncSession, tenant_id: uuid.UUID) -> dict[str, str]:
@@ -232,6 +233,73 @@ async def test_ar_list_and_detail_query_count(
     await assert_query_budget(
         finance_client, query_counter, f"/api/v1/finance/customer-invoices/{invoice_id}", budget=4
     )
+
+
+async def test_a_deposit_is_taken_and_applied_over_http_and_the_apply_is_idempotent(
+    finance_client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """The PLAN 20.4 endpoints end to end: a receipt with NO allocations is accepted and stands as
+    on-account money, and POST /customer-receipts/{id}/applications spends it onto an invoice.
+
+    The replay is the point of the second half — applying is a financial-document effect (D-013),
+    so a retried request must return the first response and NOT spend the deposit twice. The
+    service tests bypass HTTP; nothing else exercises the router, the schema or the key.
+    """
+    tenant_id = await _tenant_of(finance_client)
+    ids = await _bootstrap(db_session, tenant_id)
+    await seed_advance_account(db_session, tenant_id)
+    partner = str(uuid.uuid4())
+
+    deposit = await finance_client.post(
+        "/api/v1/finance/customer-receipts",
+        json={
+            "partner_id": partner,
+            "partner_name": "Globex Inc",
+            "receipt_date": "2026-03-15",
+            "currency_code": "USD",
+            "bank_account_id": ids["1000"],
+            "amount": "500.00",
+        },
+        headers={"Idempotency-Key": "deposit-1"},
+    )
+    assert deposit.status_code == 201, deposit.text
+    assert Decimal(deposit.json()["unapplied_amount"]) == Decimal("500.00")
+    assert deposit.json()["allocations"] == []
+    receipt_id = deposit.json()["id"]
+
+    invoice_id = (
+        await finance_client.post(
+            "/api/v1/finance/customer-invoices",
+            json=_invoice_body(ids, partner, net="300.00"),
+            headers=_idem(),
+        )
+    ).json()["id"]
+    posted = await finance_client.post(
+        f"/api/v1/finance/customer-invoices/{invoice_id}/post",
+        headers={"Idempotency-Key": "deposit-invoice-post"},
+    )
+    assert posted.status_code == 200, posted.text
+
+    body = {"allocations": [{"invoice_id": invoice_id, "amount": "300.00"}]}
+    applied = await finance_client.post(
+        f"/api/v1/finance/customer-receipts/{receipt_id}/applications",
+        json=body,
+        headers={"Idempotency-Key": "apply-1"},
+    )
+    assert applied.status_code == 201, applied.text
+    assert Decimal(applied.json()["unapplied_amount"]) == Decimal("200.00")
+    assert len(applied.json()["allocations"]) == 1
+
+    replay = await finance_client.post(
+        f"/api/v1/finance/customer-receipts/{receipt_id}/applications",
+        json=body,
+        headers={"Idempotency-Key": "apply-1"},
+    )
+    assert replay.status_code == 201, replay.text
+    assert replay.json() == applied.json()
+    invoice = await finance_client.get(f"/api/v1/finance/customer-invoices/{invoice_id}")
+    assert invoice.json()["status"] == "PAID"
+    assert Decimal(invoice.json()["open_amount"]) == Decimal("0")
 
 
 # --- RBAC ---------------------------------------------------------------------

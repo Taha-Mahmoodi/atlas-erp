@@ -161,6 +161,17 @@ class CustomerReceipt(UuidPKMixin, TenantMixin, AuditMixin, TimestampMixin, Docu
 
     __tablename__ = "fin_customer_receipts"
     __table_args__ = (
+        # The floor under the ``unapplied_amount`` draw-down (D-084): a customer can never be owed
+        # a negative deposit, whichever writer got there. Serializing two concurrent applications
+        # is the with_for_update lock's job, not this one's — they are complementary, not
+        # substitutes. A single-column comparison, exact on PG NUMERIC and SQLite micro-unit
+        # INTEGER alike (D-003/D-015), the inv_stock_quants on-hand precedent (D-020/D-036).
+        # The bare name, NOT a pre-prefixed one: NAMING_CONVENTION's "ck" template is
+        # ck_%(table_name)s_%(constraint_name)s (core/models.py), so passing the full
+        # ck_fin_customer_receipts_... here double-prefixes it to 72 chars — over PG's 63-char cap,
+        # where it silently comes back machine-truncated with a hash suffix and no longer matches
+        # the name the migration creates.
+        sa.CheckConstraint("unapplied_amount >= 0", name="unapplied_non_negative"),
         tenant_unique(),
         tenant_fk("adm_tenants"),
         document_fk(),
@@ -175,6 +186,13 @@ class CustomerReceipt(UuidPKMixin, TenantMixin, AuditMixin, TimestampMixin, Docu
     currency_code: Mapped[str] = mapped_column(sa.String(3), nullable=False)
     bank_account_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, nullable=False)
     amount: Mapped[object] = mapped_column(MoneyType(), nullable=False)
+    # The part of ``amount`` that cleared no invoice — an advance deposit, or the excess of an
+    # over-payment (PLAN 20.4, D-084). Credited to the ``customer_advances`` control at posting and
+    # reduced by ``apply_receipt`` as it is spent on invoices; 0 on a fully allocated receipt.
+    # It is a BALANCE, not a total: allocations only ever subtract from it, never re-derive it.
+    unapplied_amount: Mapped[object] = mapped_column(
+        MoneyType(), nullable=False, default=0, server_default="0"
+    )
     journal_entry_id: Mapped[uuid.UUID | None] = mapped_column(sa.Uuid, nullable=True)
     status: Mapped[str] = mapped_column(
         sa.String(20), nullable=False, default=ReceiptStatus.POSTED.value, server_default="POSTED"

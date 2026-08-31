@@ -9,23 +9,30 @@ balances), posts it with ``skip_translation``, claims the gapless receipt number
 each invoice's open_amount and flips its status, records the allocations, links receipt->invoices
 (docflow 'receipts'), and publishes ``CustomerReceiptPosted``.
 
+A receipt may also arrive with NOTHING to clear, or with more cash than it clears (PLAN 20.4,
+D-084): ``amount`` must be >= the allocation sum, and the excess becomes ``unapplied_amount``,
+credited to the ``customer_advances`` control account with partner_type/partner_id stamped so the
+pooled liability reconciles per customer. ``receipt_advances.apply_receipt`` spends that balance
+later. Allocating MORE than was received stays refused (#73 with the sign flipped: the difference
+would otherwise flow into the realized-FX line as a phantom gain).
+
 Finance stays the bottom dependency; partner ids stay opaque (D-029). The clearing/FX math is shared
-with AP (``clearing_fx.py``); the AR aging projection lives in ``ar_aging.py`` (both split out to
-keep every file under the STRUCTURE §3 cap).
+with AP (``clearing_fx.py``); the AR aging projection lives in ``ar_aging.py``, the reads in
+``receipts_read.py``, the validation + line builders in ``receipt_clearing.py`` and the on-account
+application in ``receipt_advances.py`` (all split out to keep every file under the STRUCTURE §3
+cap).
 """
 
 from __future__ import annotations
 
 import uuid
-from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import docflow
 from app.core.events import publish
-from app.core.exceptions import ConflictError, NotFoundError, ValidationFailedError
+from app.core.exceptions import ValidationFailedError
 from app.core.money import currency_decimals, quantize_money
 from app.core.numbering import claim_number, ensure_sequence
 from app.modules.finance.constants import (
@@ -44,122 +51,15 @@ from app.modules.finance.models import (
     CustomerReceipt,
     CustomerReceiptAllocation,
 )
-from app.modules.finance.receivables_schemas import (
-    CustomerReceiptCreate,
-    ReceiptAllocationCreate,
-)
-from app.modules.finance.schemas import JournalEntryCreate
+from app.modules.finance.receivables_schemas import CustomerReceiptCreate
+from app.modules.finance.schemas import JournalEntryCreate, JournalLineCreate
 from app.modules.finance.service import clearing_fx
-from app.modules.finance.service.clearing_fx import ClearedItem
 from app.modules.finance.service.journal import create_draft_entry, post_entry
-
-
-async def _validated_clearing(
-    session: AsyncSession,
-    tenant_id: uuid.UUID,
-    partner_id: uuid.UUID,
-    currency_code: str,
-    allocations: list[ReceiptAllocationCreate],
-) -> list[tuple[CustomerInvoice, Decimal]]:
-    """Validate every allocation clears an OPEN invoice of this partner + currency, by no more than
-    the invoice's open amount; return the (invoice, allocated) pairs (PLAN 4.6). Clear 422/409."""
-    if not allocations:
-        raise ValidationFailedError(
-            message="A receipt must clear at least one invoice",
-            code="finance.receipt_no_allocations",
-        )
-    pairs: list[tuple[CustomerInvoice, Decimal]] = []
-    for alloc in allocations:
-        invoice = await session.get(CustomerInvoice, alloc.invoice_id)
-        if invoice is None or invoice.tenant_id != tenant_id:
-            raise ValidationFailedError(
-                message="A receipt allocation references an unknown invoice",
-                code="finance.customer_invoice_not_found",
-                details={"invoice_id": str(alloc.invoice_id)},
-            )
-        if invoice.status not in (
-            InvoiceStatus.POSTED.value,
-            InvoiceStatus.PARTIALLY_PAID.value,
-        ):
-            raise ConflictError(
-                message="Only a posted, open invoice can be received",
-                code="finance.invoice_not_open",
-                details={"invoice_id": str(invoice.id), "status": invoice.status},
-            )
-        if invoice.partner_id != partner_id:
-            raise ValidationFailedError(
-                message="All invoices in a receipt must belong to the same partner",
-                code="finance.receipt_partner_mismatch",
-                details={"invoice_id": str(invoice.id)},
-            )
-        if invoice.currency_code != currency_code:
-            raise ValidationFailedError(
-                message="All invoices in a receipt must share the receipt currency",
-                code="finance.receipt_currency_mismatch",
-                details={"invoice_id": str(invoice.id), "currency_code": invoice.currency_code},
-            )
-        amount = quantize_money(alloc.amount, currency_decimals(currency_code))
-        if amount <= 0:
-            raise ValidationFailedError(
-                message="An allocation amount must be positive",
-                code="finance.receipt_allocation_not_positive",
-                details={"invoice_id": str(invoice.id)},
-            )
-        if amount > Decimal(str(invoice.open_amount)):
-            raise ValidationFailedError(
-                message="An allocation cannot exceed the invoice's open amount",
-                code="finance.receipt_overallocated",
-                details={"invoice_id": str(invoice.id), "open_amount": str(invoice.open_amount)},
-            )
-        pairs.append((invoice, amount))
-    return pairs
-
-
-async def _build_receipt_lines(
-    session: AsyncSession,
-    tenant_id: uuid.UUID,
-    pairs: list[tuple[CustomerInvoice, Decimal]],
-    *,
-    currency_code: str,
-    bank_account_id: uuid.UUID,
-    receipt_amount: Decimal,
-    receipt_date: date,
-) -> tuple[list, list[tuple[Decimal, Decimal]]]:
-    """Adapt the validated (invoice, amount) pairs into shared ``ClearedItem`` tuples and build the
-    balanced receipt journal lines + explicit functional amounts via the shared FX helper (D-019).
-    AR clears by CREDITING the AR control (Cr AR / Dr bank); each invoice's frozen functional is
-    read from the DEBIT side of its posting line."""
-    items: list[ClearedItem] = []
-    for invoice, amount in pairs:
-        frozen = await clearing_fx.frozen_functional_on_line(
-            session,
-            tenant_id,
-            invoice.journal_entry_id,
-            invoice.ar_account_id,
-            Decimal(str(invoice.gross_amount)),
-            side="debit",
-        )
-        items.append(
-            ClearedItem(
-                control_account_id=invoice.ar_account_id,
-                gross=Decimal(str(invoice.gross_amount)),
-                cleared=amount,
-                frozen_functional=frozen,
-            )
-        )
-    return await clearing_fx.build_clearing_lines(
-        session,
-        tenant_id,
-        items,
-        currency_code=currency_code,
-        bank_account_id=bank_account_id,
-        bank_amount=receipt_amount,
-        clearing_date=receipt_date,
-        partner_id=pairs[0][0].partner_id,
-        control_is_debit=False,
-        control_description="AR clearing",
-        bank_description="Bank receipt",
-    )
+from app.modules.finance.service.receipt_clearing import (
+    advance_credit,
+    build_receipt_lines,
+    validated_clearing,
+)
 
 
 async def create_and_post_receipt(
@@ -172,33 +72,75 @@ async def create_and_post_receipt(
     amounts (skip_translation), claims the gapless receipt number, reduces each invoice's
     open_amount and flips its status (PARTIALLY_PAID/PAID), records allocations, links
     receipt->invoices (docflow 'receipts'), and publishes ``CustomerReceiptPosted``. Caller commits.
+
+    ``allocations`` may be empty and ``amount`` may EXCEED their sum (PLAN 20.4, D-084): the excess
+    is the receipt's ``unapplied_amount``, credited to the ``customer_advances`` control on a
+    partner-stamped line inside the same entry. Only the reverse — allocating more than was
+    received — is refused.
     """
     await clearing_fx.require_bank_account(
         session, tenant_id, payload.bank_account_id, code="finance.ar_bank_account_not_found"
     )
-    pairs = await _validated_clearing(
+    pairs = await validated_clearing(
         session, tenant_id, payload.partner_id, payload.currency_code, payload.allocations
     )
     receipt_amount = quantize_money(payload.amount, currency_decimals(payload.currency_code))
     allocated_total = sum((amount for _, amount in pairs), Decimal(0))
-    if receipt_amount != allocated_total:
+    if receipt_amount < allocated_total:
         # #73: without this, the difference flows into the realized-FX line and a plain
-        # same-currency over/under-payment is misbooked as a phantom FX gain/loss.
+        # same-currency under-payment is misbooked as a phantom FX gain/loss. The OTHER direction
+        # (more cash than allocations) is the D-084 unapplied balance below, not an error.
         raise ValidationFailedError(
-            message="The receipt amount must equal the sum of its allocations",
+            message="The receipt amount cannot be less than the sum of its allocations",
             code="finance.receipt_allocation_sum_mismatch",
             details={"amount": str(receipt_amount), "allocated": str(allocated_total)},
         )
+    unapplied = receipt_amount - allocated_total
 
-    lines, functional_amounts = await _build_receipt_lines(
-        session,
-        tenant_id,
-        pairs,
-        currency_code=payload.currency_code,
-        bank_account_id=payload.bank_account_id,
-        receipt_amount=receipt_amount,
-        receipt_date=payload.receipt_date,
-    )
+    lines: list[JournalLineCreate] = []
+    functional_amounts: list[tuple[Decimal, Decimal]] = []
+    if pairs:
+        lines, functional_amounts = await build_receipt_lines(
+            session,
+            tenant_id,
+            pairs,
+            currency_code=payload.currency_code,
+            bank_account_id=payload.bank_account_id,
+            receipt_amount=allocated_total,
+            receipt_date=payload.receipt_date,
+        )
+    if unapplied > 0:
+        advance_line, advance_functional = await advance_credit(
+            session,
+            tenant_id,
+            unapplied,
+            currency_code=payload.currency_code,
+            partner_id=payload.partner_id,
+            receipt_date=payload.receipt_date,
+        )
+        if pairs:
+            # ONE cash movement, one bank line: the clearing builder debited the bank for the
+            # allocated part only, so grow that line to the full amount received rather than
+            # posting a second debit to the same account.
+            index = next(
+                i for i, line in enumerate(lines) if line.account_id == payload.bank_account_id
+            )
+            lines[index].transaction_debit_amount = receipt_amount
+            functional_amounts[index] = (
+                functional_amounts[index][0] + advance_functional[1],
+                Decimal(0),
+            )
+        else:
+            lines.append(
+                JournalLineCreate(
+                    account_id=payload.bank_account_id,
+                    description="Bank receipt",
+                    transaction_debit_amount=receipt_amount,
+                )
+            )
+            functional_amounts.append((advance_functional[1], Decimal(0)))
+        lines.append(advance_line)
+        functional_amounts.append(advance_functional)
 
     entry = await create_draft_entry(
         session,
@@ -216,7 +158,7 @@ async def create_and_post_receipt(
     await post_entry(session, tenant_id, entry.id, skip_translation=True)
 
     receipt = await _record_receipt(
-        session, tenant_id, payload, receipt_amount, pairs, entry.id, entry.document_id
+        session, tenant_id, payload, receipt_amount, unapplied, pairs, entry.id, entry.document_id
     )
     return receipt
 
@@ -226,6 +168,7 @@ async def _record_receipt(
     tenant_id: uuid.UUID,
     payload: CustomerReceiptCreate,
     receipt_amount: Decimal,
+    unapplied: Decimal,
     pairs: list[tuple[CustomerInvoice, Decimal]],
     journal_entry_id: uuid.UUID,
     journal_document_id: uuid.UUID,
@@ -265,6 +208,7 @@ async def _record_receipt(
         currency_code=payload.currency_code,
         bank_account_id=payload.bank_account_id,
         amount=receipt_amount,
+        unapplied_amount=unapplied,
         journal_entry_id=journal_entry_id,
         status=ReceiptStatus.POSTED.value,
         description=payload.description,
@@ -329,57 +273,3 @@ async def _record_receipt(
         ),
     )
     return receipt
-
-
-async def get_customer_receipt(
-    session: AsyncSession, tenant_id: uuid.UUID, receipt_id: uuid.UUID
-) -> CustomerReceipt:
-    receipt = await session.get(CustomerReceipt, receipt_id)
-    if receipt is None or receipt.tenant_id != tenant_id:
-        raise NotFoundError(
-            message="Customer receipt not found", code="finance.customer_receipt_not_found"
-        )
-    return receipt
-
-
-async def get_receipt_allocations(
-    session: AsyncSession, tenant_id: uuid.UUID, receipt_id: uuid.UUID
-) -> list[CustomerReceiptAllocation]:
-    stmt = (
-        select(CustomerReceiptAllocation)
-        .where(
-            CustomerReceiptAllocation.tenant_id == tenant_id,
-            CustomerReceiptAllocation.receipt_id == receipt_id,
-        )
-        .order_by(CustomerReceiptAllocation.created_at)
-    )
-    return list((await session.execute(stmt)).scalars().all())
-
-
-async def list_customer_receipts(
-    session: AsyncSession,
-    tenant_id: uuid.UUID,
-    *,
-    cursor: str | None,
-    limit: int,
-    partner_id: uuid.UUID | None = None,
-) -> object:
-    """Keyset-paginated receipt list, newest receipt_date first (D-014). ``partner_id`` folds into
-    the cursor fingerprint."""
-    from app.core.pagination import OrderKey, SortDirection, filter_fingerprint, paginate
-
-    stmt = select(CustomerReceipt).where(CustomerReceipt.tenant_id == tenant_id)
-    if partner_id is not None:
-        stmt = stmt.where(CustomerReceipt.partner_id == partner_id)
-    return await paginate(
-        session,
-        stmt,
-        order_by=[
-            OrderKey(CustomerReceipt.receipt_date, SortDirection.DESC),
-            OrderKey(CustomerReceipt.created_at, SortDirection.DESC),
-        ],
-        pk=CustomerReceipt.id,
-        cursor=cursor,
-        limit=limit,
-        filters=filter_fingerprint(partner_id),
-    )

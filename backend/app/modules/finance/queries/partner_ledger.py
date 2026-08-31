@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.finance.constants import BillStatus, InvoiceStatus
-from app.modules.finance.models import CustomerInvoice, VendorBill
+from app.modules.finance.models import CustomerInvoice, CustomerReceipt, VendorBill
 
 
 async def get_open_vendor_bills(
@@ -83,3 +83,24 @@ async def customer_open_balance(
     partner with no open invoices."""
     invoices = await get_open_customer_invoices(session, tenant_id, partner_id)
     return sum((Decimal(str(inv.open_amount)) for inv in invoices), Decimal(0))
+
+
+async def customer_unapplied_balance(
+    session: AsyncSession, tenant_id: uuid.UUID, partner_id: uuid.UUID
+) -> Decimal:
+    """A partner's ON-ACCOUNT money: the sum of ``unapplied_amount`` across their receipts (PLAN
+    20.4, D-084) — deposits taken before an invoice existed, plus the excess of any over-payment.
+
+    Deliberately a SEPARATE number from ``customer_open_balance`` rather than netted into it. A
+    deposit is a liability the property owes back, not a negative receivable, and netting it would
+    silently change what Sales' credit-limit block and the aging report mean. Callers that want the
+    net exposure subtract the two knowingly. Summed in Python over the (small) receipt set so the
+    exact-decimal MoneyType round-trips identically on both engines (D-015); returns 0 for a partner
+    holding nothing on account."""
+    stmt = select(CustomerReceipt.unapplied_amount).where(
+        CustomerReceipt.tenant_id == tenant_id,
+        CustomerReceipt.partner_id == partner_id,
+        CustomerReceipt.unapplied_amount > 0,
+    )
+    amounts = (await session.execute(stmt)).scalars().all()
+    return sum((Decimal(str(amount)) for amount in amounts), Decimal(0))

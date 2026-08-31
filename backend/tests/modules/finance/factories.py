@@ -18,6 +18,7 @@ from app.modules.finance import service
 from app.modules.finance.constants import (
     BANK_UNMATCHED_CLEARING,
     CO_ALLOCATION_CLEARING,
+    CUSTOMER_ADVANCES,
     FX_REALIZED_GAIN,
     FX_REALIZED_LOSS,
     FX_REVALUATION_ADJUSTMENT,
@@ -191,6 +192,27 @@ async def build_ar_setup(session: AsyncSession, tenant_id: uuid.UUID) -> ArSetup
         tax_code_id=tax_code.id,
         fiscal_year_id=year.id,
     )
+
+
+async def seed_advance_account(session: AsyncSession, tenant_id: uuid.UUID) -> uuid.UUID:
+    """The advance-deposit control account an UNAPPLIED receipt credits, mapped to the
+    ``customer_advances`` posting purpose (PLAN 20.4, D-084), and its id.
+
+    "2100 Advance Deposits" is the hospitality template's own account: a LIABILITY, because money
+    taken before arrival is owed back, not earned. Kept out of build_ar_setup so the mapping stays a
+    deliberate act of a test that takes on-account money — an AR tenant that never configured one
+    must still fail loud (finance.posting_default_unmapped)."""
+    with tenant_context(tenant_id):
+        account = await service.create_account(
+            session,
+            tenant_id,
+            AccountCreate(
+                code="2100", name="Advance Deposits", account_type=AccountType.LIABILITY
+            ),
+        )
+        await service.set_posting_default(session, tenant_id, CUSTOMER_ADVANCES, account.id)
+        await session.commit()
+    return account.id
 
 
 @dataclass(frozen=True)

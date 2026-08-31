@@ -129,7 +129,11 @@ class CustomerReceiptCreate(ApiModel):
     """Create + post a customer receipt (PLAN 4.6). ``partner_id`` is the opaque customer id
     (D-029); all cleared invoices must be open, same partner, same currency. ``bank_account_id`` is
     the bank/cash account debited; ``amount`` is the cash received. Realized FX (D-019) computed and
-    posted inside the receipt entry by the service."""
+    posted inside the receipt entry by the service.
+
+    ``allocations`` is OPTIONAL (PLAN 20.4, D-084): ``amount`` must be >= their sum, and the excess
+    posts to the ``customer_advances`` control as ``unapplied_amount`` — an advance deposit is an
+    empty list. Allocating MORE than was received stays refused."""
 
     partner_id: uuid.UUID
     partner_name: str
@@ -138,7 +142,18 @@ class CustomerReceiptCreate(ApiModel):
     bank_account_id: uuid.UUID
     amount: Decimal
     description: str | None = None
+    allocations: list[ReceiptAllocationCreate] = []
+
+
+class ReceiptApplyRequest(ApiModel):
+    """Apply part (or all) of a receipt's unapplied balance to open invoices (PLAN 20.4, D-084).
+    The invoices must be open, of the receipt's partner and in the receipt's currency — the same
+    rules a directly allocated receipt obeys — and their sum must not exceed the receipt's
+    ``unapplied_amount``. ``application_date`` is the posting date of the reclass entry (Dr advance
+    control / Cr AR control); it defaults to the receipt's own date."""
+
     allocations: list[ReceiptAllocationCreate]
+    application_date: date | None = None
 
 
 class ReceiptAllocationRead(ApiModel):
@@ -157,6 +172,7 @@ class CustomerReceiptRead(ApiModel):
     currency_code: str
     bank_account_id: uuid.UUID
     amount: Decimal
+    unapplied_amount: Decimal
     journal_entry_id: uuid.UUID | None
     status: ReceiptStatus
     description: str | None

@@ -177,6 +177,15 @@ AP_CONTROL = "ap_control"
 AR_CONTROL = "ar_control"
 SALES_REVENUE = "sales_revenue"
 
+# --- Customer advances / on-account receipts (PLAN 20.4, D-084) ---------------
+# The LIABILITY control account an UNAPPLIED customer receipt credits: cash received before (or in
+# excess of) any invoice is money owed back to the payer, not revenue and not a negative receivable.
+# The line carries partner_type/partner_id so the pooled control reconciles per customer, and
+# ``apply_receipt`` debits it back when the deposit is finally applied to an invoice. A tenant MUST
+# map this purpose before it can take an unapplied receipt (422 finance.posting_default_unmapped);
+# the hospitality template's COA seeds "2100 Advance Deposits" for exactly this.
+CUSTOMER_ADVANCES = "customer_advances"
+
 # --- WIP clearing + production variance (PLAN 8.2, manufacturing production orders, D-048) -----
 # The WIP (work-in-process) clearing account is a per-tenant posting default (an ASSET/clearing
 # account). A production order's component ISSUE posts Dr WIP / Cr Inventory and its finished
@@ -218,8 +227,9 @@ PAYROLL_TAX_PAYABLE = "payroll_tax_payable"
 
 # Every known posting-default purpose: FX + the CO/bank/asset clearing accounts + GR-IR + PPV + AP +
 # the AR control + sales-revenue defaults the 7.4 sales billing / credit-note flow resolves + the
-# WIP clearing + production-variance defaults the 8.2 production-order flow resolves + the three
-# payroll defaults the 10.4 payroll-run → consolidated-journal flow resolves.
+# customer-advances control the 20.4 on-account receipt / deposit flow resolves + the WIP clearing +
+# production-variance defaults the 8.2 production-order flow resolves + the three payroll defaults
+# the 10.4 payroll-run → consolidated-journal flow resolves.
 POSTING_PURPOSES: frozenset[str] = FX_POSTING_PURPOSES | frozenset(
     {
         CO_ALLOCATION_CLEARING,
@@ -230,6 +240,7 @@ POSTING_PURPOSES: frozenset[str] = FX_POSTING_PURPOSES | frozenset(
         AP_CONTROL,
         AR_CONTROL,
         SALES_REVENUE,
+        CUSTOMER_ADVANCES,
         WIP_CLEARING,
         PRODUCTION_VARIANCE,
         SALARY_EXPENSE,

@@ -57,6 +57,7 @@ from app.modules.finance.queries.dashboards import (
 )
 from app.modules.finance.queries.partner_ledger import (
     customer_open_balance,
+    customer_unapplied_balance,
     get_open_customer_invoices,
     get_open_vendor_bills,
 )
@@ -95,6 +96,7 @@ __all__ = [
     "costs_by_project_dimension",
     "currency_exists",
     "customer_open_balance",
+    "customer_unapplied_balance",
     "find_period_for_date",
     "functional_currency",
     "functional_currency_or_none",

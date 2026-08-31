@@ -7,18 +7,19 @@ the change — a rule nobody named is a rule the widening can move silently.
 
 Each docstring states the handoff: RELAXED means Task 2 changes the rule and must update the pin in
 the SAME commit (never delete it); KEPT means the rule survives the widening unchanged and a pin
-turning red is a bug in Task 2, not a stale test.
+turning red is a bug in Task 2, not a stale test. Task 2 has landed: the two RELAXED pins below now
+assert the NEW contract, and the nine KEPT ones are unchanged from the day they were written.
 
 The rules pinned (``service/customer_receipts.py``, in the order the service checks them):
   1. finance.ar_bank_account_not_found        KEPT (and checked FIRST, before any allocation)
-  2. finance.receipt_no_allocations           RELAXED
+  2. finance.receipt_no_allocations           RELAXED -> an allocationless receipt is unapplied
   3. finance.customer_invoice_not_found       KEPT (incl. D-007: another tenant's invoice)
   4. finance.invoice_not_open                 KEPT (ConflictError, 409)
   5. finance.receipt_partner_mismatch         KEPT
   6. finance.receipt_currency_mismatch        KEPT
   7. finance.receipt_allocation_not_positive  KEPT
   8. finance.receipt_overallocated            KEPT
-  9. finance.receipt_allocation_sum_mismatch  RELAXED (== becomes >=; over-allocation still refused)
+  9. finance.receipt_allocation_sum_mismatch  RELAXED (== became >=; under-payment still refused)
  10. the posted shape of a fully allocated receipt (journal, allocation row, invoice flip, gapless
      number, docflow links, event)            KEPT
  11. the same shape PER INVOICE when one receipt clears TWO (one allocation row and one 'receipts'
@@ -50,7 +51,7 @@ from app.modules.finance.receivables_schemas import (
     ReceiptAllocationCreate,
 )
 from tests.modules.finance.conftest import ArSetup
-from tests.modules.finance.factories import build_ar_setup
+from tests.modules.finance.factories import build_ar_setup, seed_advance_account
 from tests.modules.finance.test_receivables import (
     _RECEIPT_DATE,
     _create_and_post_invoice,
@@ -118,19 +119,38 @@ async def test_the_bank_account_must_exist_in_this_tenant_and_is_checked_first(
     assert code == "finance.ar_bank_account_not_found"
 
 
-async def test_a_receipt_with_no_allocations_is_refused_today(
+async def test_a_receipt_with_no_allocations_is_now_an_unapplied_receipt(
     db_session: AsyncSession, ar_setup: ArSetup
 ) -> None:
-    """Pins finance.receipt_no_allocations (customer_receipts.py:66-70). Task 2 RELAXES this rule
-    deliberately — when it does, this test is UPDATED IN THE SAME COMMIT to assert the new
-    contract (unapplied receipt accepted, unapplied_amount == amount), never deleted."""
-    code = await _refused(
-        db_session,
-        ar_setup,
-        _receipt(ar_setup, partner_id=uuid.uuid4(), amount="100.00", allocations=[]),
-        ValidationFailedError,
-    )
-    assert code == "finance.receipt_no_allocations"
+    """WAS: finance.receipt_no_allocations refused an allocationless receipt. Task 2 RELAXED that
+    rule deliberately (PLAN 20.4, D-084) and this pin is updated in the same commit, not deleted:
+    the receipt is now ACCEPTED and its whole amount stands as ``unapplied_amount``, on-account
+    money awaiting an invoice. What the rule cost — a receipt that clears nothing and posts
+    nowhere — is now bought by the advance control account instead.
+
+    The full behaviour of that path (the advance line, its partner stamp, apply, the partner
+    ledger) lives in test_unapplied_receipts.py; this pin only holds the door open."""
+    partner_id = uuid.uuid4()
+    await seed_advance_account(db_session, ar_setup.tenant_id)
+    with tenant_context(ar_setup.tenant_id):
+
+        async def work() -> None:
+            receipt = await service.create_and_post_receipt(
+                db_session,
+                ar_setup.tenant_id,
+                _receipt(ar_setup, partner_id=partner_id, amount="100.00", allocations=[]),
+            )
+            holder["receipt_id"] = receipt.id
+
+        holder: dict[str, uuid.UUID] = {}
+        await run_in_uow(db_session, work)
+        receipt = await service.get_customer_receipt(
+            db_session, ar_setup.tenant_id, holder["receipt_id"]
+        )
+
+    assert receipt.status == ReceiptStatus.POSTED.value
+    assert Decimal(str(receipt.unapplied_amount)) == Decimal("100.00")
+    assert Decimal(str(receipt.amount)) == Decimal("100.00")
 
 
 async def test_an_allocation_must_reference_an_invoice_of_this_tenant(
@@ -305,37 +325,57 @@ async def test_an_allocation_cannot_exceed_the_invoices_open_amount(
     assert partial == "finance.receipt_overallocated"
 
 
-async def test_receipt_amount_must_equal_allocation_sum_today(
+async def test_a_receipt_above_its_allocation_sum_is_unapplied_and_below_it_is_refused(
     db_session: AsyncSession, ar_setup: ArSetup
 ) -> None:
-    """Pins customer_receipts.py:186-190. Task 2 changes '==' to '>=' (the excess becomes
-    unapplied); the updated pin asserts over-allocation is still refused.
+    """WAS: ``amount == sum(allocations)`` in BOTH directions. Task 2 changed it to ``>=``, and the
+    two halves part company exactly as this pin predicted — so the pin is updated, not deleted:
 
-    Both directions are pinned because they part company under the widening: amount ABOVE the
-    allocation sum becomes legal (the excess lands unapplied) while amount BELOW it stays
-    refused — allocating cash the receipt never received is the #73 phantom-FX bug with the sign
-    flipped."""
+    * amount ABOVE the sum is now LEGAL: 110 received against a 100 invoice clears the invoice and
+      leaves 10 unapplied (the over-payment a hotel guest makes at check-out, and the same
+      mechanism as a deposit).
+    * amount BELOW the sum stays REFUSED with the same finance.receipt_allocation_sum_mismatch —
+      allocating cash the receipt never received is #73 with the sign flipped, and the difference
+      would flow into the realized-FX line as a phantom gain."""
+    await seed_advance_account(db_session, ar_setup.tenant_id)
     invoice = await _create_and_post_invoice(db_session, ar_setup, _invoice_payload(ar_setup))
-    over = await _refused(
-        db_session,
-        ar_setup,
-        _receipt(
-            ar_setup,
-            partner_id=invoice.partner_id,
-            amount="110.00",
-            allocations=[_alloc(invoice.id, "100.00")],
-        ),
-        ValidationFailedError,
-    )
-    assert over == "finance.receipt_allocation_sum_mismatch"
+    holder: dict[str, uuid.UUID] = {}
+    with tenant_context(ar_setup.tenant_id):
+
+        async def work() -> None:
+            receipt = await service.create_and_post_receipt(
+                db_session,
+                ar_setup.tenant_id,
+                _receipt(
+                    ar_setup,
+                    partner_id=invoice.partner_id,
+                    amount="110.00",
+                    allocations=[_alloc(invoice.id, "100.00")],
+                ),
+            )
+            holder["receipt_id"] = receipt.id
+
+        await run_in_uow(db_session, work)
+        await db_session.refresh(invoice)
+        over = await service.get_customer_receipt(
+            db_session, ar_setup.tenant_id, holder["receipt_id"]
+        )
+
+    assert invoice.status == InvoiceStatus.PAID.value
+    assert Decimal(str(over.amount)) == Decimal("110.00")
+    assert Decimal(str(over.unapplied_amount)) == Decimal("10.00")
+
+    # A second, still-open invoice: the first one is PAID now, and an under-payment of a PAID
+    # invoice would be refused for the WRONG reason (finance.invoice_not_open, 409).
+    still_open = await _create_and_post_invoice(db_session, ar_setup, _invoice_payload(ar_setup))
     under = await _refused(
         db_session,
         ar_setup,
         _receipt(
             ar_setup,
-            partner_id=invoice.partner_id,
+            partner_id=still_open.partner_id,
             amount="40.00",
-            allocations=[_alloc(invoice.id, "60.00")],
+            allocations=[_alloc(still_open.id, "60.00")],
         ),
         ValidationFailedError,
     )

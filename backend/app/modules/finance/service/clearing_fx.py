@@ -39,6 +39,12 @@ from app.modules.finance.service import fx
 from app.modules.finance.service.journal_read import load_lines
 from app.modules.finance.service.posting_defaults import get_posting_default
 
+# The realized-FX line's descriptions. Constants because they are also how the line is IDENTIFIED
+# after posting (``set_fx_line_currency``): it used to be "the third line", which held only while
+# every clearing entry had exactly two other lines — an unapplied receipt (D-084) appends a fourth.
+FX_GAIN_DESCRIPTION = "Realized FX gain"
+FX_LOSS_DESCRIPTION = "Realized FX loss"
+
 
 @dataclass(frozen=True)
 class ClearedItem:
@@ -111,6 +117,7 @@ async def build_clearing_lines(
     control_is_debit: bool,
     control_description: str,
     bank_description: str,
+    bank_functional: Decimal | None = None,
 ) -> tuple[list[JournalLineCreate], list[tuple[Decimal, Decimal]]]:
     """Build the balanced clearing journal lines + their explicit functional (debit, credit) amounts
     (D-019), aligned by index. The control side clears each item at its frozen rate; the bank side
@@ -119,7 +126,13 @@ async def build_clearing_lines(
     Cr bank; AR: Cr control / Dr bank). The realized-FX line is functional-valued but carries a
     positive transaction side so the per-line one-side CHECK holds (D-017); the entry need not
     balance in TRANSACTION terms (mixed currencies), only in functional — ``create_draft_entry``
-    checks the functional sums and ``post_entry`` runs with ``skip_translation``."""
+    checks the functional sums and ``post_entry`` runs with ``skip_translation``.
+
+    ``bank_functional`` overrides the bank side's functional amount for a caller that is DRAWING
+    DOWN a functional balance already booked rather than valuing a fresh cash movement (D-084's
+    advance application): re-deriving ``quantize(amount x rate)`` on every draw-down quantizes N
+    times against one quantized credit and leaves a residue on the control that never clears.
+    ``None`` keeps the cash-movement valuation every other caller wants."""
     func_code = await fx.functional_currency_or_none(session, tenant_id)
     func_decimals = currency_decimals(func_code) if func_code else currency_decimals(currency_code)
     is_foreign = func_code is not None and currency_code != func_code
@@ -141,7 +154,11 @@ async def build_clearing_lines(
             func_control += quantize_money(item.cleared * item_rate, func_decimals)
         else:
             func_control += item.cleared
-    func_bank = quantize_money(bank_amount * clearing_rate, func_decimals)
+    func_bank = (
+        quantize_money(bank_amount * clearing_rate, func_decimals)
+        if bank_functional is None
+        else bank_functional
+    )
 
     control_line = JournalLineCreate(
         account_id=control_account_id,
@@ -181,9 +198,11 @@ async def _fx_line(
     *,
     control_is_debit: bool,
 ) -> tuple[JournalLineCreate, tuple[Decimal, Decimal]] | None:
-    """The realized-FX line (third line) when the control and bank functional sides differ, else
-    None (D-019). The line balances the entry in functional and carries a positive transaction side
-    equal to its functional amount so the per-line one-side CHECK holds (D-017).
+    """The realized-FX line, when the control and bank functional sides differ, else None (D-019).
+    It is APPENDED last, and is found after posting by its description rather than its position —
+    an unapplied receipt (D-084) posts a fourth line, so "the third line" stopped being true. The
+    line balances the entry in functional and carries a positive transaction side equal to its
+    functional amount so the per-line one-side CHECK holds (D-017).
 
     For AP (control debit): realized = func_control − func_bank; positive means AP owed MORE than
     paid -> a GAIN (credit). For AR (control credit): realized = func_bank − func_control; positive
@@ -198,13 +217,13 @@ async def _fx_line(
     if realized > 0:
         line = JournalLineCreate(
             account_id=fx_account_id,
-            description="Realized FX gain",
+            description=FX_GAIN_DESCRIPTION,
             transaction_credit_amount=amount,
         )
         return line, (Decimal(0), amount)
     line = JournalLineCreate(
         account_id=fx_account_id,
-        description="Realized FX loss",
+        description=FX_LOSS_DESCRIPTION,
         transaction_debit_amount=amount,
     )
     return line, (amount, Decimal(0))
@@ -213,13 +232,19 @@ async def _fx_line(
 async def set_fx_line_currency(
     session: AsyncSession, tenant_id: uuid.UUID, entry_id: uuid.UUID
 ) -> None:
-    """Denominate the realized-FX line (the 3rd line, if any) in the functional currency (D-019) —
-    it is a functional gain/loss, not a foreign cash flow. Cosmetic vs the entry currency on the
-    line; mutate the loaded object so the change is captured. No-op when no FX line exists."""
+    """Denominate the realized-FX line (if any) in the functional currency (D-019) — it is a
+    functional gain/loss, not a foreign cash flow. Cosmetic vs the entry currency on the line;
+    mutate the loaded object so the change is captured. No-op when no FX line exists.
+
+    The line is found by the description ``_fx_line`` gave it, not by position: "the third line"
+    was true only while a clearing entry was exactly control + bank + FX, and an unapplied customer
+    receipt (D-084) posts a fourth. Same two queries either way."""
     func_code = await fx.functional_currency_or_none(session, tenant_id)
     if func_code is None:
         return
     lines = await load_lines(session, tenant_id, entry_id)
-    if len(lines) >= 3:
-        lines[2].currency_code = func_code
-        await session.flush()
+    for line in lines:
+        if line.description in (FX_GAIN_DESCRIPTION, FX_LOSS_DESCRIPTION):
+            line.currency_code = func_code
+            await session.flush()
+            return
