@@ -14,11 +14,15 @@ package ``__init__``'s D-007 registration hook — registers all tables on ``Bas
   document (Phase 21). Named for its tables, not "reservations", because Phase 20's ROOM booking is
   a different concept in ``rooms.py``.
 
-Phase 20 (``docs/research/phase-20-rooms-folio-plan.md``) adds two more files, and no others:
-``rooms.py`` for Task 3's ``RoomType``/``Room``/``RatePlan``/``HousekeepingTask`` and Task 4's
-``RoomTypeInventory`` allotment counter + ``Reservation`` document, and ``folio.py`` for Task 5's
-``Folio``/``FolioLine`` and Task 6's business-date row. Each new model is imported and listed below
-in the same shape; nothing outside this package declares a hospitality table.
+- ``rooms``: the HOTEL side (Phase 20.1) — the room type a night is sold of, the physical room, the
+  manual rate plan, and the housekeeping task document. Task 4's ``RoomTypeInventory`` allotment
+  counter and its ROOM reservation document join it (or a ``room_inventory.py`` sibling if the
+  §8.4 cap is close by then), and Task 5's ``Folio``/``FolioLine`` plus Task 6's business-date row
+  get a ``folio.py``.
+
+Each new model is imported and listed below in the same shape; nothing outside this package
+declares a hospitality table. That is not cosmetic: ``alembic/env.py`` imports only this package,
+so a model missing here is invisible to autogenerate and its table gets proposed for DROP.
 """
 
 from app.modules.hospitality.models.menu import (
@@ -32,6 +36,12 @@ from app.modules.hospitality.models.ordering import (
     OrderTicket,
     OrderTicketLine,
 )
+from app.modules.hospitality.models.rooms import (
+    HousekeepingTask,
+    RatePlan,
+    Room,
+    RoomType,
+)
 from app.modules.hospitality.models.table_reservations import (
     ReservationSettings,
     ServiceSlot,
@@ -40,13 +50,17 @@ from app.modules.hospitality.models.table_reservations import (
 
 __all__ = [
     "MAX_SECTION_DEPTH",
+    "HousekeepingTask",
     "MenuAvailability",
     "MenuItemTag",
     "MenuPlacement",
     "MenuSection",
     "OrderTicket",
     "OrderTicketLine",
+    "RatePlan",
     "ReservationSettings",
+    "Room",
+    "RoomType",
     "ServiceSlot",
     "TableReservation",
 ]

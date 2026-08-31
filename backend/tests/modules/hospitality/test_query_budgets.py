@@ -10,7 +10,9 @@ is only as strong as the axis it was measured on:
   a separate case nests a BOM under a BOM, which is where a recursive explosion would start
   charging a query per level;
 * the website's ``/menu/availability`` had no query-count coverage at all, on either the 200 or the
-  304 branch.
+  304 branch;
+* Phase 20.1's HOTEL reads grow along a different axis again — how many rooms a property has, and
+  how many tasks a day's departures put on the housekeeping board.
 
 Each test asserts EQUALITY between the small and large shapes as well as the ≤3 budget. A budget
 alone is satisfiable by a shape that still grows per row until it hits the wall; the pair is what
@@ -26,9 +28,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.tenancy import tenant_context
 from app.modules.hospitality.constants import AvailabilityState
 from app.modules.hospitality.service import availability
-from tests.conftest import QueryCounter
-from tests.modules.hospitality.conftest import HospitalityApi, WebsiteApi
+from tests.conftest import QueryCounter, assert_query_budget
+from tests.modules.hospitality.conftest import HospitalityApi, RoomsApi, WebsiteApi
 from tests.modules.hospitality.factories import build_dish, build_menu_price
+from tests.modules.hospitality.test_housekeeping import TASKS_URL, raise_task
+from tests.modules.hospitality.test_rooms import (
+    RATE_PLANS_URL,
+    ROOM_TYPES_URL,
+    ROOMS_URL,
+    make_room,
+    make_room_type,
+)
 
 MENU_URL = "/api/v1/hospitality/menu"
 AVAILABILITY_URL = "/api/v1/hospitality/menu/availability"
@@ -222,3 +232,117 @@ async def test_the_at_risk_list_does_not_scale_with_recipe_size_or_depth(
         f"the at-risk list ran {large.count} statements (PERFORMANCE §2 budgets {READ_BUDGET}):\n"
         + "\n".join(large.statements)
     )
+
+
+# --- The hotel reads (Phase 20.1) ---------------------------------------------
+# Same argument as the three above, on the two axes a PROPERTY grows along: how many rooms it has,
+# and how many tasks a day's departures put on the housekeeping board. Both reads are one paginated
+# statement by construction, and the pair of assertions (equality + the ceiling) is what pins that
+# rather than just bounding it.
+
+# Big enough that a per-row query would show against the ≤3 budget, small enough to seed quickly.
+PROPERTY_SIZE = 40
+BOARD_SIZE = 30
+
+
+async def test_the_room_list_does_not_scale_with_the_property(
+    rooms_api: RoomsApi, query_counter: Callable[[], QueryCounter]
+) -> None:
+    """A 40-room property must cost the same as a 1-room one: the auth principal plus ONE page
+    select, on both the unfiltered read and the two filters the board uses."""
+    client = rooms_api.client
+    room_type_id = await make_room_type(client)
+    await make_room(client, room_type_id, "000")
+
+    await client.get(ROOMS_URL)  # warm the D-009 RBAC TTL cache
+    with query_counter() as small:
+        first = await client.get(ROOMS_URL, params={"limit": 200})
+    assert first.status_code == 200, first.text
+
+    for index in range(1, PROPERTY_SIZE):
+        await make_room(client, room_type_id, f"{index:03d}")
+
+    with query_counter() as large:
+        second = await client.get(ROOMS_URL, params={"limit": 200})
+    assert second.status_code == 200, second.text
+    assert len(second.json()["items"]) == PROPERTY_SIZE
+
+    assert large.count == small.count, (
+        f"the room list cost {small.count} statements for 1 room and {large.count} for "
+        f"{PROPERTY_SIZE}:\n" + "\n".join(large.statements)
+    )
+    assert large.count <= READ_BUDGET, (
+        f"the room list ran {large.count} statements at {PROPERTY_SIZE} rooms "
+        f"(PERFORMANCE §2 budgets {READ_BUDGET}):\n" + "\n".join(large.statements)
+    )
+
+    with query_counter() as filtered:
+        by_type = await client.get(
+            ROOMS_URL, params={"room_type_id": str(room_type_id), "limit": 200}
+        )
+    assert by_type.status_code == 200, by_type.text
+    assert filtered.count <= READ_BUDGET, (
+        f"the filtered room list ran {filtered.count} statements:\n"
+        + "\n".join(filtered.statements)
+    )
+
+
+async def test_the_housekeeping_board_does_not_scale_with_the_days_departures(
+    rooms_api: RoomsApi, query_counter: Callable[[], QueryCounter]
+) -> None:
+    """A 30-task board must cost the same as a 1-task one: one page select, whatever the day's
+    departures were. The board is the read a supervisor refreshes all morning."""
+    client = rooms_api.client
+    room_type_id = await make_room_type(client)
+    room_ids = [
+        (await make_room(client, room_type_id, f"{index:03d}"))["id"]
+        for index in range(BOARD_SIZE)
+    ]
+    await raise_task(client, room_ids[0])
+
+    await client.get(TASKS_URL)  # warm the D-009 RBAC TTL cache
+    with query_counter() as small:
+        first = await client.get(TASKS_URL, params={"limit": 200})
+    assert first.status_code == 200, first.text
+
+    for room_id in room_ids[1:]:
+        await raise_task(client, room_id)
+
+    with query_counter() as large:
+        second = await client.get(TASKS_URL, params={"limit": 200})
+    assert second.status_code == 200, second.text
+    assert len(second.json()["items"]) == BOARD_SIZE
+
+    assert large.count == small.count, (
+        f"the board cost {small.count} statements for 1 task and {large.count} for "
+        f"{BOARD_SIZE}:\n" + "\n".join(large.statements)
+    )
+    assert large.count <= READ_BUDGET, (
+        f"the board ran {large.count} statements at {BOARD_SIZE} tasks (PERFORMANCE §2 budgets "
+        f"{READ_BUDGET}):\n" + "\n".join(large.statements)
+    )
+
+
+async def test_the_room_type_rate_plan_and_board_reads_meet_the_shared_helper(
+    rooms_api: RoomsApi, query_counter: Callable[[], QueryCounter]
+) -> None:
+    """The remaining three Phase 20.1 reads, through the ≤3 helper every module's API tests reuse.
+    Seeded with a row each so the budget is measured over a page that actually returns something."""
+    client = rooms_api.client
+    room_type_id = await make_room_type(client)
+    await raise_task(client, (await make_room(client, room_type_id, "101"))["id"])
+    await client.post(
+        RATE_PLANS_URL,
+        json={
+            "code": "BAR",
+            "name": "Best available rate",
+            "room_type_id": str(room_type_id),
+            "nightly_amount": "149.99",
+            "currency_code": "USD",
+            "valid_from": "2026-01-01",
+        },
+    )
+
+    await assert_query_budget(client, query_counter, ROOM_TYPES_URL)
+    await assert_query_budget(client, query_counter, RATE_PLANS_URL)
+    await assert_query_budget(client, query_counter, TASKS_URL)

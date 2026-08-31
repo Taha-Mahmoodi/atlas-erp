@@ -1,14 +1,16 @@
-"""Hospitality constants (STRUCTURE §3): the menu-availability enums, the permission keys
-registered into the core RBAC catalog at import (D-009), and the background-job key the depletion
-handler registers under.
+"""Hospitality enums, lifecycle transition tables and numeric defaults.
 
-A SINGLE file (STRUCTURE §8.4: split into a constants/ package only at the 400-line cap).
+Split out of the single ``constants.py`` at the STRUCTURE §8.4 400-line cap, which Phase 20's rooms
+constants tipped it over — the ``sales/constants/`` and ``finance/constants/`` precedent, and the
+same move ``models/`` made in PR #243. Nothing changed here but the file it lives in.
+
+Each lifecycle keeps its transition rule NEXT TO its enum, because the legal moves are the contract
+rather than the membership: ``TICKET_FLOW`` reads ``OrderTicketStatus`` positionally (a straight
+line), while ``RESERVATION_FLOW`` and ``HOUSEKEEPING_FLOW`` are written-out tables (they branch).
 """
 
 from datetime import time
 from enum import StrEnum
-
-from app.core.rbac import register_permissions
 
 
 class AvailabilityState(StrEnum):
@@ -112,66 +114,6 @@ TICKET_PROGRESS_STATES: frozenset[OrderTicketStatus] = frozenset(
 )
 
 
-# --- Permissions (D-009): one key per guarded endpoint action -----------------
-# The menu/ticket split follows the read-vs-manage shape every other module uses, with ONE extra
-# key. ``ticket.settle`` is DISTINCT from ``ticket.manage`` because settlement is the money moment —
-# it tenders the check and (Phase 20.6) charges a room folio — whereas ``.manage`` opens tickets,
-# adds lines and fires them to the kitchen. That is the quality.inspection.decide precedent: the
-# action with a financial effect gets its own key so a server can run the floor without being able
-# to close out a check.
-#
-# ``menu.read`` is the key the property's WEBSITE presents (D-069 scoped API key): the whole point
-# of the Phase 18 credential is that a website may read the menu and post an order while holding
-# nothing else. It is separate from ``menu.manage`` (86-ing a dish, setting a countdown) so a
-# leaked website key can never take the kitchen's dishes off the menu.
-#
-# ``reservation.book`` is the THIRD reservation key and the only one a website ever holds. It is
-# separate from ``reservation.read`` because the two answer different questions: a website asks "is
-# 19:15 bookable for four" and books it, while ``.read`` is the staff BOOK — every guest's name and
-# contact detail for the night. A leaked website key must not be a guest list (D-069's narrowing
-# rule: a key is mintable at exactly the width it needs, and no wider).
-HOSPITALITY_MENU_READ = "hospitality.menu.read"
-HOSPITALITY_MENU_MANAGE = "hospitality.menu.manage"
-HOSPITALITY_TICKET_READ = "hospitality.ticket.read"
-HOSPITALITY_TICKET_MANAGE = "hospitality.ticket.manage"
-HOSPITALITY_TICKET_SETTLE = "hospitality.ticket.settle"
-HOSPITALITY_RESERVATION_READ = "hospitality.reservation.read"
-HOSPITALITY_RESERVATION_MANAGE = "hospitality.reservation.manage"
-HOSPITALITY_RESERVATION_BOOK = "hospitality.reservation.book"
-
-register_permissions(
-    HOSPITALITY_MENU_READ,
-    HOSPITALITY_MENU_MANAGE,
-    HOSPITALITY_TICKET_READ,
-    HOSPITALITY_TICKET_MANAGE,
-    HOSPITALITY_TICKET_SETTLE,
-    HOSPITALITY_RESERVATION_READ,
-    HOSPITALITY_RESERVATION_MANAGE,
-    HOSPITALITY_RESERVATION_BOOK,
-    descriptions={
-        HOSPITALITY_MENU_READ: "Read the menu and its availability",
-        HOSPITALITY_MENU_MANAGE: "86 a menu item, set a countdown, clear an 86",
-        HOSPITALITY_TICKET_READ: "Read order tickets and the kitchen queue",
-        HOSPITALITY_TICKET_MANAGE: "Open order tickets, add lines, fire to the kitchen",
-        HOSPITALITY_TICKET_SETTLE: "Settle (tender) an order ticket",
-        HOSPITALITY_RESERVATION_READ: "Read the reservation book and the slot grid",
-        HOSPITALITY_RESERVATION_MANAGE: (
-            "Take, amend, seat, cancel and no-show reservations; set pacing capacity"
-        ),
-        HOSPITALITY_RESERVATION_BOOK: "Check reservation availability and book a table",
-    },
-)
-
-# --- Background depletion (Q4) ------------------------------------------------
-# The core/jobs.py key the ingredient-depletion handler registers under. Ingredients are issued
-# OFF-REQUEST because a synchronous settle-time depletion fails three measured ways: 38 statements
-# per ingredient move, MAX_DISPATCHES_PER_UOW = 50 counted in handler INVOCATIONS (so a 56-line
-# ticket is an HTTP 500 while the guest waits to pay), and a phantom stock-out rolling the whole uow
-# back on stock the industry's own benchmark says is permanently 2-5% wrong. Task 5 registers the
-# handler; the key lives here because Task 8's DECISIONS entry and the job-status endpoint both name
-# it and a rename must break in one place.
-DEPLETE_TICKET_JOB = "hospitality.deplete_ticket"
-
 # How many DISTINCT components one depletion job may issue. Backgrounding alone does NOT lift the
 # D-011 ceiling: the job runner executes its handler inside ``run_in_uow`` too (core/jobs.py:303),
 # so ``MAX_DISPATCHES_PER_UOW = 50`` applies to the job's transaction exactly as it applies to a
@@ -186,35 +128,6 @@ DEPLETE_TICKET_JOB = "hospitality.deplete_ticket"
 # one-line ticket exactly as it applies to a fifty-line one.
 DEPLETE_MAX_COMPONENTS_PER_JOB = 40
 
-# docflow link type (D-012) joining a fired ticket's document to each ingredient ISSUE move the
-# depletion job posts: the ticket "depleted" the stock. Declared HERE, in the publishing module,
-# following the sales/procurement/manufacturing precedent — inventory's handler imports it to write
-# the edge from the side that owns the move.
-TICKET_DEPLETED_BY_MOVE_LINK = "depleted_by"
-
-# --- Order-ticket document type, numbering + event keys (Task 4, D-012/D-011) ---------------
-# An order ticket IS a posted document in the D-012 sense: it registers in core_documents and
-# claims its gapless number AT CREATION (the sales-order / goods-receipt branch, not finance's
-# number-at-post branch) because a ticket is referenceable — by the kitchen, by the guest, by Phase
-# 20.6's folio — the moment the server opens it.
-#
-# The prefix/padding here are the CODE defaults ``ensure_sequence`` falls back to. They match
-# ``industry-templates/hospitality.yaml``'s ``numbering_formats.hospitality.order_ticket`` on
-# purpose: a tenant that applied the template gets the sequence from the template, a tenant that
-# never did gets an identical one from here, and the two must not disagree about what a ticket
-# number looks like. ``_format_number`` renders {prefix}-{year}-{padded} -> TKT-2026-000001.
-ORDER_TICKET_DOC_TYPE = "hospitality.order_ticket"
-ORDER_TICKET_SEQUENCE_NAME = "hospitality.order_ticket"
-ORDER_TICKET_NUMBER_PREFIX = "TKT"
-ORDER_TICKET_NUMBER_PADDING = 6
-
-# D-011 event keys. Declared here rather than inline in events.py so a subscriber in another module
-# (Phase 20.6's folio bridge) and the module documentation name the same constant.
-ORDER_TICKET_FIRED_EVENT_KEY = "hospitality.order_ticket.fired"
-ORDER_TICKET_SETTLED_EVENT_KEY = "hospitality.order_ticket.settled"
-# Published by the DEPLETION JOB, not by the sale — inventory's handler turns it into the ISSUE
-# moves. Named for the fact it reports (the ingredients left the storeroom), not for the job.
-TICKET_INGREDIENTS_CONSUMED_EVENT_KEY = "hospitality.order_ticket.ingredients_consumed"
 
 # --- The at-risk advisory list (Task 6) ---------------------------------------
 # How few portions a dish must be down to before the staff coverage scan reports it. A DEFAULT, not
@@ -270,6 +183,7 @@ RESERVATION_FLOW: dict[ReservationStatus, frozenset[ReservationStatus]] = {
     ReservationStatus.CANCELLED: frozenset(),
 }
 
+
 # The pacing grid's width in minutes — a CONSTANT, not a setting. OpenTable and Resy both fix it,
 # and it is half of the ``(tenant_id, service_date, slot_start)`` unique key's meaning: making it
 # configurable would silently re-point what an already-stored slot row COUNTS the moment a manager
@@ -291,14 +205,127 @@ DEFAULT_MIN_PARTY = 1
 DEFAULT_MAX_PARTY = 12
 DEFAULT_BOOKING_HORIZON_DAYS = 90
 
-# D-012 document type + numbering for the reservation, mirroring the order ticket exactly: the
-# number is claimed AT CREATION because a reservation is referenceable by the guest and by the floor
-# the instant it is confirmed, and there is no draft phase to defer it to.
-TABLE_RESERVATION_DOC_TYPE = "hospitality.table_reservation"
-TABLE_RESERVATION_SEQUENCE_NAME = "hospitality.table_reservation"
-TABLE_RESERVATION_NUMBER_PREFIX = "RSV"
-TABLE_RESERVATION_NUMBER_PADDING = 6
 
-# The docflow link type joining a seated reservation to the check opened for that party, so
-# ``GET /api/v1/documents/{id}/chain`` renders reservation -> ticket -> (Phase 20 folio line).
-RESERVATION_SEATED_AS_TICKET_LINK = "seated_as"
+# --- Rooms and housekeeping (Phase 20.1) --------------------------------------
+
+
+class HousekeepingStatus(StrEnum):
+    """What state a PHYSICAL room is in. A column on the ROOM, not on a task.
+
+    The room is what is sellable or not, so the state has to live on the room: a task is a work
+    order that may not exist (a manager can mark a room clean without one) and may be cancelled,
+    while the room's condition is always true of it. ``HousekeepingTaskStatus`` below is that work
+    order's own progress, and the two are kept in step by ``service/housekeeping.py`` routing every
+    room-state change through ONE function — never by writing the column twice.
+
+    - **DIRTY** — the guest has gone, the room needs making up. The state a checkout leaves behind,
+      and the state a room returns to from out of order.
+    - **IN_PROGRESS** — an attendant is in the room.
+    - **CLEAN** — made up, sellable.
+    - **INSPECTED** — a supervisor has checked it. A property that does not inspect simply never
+      uses the state; one that does gates arrivals on it. Both are ordinary.
+    - **OUT_OF_ORDER** — not sellable at all: a burst pipe, a refit. This is the one state with a
+      revenue consequence, and Phase 20 Task 4 hangs it off the allotment counter — a room out of
+      order lowers ``rooms_sellable`` on the future dates it covers, and coming back raises it. The
+      hook belongs in ``rooms.set_housekeeping_status``, which is why every path that moves this
+      column goes through that one function.
+    """
+
+    DIRTY = "DIRTY"
+    IN_PROGRESS = "IN_PROGRESS"
+    CLEAN = "CLEAN"
+    INSPECTED = "INSPECTED"
+    OUT_OF_ORDER = "OUT_OF_ORDER"
+
+
+# The legal moves, one frozenset per state — the ``RESERVATION_FLOW`` shape, written out because a
+# housekeeping cycle branches rather than marching. No state is terminal: a room is reused forever.
+#
+# OUT_OF_ORDER is reachable from EVERYWHERE (a pipe bursts whatever the room's condition was) and
+# leaves only to DIRTY: a room that has been out of service is not sellable on a supervisor's word,
+# it is cleaned first. CLEAN and INSPECTED fall back to DIRTY, which is the ordinary checkout.
+#
+# CLEAN and INSPECTED also go back to IN_PROGRESS, and that edge is what makes the two NON-CHECKOUT
+# triggers work: a GUEST_REQUEST arrives mid-stay on a room that is CLEAN and a SCHEDULED stayover
+# service lands on one a supervisor has INSPECTED, so without it those tasks could be RAISED and
+# never STARTED and only the departure clean would function. An attendant standing in a made-up
+# room IS the IN_PROGRESS fact, and coming back out lands on CLEAN — never straight back to
+# INSPECTED, because somebody has been in the room since it was signed off. DIRTY -> CLEAN is still
+# absent, so nothing here lets a room be declared clean without an attendant in it.
+HOUSEKEEPING_FLOW: dict[HousekeepingStatus, frozenset[HousekeepingStatus]] = {
+    HousekeepingStatus.DIRTY: frozenset(
+        {HousekeepingStatus.IN_PROGRESS, HousekeepingStatus.OUT_OF_ORDER}
+    ),
+    HousekeepingStatus.IN_PROGRESS: frozenset(
+        {HousekeepingStatus.CLEAN, HousekeepingStatus.DIRTY, HousekeepingStatus.OUT_OF_ORDER}
+    ),
+    HousekeepingStatus.CLEAN: frozenset(
+        {
+            HousekeepingStatus.IN_PROGRESS,
+            HousekeepingStatus.INSPECTED,
+            HousekeepingStatus.DIRTY,
+            HousekeepingStatus.OUT_OF_ORDER,
+        }
+    ),
+    HousekeepingStatus.INSPECTED: frozenset(
+        {
+            HousekeepingStatus.IN_PROGRESS,
+            HousekeepingStatus.DIRTY,
+            HousekeepingStatus.OUT_OF_ORDER,
+        }
+    ),
+    HousekeepingStatus.OUT_OF_ORDER: frozenset({HousekeepingStatus.DIRTY}),
+}
+
+# The states in which a room may NOT be sold. Declared here with no consumer YET and that is
+# deliberate: it is the contract PLAN 20.2's ``rooms_sellable`` count and
+# ``rooms.set_housekeeping_status``'s counter hook must both read, and a set each of them derived
+# for itself is exactly how an oversell gets in. D-085 names it; 20.2 is what imports it.
+HOUSEKEEPING_UNSELLABLE: frozenset[HousekeepingStatus] = frozenset(
+    {HousekeepingStatus.OUT_OF_ORDER}
+)
+
+
+class HousekeepingTrigger(StrEnum):
+    """WHY a housekeeping task exists — stored on the task, never inferred.
+
+    A departure clean, a planned service and a guest's mid-stay request produce identical work and
+    are counted separately by every property that measures housekeeping; the reservation that
+    caused a CHECKOUT task is off the board by the time anybody asks.
+
+    - **CHECKOUT** — the departure clean, the bulk of the day's work. Task 4's check-out raises it
+      and passes the reservation's document id, so the chain reads reservation -> task.
+    - **SCHEDULED** — a stayover service or a deep clean the property planned.
+    - **GUEST_REQUEST** — the guest asked, mid-stay.
+    """
+
+    CHECKOUT = "CHECKOUT"
+    SCHEDULED = "SCHEDULED"
+    GUEST_REQUEST = "GUEST_REQUEST"
+
+
+class HousekeepingTaskStatus(StrEnum):
+    """The work order's own progress. Distinct from ``HousekeepingStatus``: a task can be CANCELLED
+    while the room stays exactly as dirty as it was, and a room can be made CLEAN with no task at
+    all. Branching, so it gets a transition table like the reservation's rather than
+    ``TICKET_FLOW``'s index arithmetic."""
+
+    OPEN = "OPEN"
+    IN_PROGRESS = "IN_PROGRESS"
+    DONE = "DONE"
+    CANCELLED = "CANCELLED"
+
+
+# An attendant who has started can still be pulled off the room, which cancels the WORK and leaves
+# the room DIRTY — because it is. DONE and CANCELLED are terminal: a room needing more work gets a
+# NEW task, so the board always shows what is outstanding rather than reopened history.
+HOUSEKEEPING_TASK_FLOW: dict[HousekeepingTaskStatus, frozenset[HousekeepingTaskStatus]] = {
+    HousekeepingTaskStatus.OPEN: frozenset(
+        {HousekeepingTaskStatus.IN_PROGRESS, HousekeepingTaskStatus.CANCELLED}
+    ),
+    HousekeepingTaskStatus.IN_PROGRESS: frozenset(
+        {HousekeepingTaskStatus.DONE, HousekeepingTaskStatus.CANCELLED}
+    ),
+    HousekeepingTaskStatus.DONE: frozenset(),
+    HousekeepingTaskStatus.CANCELLED: frozenset(),
+}

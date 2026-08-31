@@ -39,7 +39,7 @@ from tests.modules.inventory.factories import (
     build_item,
 )
 
-__all__ = ["HospitalityPrincipal", "InventorySetup", "Kitchen", "WebsiteApi"]
+__all__ = ["HospitalityPrincipal", "InventorySetup", "Kitchen", "RoomsApi", "WebsiteApi"]
 
 
 @pytest.fixture
@@ -212,3 +212,41 @@ async def website_api(
             db_session, principal, name="read-only", scopes=[HOSPITALITY_MENU_READ]
         ),
     )
+
+
+# --- The rooms principal (Phase 20.1) -----------------------------------------
+# A logged-in staff client with NO kitchen: rooms, rate plans and the housekeeping board touch no
+# inventory item, no BOM and no stock, so seeding ``build_kitchen`` for them would pay for a
+# storeroom nothing in these tests reads. ``keys`` narrows the grant for the 403 tests, exactly as
+# ``hospitality_user_factory`` does.
+
+
+@dataclass(frozen=True)
+class RoomsApi:
+    """A bearer-token staff client over a bare property — no menu, no stock, just a tenant."""
+
+    client: AsyncClient
+    tenant_id: uuid.UUID
+
+
+@pytest.fixture
+def rooms_api_factory(
+    client: AsyncClient,
+    hospitality_user_factory: Callable[..., Awaitable[HospitalityPrincipal]],
+) -> Callable[..., Awaitable[RoomsApi]]:
+    """Provision a principal, log it in and hand back the client. Call it more than once in a test
+    and the LAST call owns the client's Authorization header — which is what the RBAC tests want,
+    and why the narrowed-grant tests each build their own."""
+
+    async def _make(**kwargs: object) -> RoomsApi:
+        principal = await hospitality_user_factory(**kwargs)
+        client.headers["Authorization"] = f"Bearer {await _login(client, principal)}"
+        return RoomsApi(client=client, tenant_id=principal.tenant_id)
+
+    return _make
+
+
+@pytest.fixture
+async def rooms_api(rooms_api_factory: Callable[..., Awaitable[RoomsApi]]) -> RoomsApi:
+    """The full-rights rooms client most tests need."""
+    return await rooms_api_factory()

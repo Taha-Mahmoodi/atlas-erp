@@ -71,6 +71,14 @@ _CLASSIFIED_KEYS = frozenset(
         "finance.statements.read",
         "finance.tax.manage",
         "finance.tax.read",
+        # Phase 20.1. GRANTED, on the same reading as the reservation keys below: room types,
+        # rooms, rates and the housekeeping board are the property's own operational data, and
+        # nothing here is behind the D-009 masking gate. `housekeeping.manage` is a SEPARATE key
+        # from `rooms.manage` because taking a room out of service has a revenue consequence
+        # (D-085) — a distinction that shapes the roles an owner DELEGATES, not what the owner
+        # holds; the Owner grant stays subtractive, so a curated subset cannot rot the next time
+        # this module ships a key.
+        "hospitality.housekeeping.manage",
         "hospitality.menu.manage",
         "hospitality.menu.read",
         # Phase 21. GRANTED to the Owner, not withheld: a reservation book is operational data the
@@ -84,6 +92,8 @@ _CLASSIFIED_KEYS = frozenset(
         "hospitality.reservation.book",
         "hospitality.reservation.manage",
         "hospitality.reservation.read",
+        "hospitality.rooms.manage",
+        "hospitality.rooms.read",
         "hospitality.ticket.manage",
         "hospitality.ticket.read",
         "hospitality.ticket.settle",
