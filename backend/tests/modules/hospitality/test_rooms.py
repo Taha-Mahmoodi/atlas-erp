@@ -344,6 +344,63 @@ async def test_patching_a_room_field_to_null_leaves_it_alone(rooms_api: RoomsApi
     assert response.json()["room_type_id"] == room["room_type_id"]
 
 
+async def test_patching_a_room_type_field_to_null_leaves_it_alone(rooms_api: RoomsApi) -> None:
+    """The same NOT NULL rule as rooms, on the sibling endpoint that did not get the guard.
+
+    ``update_room`` filtered explicit nulls; ``update_room_type`` did not, so ``{"name": null}``
+    reached the flush as a 500. Both now route through ``_sent_fields`` — the fix belongs in one
+    place, because this defect survived being fixed once.
+    """
+    client = rooms_api.client
+    room_type_id = await make_room_type(client, code="NUL", capacity=2)
+
+    response = await client.patch(
+        f"{ROOM_TYPES_URL}/{room_type_id}", json={"name": None, "base_capacity": None}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["base_capacity"] == 2
+
+
+async def test_patching_a_rate_plan_keeps_null_meaningful_only_for_valid_to(
+    rooms_api: RoomsApi,
+) -> None:
+    """``valid_to: null`` OPENS the window and must keep working; every other null is dropped.
+
+    ``valid_from: null`` additionally crashed inside ``_require_window`` comparing a date against
+    None — a service-layer TypeError before the flush, so filtering the null is what fixes it, not
+    a guard at the constraint.
+    """
+    client = rooms_api.client
+    room_type_id = await make_room_type(client, code="WIN", capacity=2)
+    created = await client.post(
+        RATE_PLANS_URL,
+        json={
+            "code": "WKND",
+            "name": "Weekend rate",
+            "room_type_id": str(room_type_id),
+            "nightly_amount": "200.00",
+            "currency_code": "USD",
+            "valid_from": "2026-01-01",
+            "valid_to": "2026-03-31",
+        },
+    )
+    assert created.status_code == 201, created.text
+    plan = created.json()
+
+    dropped = await client.patch(
+        f"{RATE_PLANS_URL}/{plan['id']}",
+        json={"name": None, "nightly_amount": None, "valid_from": None},
+    )
+    assert dropped.status_code == 200, dropped.text
+    assert dropped.json()["name"] == "Weekend rate"
+    assert Decimal(dropped.json()["nightly_amount"]) == Decimal("200.00")
+    assert dropped.json()["valid_from"] == "2026-01-01"
+
+    opened = await client.patch(f"{RATE_PLANS_URL}/{plan['id']}", json={"valid_to": None})
+    assert opened.status_code == 200, opened.text
+    assert opened.json()["valid_to"] is None
+
+
 # --- Permission gating (D-009) ------------------------------------------------
 
 

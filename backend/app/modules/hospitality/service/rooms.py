@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, NotFoundError, ValidationFailedError
 from app.core.pagination import DEFAULT_LIMIT, OrderKey, SortDirection, filter_fingerprint, paginate
-from app.core.schemas import Page
+from app.core.schemas import ApiModel, Page
 from app.modules.hospitality.constants import HOUSEKEEPING_FLOW, HousekeepingStatus
 from app.modules.hospitality.models import RatePlan, Room, RoomType
 from app.modules.hospitality.rooms_schemas import (
@@ -129,6 +129,26 @@ async def create_room_type(
     return room_type
 
 
+def _sent_fields(payload: ApiModel, *, nullable: frozenset[str] = frozenset()) -> dict[str, object]:
+    """The fields a PATCH actually sent, with explicit ``null`` dropped unless the column means
+    something by it.
+
+    ``exclude_unset`` distinguishes "not sent" from "sent as null", but every updatable column here
+    except ``RatePlanUpdate.valid_to`` is NOT NULL — so a client sending ``{"name": null}`` would
+    otherwise reach the flush and surface as a 500 IntegrityError, or (for ``valid_from``) crash in
+    :func:`_require_window` comparing a date against None. Dropping the null makes it a no-op field,
+    which is what a partial update of a required column can honestly mean.
+
+    One helper rather than the same comprehension in three services: this bug was fixed in
+    ``update_room`` alone and stayed live in the two siblings.
+    """
+    return {
+        field: value
+        for field, value in payload.model_dump(exclude_unset=True).items()
+        if value is not None or field in nullable
+    }
+
+
 async def update_room_type(
     session: AsyncSession,
     tenant_id: uuid.UUID,
@@ -137,7 +157,7 @@ async def update_room_type(
 ) -> RoomType:
     """Partial update (D-010: mutate the loaded object so the audit listener sees a diff)."""
     room_type = await get_room_type(session, tenant_id, room_type_id)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    for field, value in _sent_fields(payload).items():
         setattr(room_type, field, value)
     await session.flush()
     return room_type
@@ -202,7 +222,7 @@ async def update_room(
     neither field has a meaning for null the way ``RatePlanUpdate.valid_to`` does.
     """
     room = await get_room(session, tenant_id, room_id)
-    data = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
+    data = _sent_fields(payload)
     if "room_type_id" in data:
         await get_room_type(session, tenant_id, data["room_type_id"])
     if "room_number" in data and data["room_number"] != room.room_number:
@@ -339,7 +359,8 @@ async def update_rate_plan(
     """Re-price or re-window. The window is re-checked against whichever half is NOT being sent,
     so shortening a plan cannot leave it backwards."""
     plan = await get_rate_plan(session, tenant_id, rate_plan_id)
-    data = payload.model_dump(exclude_unset=True)
+    # valid_to is the one nullable column: sending null OPENS the window (see RatePlanUpdate).
+    data = _sent_fields(payload, nullable=frozenset({"valid_to"}))
     _require_window(
         data.get("valid_from", plan.valid_from), data.get("valid_to", plan.valid_to)
     )
