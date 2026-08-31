@@ -4,8 +4,9 @@ Factored out of AP's ``payment_clearing.py`` so AP (vendor payments) and AR (cus
 share ONE implementation of the realized-FX math instead of duplicating it (the AP clearing was
 otherwise AP-specific — it took ``VendorBill`` objects and AP error codes). This file is
 engine-agnostic: it works over plain ``ClearedItem`` tuples (control account, the item's gross, the
-cleared transaction amount, and the functional amount frozen on the item's control line at posting),
-so AP passes bills and AR passes invoices through the same builder.
+cleared transaction amount, what earlier entries already cleared, and the functional amount
+frozen on the item's control line at posting), so AP passes bills and AR passes invoices through
+the same builder.
 
 Realized FX (D-019): the control account was booked at each item's posting-date rate (R1); the bank
 moves at the clearing-date rate (R2). ``functional-at-item-rate − functional-at-clearing-rate`` over
@@ -52,12 +53,16 @@ class ClearedItem:
     control account booked on the item's posting; ``gross`` is the item's full transaction gross
     (the denominator for its frozen rate); ``cleared`` is the transaction amount this entry settles;
     ``frozen_functional`` is the functional amount the control line carried when the item posted
-    (read from its journal line so the rate comes from the actual posting, not a re-lookup)."""
+    (read from its journal line so the rate comes from the actual posting, not a re-lookup);
+    ``already_cleared`` is how much of the item EARLIER entries settled (``gross - open_amount``,
+    read before this entry draws the balance down), which is what lets the functional draw-down
+    telescope instead of re-rating each part (D-088)."""
 
     control_account_id: uuid.UUID
     gross: Decimal
     cleared: Decimal
     frozen_functional: Decimal
+    already_cleared: Decimal
 
 
 async def require_bank_account(
@@ -132,7 +137,8 @@ async def build_clearing_lines(
     DOWN a functional balance already booked rather than valuing a fresh cash movement (D-084's
     advance application): re-deriving ``quantize(amount x rate)`` on every draw-down quantizes N
     times against one quantized credit and leaves a residue on the control that never clears.
-    ``None`` keeps the cash-movement valuation every other caller wants."""
+    ``None`` keeps the cash-movement valuation every other caller wants. The ITEM side telescopes
+    for the same reason and needs no flag — see the loop below (#251, D-088)."""
     func_code = await fx.functional_currency_or_none(session, tenant_id)
     func_decimals = currency_decimals(func_code) if func_code else currency_decimals(currency_code)
     is_foreign = func_code is not None and currency_code != func_code
@@ -150,8 +156,17 @@ async def build_clearing_lines(
     func_control = Decimal(0)
     for item in items:
         if is_foreign:
+            # TELESCOPE the item's functional, never re-rate it (#251, D-088). The control carries
+            # ONE quantized ``frozen_functional`` from the item's posting, so a clearing takes the
+            # DIFFERENCE of two quantized cumulatives; the intermediate terms cancel and the last
+            # part lands on exactly what was booked. Re-deriving ``quantize(cleared x rate)`` per
+            # part instead quantizes N times against that single rounding, and an item settled in
+            # SEVERAL parts strands the difference on the AP/AR control forever — silently, because
+            # the realized-FX line absorbs it. Same discipline the advance leg already uses.
             item_rate = item.frozen_functional / item.gross
-            func_control += quantize_money(item.cleared * item_rate, func_decimals)
+            after = quantize_money((item.already_cleared + item.cleared) * item_rate, func_decimals)
+            before = quantize_money(item.already_cleared * item_rate, func_decimals)
+            func_control += after - before
         else:
             func_control += item.cleared
     func_bank = (

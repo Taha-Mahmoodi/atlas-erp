@@ -202,6 +202,94 @@ async def test_realized_fx_loss_on_later_lower_rate(
     assert Decimal(str(fx_line.functional_debit_amount)) == Decimal("5.00")
 
 
+_PARTS = ("33.33", "33.33", "33.34")  # EUR 100 settled in three receipts (#251, D-088)
+
+
+async def _receive_part(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    invoice: CustomerInvoice,
+    bank_account_id: uuid.UUID,
+    amount: str,
+) -> None:
+    """Receive ``amount`` of ``invoice`` in its own unit of work, as three separate receipts would
+    arrive — so each clearing reads the open_amount the previous one left behind."""
+    with tenant_context(tenant_id):
+
+        async def work() -> None:
+            await service.create_and_post_receipt(
+                session,
+                tenant_id,
+                CustomerReceiptCreate(
+                    partner_id=invoice.partner_id,
+                    partner_name=invoice.partner_name,
+                    receipt_date=_R2_DATE,
+                    currency_code="EUR",
+                    bank_account_id=bank_account_id,
+                    amount=Decimal(amount),
+                    allocations=[
+                        ReceiptAllocationCreate(invoice_id=invoice.id, amount=Decimal(amount))
+                    ],
+                ),
+            )
+
+        await run_in_uow(session, work)
+
+
+async def _control_balance(
+    session: AsyncSession, tenant_id: uuid.UUID, account_id: uuid.UUID
+) -> tuple[Decimal, Decimal]:
+    """The functional (debit, credit) totals every posted line put on one control account."""
+    with tenant_context(tenant_id):
+        lines = list(
+            (
+                await session.execute(
+                    select(JournalLine).where(JournalLine.account_id == account_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    debit = sum((Decimal(str(line.functional_debit_amount)) for line in lines), Decimal(0))
+    credit = sum((Decimal(str(line.functional_credit_amount)) for line in lines), Decimal(0))
+    return debit, credit
+
+
+async def test_a_foreign_invoice_settled_in_parts_leaves_nothing_on_the_ar_control(
+    db_session: AsyncSession, fx_setup: FxSetup
+) -> None:
+    """#251 (D-088): a foreign invoice settled in SEVERAL parts must clear the AR control exactly.
+
+    EUR 100 at 1.10 DEBITS the control one quantized USD 110.00. Receiving it as 33.33 / 33.33 /
+    33.34 used to credit ``quantize(part x 1.10)`` per receipt — 36.66 + 36.66 + 36.67 = USD 109.99
+    — stranding USD 0.01 on the control forever. Nothing complained: the realized-FX line absorbed
+    the difference, every entry still balanced, the invoice still read PAID and open_amount still
+    reached 0. So the assertion is the control account's own net balance, the only place the defect
+    was ever visible. Task 5's folio settles a guest's balance in parts BY DESIGN, so this is the
+    normal case, not a corner.
+
+    The telescoped draw-down makes the parts sum back by construction: 36.66 + 36.67 + 36.67.
+    """
+    invoice = await _post_eur_invoice(db_session, fx_setup)
+    for part in _PARTS:
+        await _receive_part(
+            db_session, fx_setup.tenant_id, invoice, fx_setup.accounts["1100"], part
+        )
+
+    await db_session.refresh(invoice)
+    assert invoice.status == InvoiceStatus.PAID.value
+    assert Decimal(str(invoice.open_amount)) == Decimal("0.00")
+
+    debit, credit = await _control_balance(
+        db_session, fx_setup.tenant_id, fx_setup.accounts["1900"]
+    )
+    # The invoice debited USD 110.00 once; the three receipts must credit exactly that back.
+    assert debit == Decimal("110.00")
+    assert credit == Decimal("110.00")
+    assert debit - credit == Decimal(0)  # a settled receivable owes the ledger nothing
+
+
+
 # --- Postgres variant: the realized-FX receipt satisfies the balance trigger -------------------
 
 
@@ -349,3 +437,58 @@ async def test_realized_fx_receipt_posts_on_postgres(pg_engine: AsyncEngine) -> 
     assert debit == credit == Decimal("120.00")
     fx_line = next(line for line in lines if line.account_id == ids["7100"])
     assert Decimal(str(fx_line.functional_credit_amount)) == Decimal("10.00")
+
+
+async def _post_invoice_and_receive_in_parts(
+    session: AsyncSession, ids: dict[str, uuid.UUID]
+) -> tuple[Decimal, Decimal]:
+    """Post a 100 EUR invoice at 1.10, receive it as 33.33 / 33.33 / 33.34, and return the AR
+    control's functional (debit, credit) totals."""
+    tenant_id = ids["tenant_id"]
+    partner = uuid.uuid4()
+    with tenant_context(tenant_id):
+        invoice = await service.create_customer_invoice(
+            session,
+            tenant_id,
+            CustomerInvoiceCreate(
+                partner_id=partner,
+                partner_name="Euro Customer",
+                invoice_date=_R1_DATE,
+                due_date=date(2026, 3, 31),
+                currency_code="EUR",
+                ar_account_id=ids["1200"],
+                lines=[
+                    CustomerInvoiceLineCreate(account_id=ids["4000"], net_amount=Decimal("100.00"))
+                ],
+            ),
+        )
+        await session.commit()
+        await run_in_uow(
+            session,
+            lambda: service.post_customer_invoice(
+                session, tenant_id, invoice.id, posting_date=_R1_DATE
+            ),
+        )
+    for part in _PARTS:
+        await _receive_part(session, tenant_id, invoice, ids["1100"], part)
+    return await _control_balance(session, tenant_id, ids["1200"])
+
+
+@pytest.mark.pg
+async def test_a_partly_settled_ar_control_clears_on_postgres(pg_engine: AsyncEngine) -> None:
+    """#251 (D-088) on the real engine. The residue is arithmetic, but the cumulative it telescopes
+    against is READ BACK from the stored ``open_amount`` between receipts, and MoneyType stores
+    NUMERIC on Postgres and scaled integer micro-units on SQLite (D-015) — so the fix is proven on
+    both, not just the one the suite runs on."""
+    async with pg_engine.begin() as conn:
+        await conn.exec_driver_sql(
+            "TRUNCATE fin_customer_receipt_allocations, fin_customer_receipts, "
+            "fin_customer_invoice_lines, fin_customer_invoices, fin_journal_lines, "
+            "fin_journal_entries, fin_posting_defaults, fin_exchange_rates, fin_currencies, "
+            "fin_fiscal_periods, fin_fiscal_years, fin_accounts, core_number_sequences, "
+            "core_documents, core_doc_links, adm_tenants RESTART IDENTITY CASCADE"
+        )
+    async with build_session_factory(pg_engine)() as session:
+        ids = await _setup_fx_ar(session)
+        debit, credit = await _post_invoice_and_receive_in_parts(session, ids)
+    assert debit == credit == Decimal("110.00")
