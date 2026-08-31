@@ -182,10 +182,10 @@ Spec: hospitality plan Q2 (stored availability, derived suggestion), Q4 (depleti
 
 Spec: hospitality plan Q3 (overbooking), Q5 (folio, deposits, business date, night audit). Plan: [`docs/research/phase-20-rooms-folio-plan.md`](docs/research/phase-20-rooms-folio-plan.md). **20.4 changes shipped finance — this phase lands in `dev` and is reviewed by the owner before any promotion to `main`.**
 
-- [ ] 20.1 `room_type`, `room` with housekeeping status, `rate_plan` (manual nightly rates); `housekeeping_task` document
+- [x] 20.1 `room_type`, `room` with housekeeping status, `rate_plan` (manual nightly rates); `housekeeping_task` document
 - [ ] 20.2 `reservation` document type + the overbooking guard (counter tables, `with_for_update`, portable CHECK — no Postgres-only exclusion constraint, D-003)
 - [ ] 20.3 `folio` document type: heterogeneous charge lines, doc-flow linked to their source documents, settlement posting
-- [ ] 20.4 Advance deposits — widening finance's `CustomerReceipt` clearing engine rather than duplicating it (a change to shipped finance)
+- [x] 20.4 Advance deposits — widening finance's `CustomerReceipt` clearing engine rather than duplicating it (a change to shipped finance) — **landed in `dev` only; the finance diff awaits the owner's review before any promotion to `main`** (remaining-work-plan §P3)
 - [ ] 20.5 Business date + night audit as an idempotent job on the existing runner; group bookings with a master folio splitting back at settlement
 - [ ] 20.6 The room-charge bridge: `order_ticket.settle(charge_to_room)` → `RestaurantOrderSettled` → a folio line with a doc-flow link back
 
