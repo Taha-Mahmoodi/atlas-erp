@@ -1,14 +1,20 @@
-"""The rooms masters and the one state machine among them (PLAN 20.1).
+"""The room type, the physical room, and the one state machine among them (PLAN 20.1).
+
+The RATE PLAN moved to ``rate_plans.py`` when PLAN 20.2 added the allotment hook below and this
+file reached the STRUCTURE §8.4 cap — its own aggregate (STRUCTURE §3), and the only one of the
+three masters that carries money. It imports :func:`require_code_free`, :func:`sent_fields` and
+:func:`get_room_type` from here, which is why those two are public rather than underscored: they
+are the master-CRUD plumbing the hotel side shares, and one copy each is the point of them.
 
 Ordinary tenant-scoped master CRUD in the ``inventory/service/items.py`` anatomy — a friendly
 ``*_conflict`` before the DB UNIQUE would raise, a tenant-scoped getter that 404s rather than
-leaking, keyset-paginated reads (D-014) — for three masters, plus ``set_housekeeping_status``,
+leaking, keyset-paginated reads (D-014) — for two masters, plus ``set_housekeeping_status``,
 which is not CRUD.
 
 **Why the reads live here and not in ``queries.py``.** STRUCTURE §5 reserves ``queries.py`` for the
 reads OTHER modules import, nothing imports hospitality, and that file is at 362 lines against the
 §8.4 cap. The Phase 19 note in its own docstring already says reads land wherever there is room;
-these three sit next to the writes they page over.
+each sits next to the writes it pages over.
 
 **``set_housekeeping_status`` is the file's whole point.** Phase 20 Task 4 hangs the per-date
 allotment counter off OUT_OF_ORDER — a room taken out of service must lower ``rooms_sellable`` on
@@ -21,19 +27,16 @@ housekeeping board calls this function rather than writing the room itself, and 
 from __future__ import annotations
 
 import uuid
-from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ConflictError, NotFoundError, ValidationFailedError
+from app.core.exceptions import ConflictError, NotFoundError
 from app.core.pagination import DEFAULT_LIMIT, OrderKey, SortDirection, filter_fingerprint, paginate
 from app.core.schemas import ApiModel, Page
 from app.modules.hospitality.constants import HOUSEKEEPING_FLOW, HousekeepingStatus
 from app.modules.hospitality.models import RatePlan, Room, RoomType
 from app.modules.hospitality.rooms_schemas import (
-    RatePlanCreate,
-    RatePlanUpdate,
     RoomCreate,
     RoomTypeCreate,
     RoomTypeUpdate,
@@ -41,7 +44,7 @@ from app.modules.hospitality.rooms_schemas import (
 )
 
 
-async def _require_code_free(
+async def require_code_free(
     session: AsyncSession,
     tenant_id: uuid.UUID,
     model: type[RoomType] | type[RatePlan],
@@ -110,7 +113,7 @@ async def get_room_type(
 async def create_room_type(
     session: AsyncSession, tenant_id: uuid.UUID, payload: RoomTypeCreate
 ) -> RoomType:
-    await _require_code_free(
+    await require_code_free(
         session,
         tenant_id,
         RoomType,
@@ -129,18 +132,19 @@ async def create_room_type(
     return room_type
 
 
-def _sent_fields(payload: ApiModel, *, nullable: frozenset[str] = frozenset()) -> dict[str, object]:
+def sent_fields(payload: ApiModel, *, nullable: frozenset[str] = frozenset()) -> dict[str, object]:
     """The fields a PATCH actually sent, with explicit ``null`` dropped unless the column means
     something by it.
 
-    ``exclude_unset`` distinguishes "not sent" from "sent as null", but every updatable column here
-    except ``RatePlanUpdate.valid_to`` is NOT NULL — so a client sending ``{"name": null}`` would
-    otherwise reach the flush and surface as a 500 IntegrityError, or (for ``valid_from``) crash in
-    :func:`_require_window` comparing a date against None. Dropping the null makes it a no-op field,
-    which is what a partial update of a required column can honestly mean.
+    ``exclude_unset`` distinguishes "not sent" from "sent as null", but every updatable column in
+    the hotel masters except ``RatePlanUpdate.valid_to`` is NOT NULL — so a client sending
+    ``{"name": null}`` would otherwise reach the flush and surface as a 500 IntegrityError, or
+    (for ``valid_from``) crash in ``rate_plans._require_window`` comparing a date against None.
+    Dropping the null makes it a no-op field, which is what a partial update of a required column
+    can honestly mean.
 
-    One helper rather than the same comprehension in three services: this bug was fixed in
-    ``update_room`` alone and stayed live in the two siblings.
+    One helper rather than the same comprehension in three updaters: this bug was fixed in
+    ``update_room`` alone and stayed live in the two siblings. Public so ``rate_plans`` shares it.
     """
     return {
         field: value
@@ -157,7 +161,7 @@ async def update_room_type(
 ) -> RoomType:
     """Partial update (D-010: mutate the loaded object so the audit listener sees a diff)."""
     room_type = await get_room_type(session, tenant_id, room_type_id)
-    for field, value in _sent_fields(payload).items():
+    for field, value in sent_fields(payload).items():
         setattr(room_type, field, value)
     await session.flush()
     return room_type
@@ -222,7 +226,7 @@ async def update_room(
     neither field has a meaning for null the way ``RatePlanUpdate.valid_to`` does.
     """
     room = await get_room(session, tenant_id, room_id)
-    data = _sent_fields(payload)
+    data = sent_fields(payload)
     if "room_type_id" in data:
         await get_room_type(session, tenant_id, data["room_type_id"])
     if "room_number" in data and data["room_number"] != room.room_number:
@@ -294,100 +298,4 @@ async def list_rooms(
         cursor=cursor,
         limit=limit,
         filters=filter_fingerprint(room_type_id, housekeeping_status),
-    )
-
-
-# --- Rate plans ---------------------------------------------------------------
-
-
-async def get_rate_plan(
-    session: AsyncSession, tenant_id: uuid.UUID, rate_plan_id: uuid.UUID
-) -> RatePlan:
-    """The plan, or 404 ``hospitality.rate_plan_not_found``."""
-    plan = await session.get(RatePlan, rate_plan_id)
-    if plan is None or plan.tenant_id != tenant_id:
-        raise NotFoundError(message="Rate plan not found", code="hospitality.rate_plan_not_found")
-    return plan
-
-
-def _require_window(valid_from: date, valid_to: date | None) -> None:
-    """A validity window is the whole of v1's rate calendar, so the one thing it must not be is
-    backwards — a window covering no night is a rate nothing can ever resolve. The DB CHECK is the
-    backstop; this is the readable refusal."""
-    if valid_to is not None and valid_to < valid_from:
-        raise ValidationFailedError(
-            message="A rate plan cannot end before it starts",
-            code="hospitality.rate_plan_window_invalid",
-            details={"valid_from": str(valid_from), "valid_to": str(valid_to)},
-        )
-
-
-async def create_rate_plan(
-    session: AsyncSession, tenant_id: uuid.UUID, payload: RatePlanCreate
-) -> RatePlan:
-    await _require_code_free(
-        session,
-        tenant_id,
-        RatePlan,
-        payload.code,
-        label="rate plan",
-        error_code="hospitality.rate_plan_code_conflict",
-    )
-    _require_window(payload.valid_from, payload.valid_to)
-    await get_room_type(session, tenant_id, payload.room_type_id)
-    plan = RatePlan(
-        tenant_id=tenant_id,
-        code=payload.code,
-        name=payload.name,
-        room_type_id=payload.room_type_id,
-        nightly_amount=payload.nightly_amount,
-        currency_code=payload.currency_code.upper(),
-        valid_from=payload.valid_from,
-        valid_to=payload.valid_to,
-    )
-    session.add(plan)
-    await session.flush()
-    return plan
-
-
-async def update_rate_plan(
-    session: AsyncSession,
-    tenant_id: uuid.UUID,
-    rate_plan_id: uuid.UUID,
-    payload: RatePlanUpdate,
-) -> RatePlan:
-    """Re-price or re-window. The window is re-checked against whichever half is NOT being sent,
-    so shortening a plan cannot leave it backwards."""
-    plan = await get_rate_plan(session, tenant_id, rate_plan_id)
-    # valid_to is the one nullable column: sending null OPENS the window (see RatePlanUpdate).
-    data = _sent_fields(payload, nullable=frozenset({"valid_to"}))
-    _require_window(
-        data.get("valid_from", plan.valid_from), data.get("valid_to", plan.valid_to)
-    )
-    for field, value in data.items():
-        setattr(plan, field, value)
-    await session.flush()
-    return plan
-
-
-async def list_rate_plans(
-    session: AsyncSession,
-    tenant_id: uuid.UUID,
-    *,
-    room_type_id: uuid.UUID | None = None,
-    cursor: str | None = None,
-    limit: int = DEFAULT_LIMIT,
-) -> Page[RatePlan]:
-    """The property's rates in code order, optionally for one room type."""
-    stmt = select(RatePlan).where(RatePlan.tenant_id == tenant_id)
-    if room_type_id is not None:
-        stmt = stmt.where(RatePlan.room_type_id == room_type_id)
-    return await paginate(
-        session,
-        stmt,
-        order_by=[OrderKey(RatePlan.code, SortDirection.ASC)],
-        pk=RatePlan.id,
-        cursor=cursor,
-        limit=limit,
-        filters=filter_fingerprint(room_type_id),
     )

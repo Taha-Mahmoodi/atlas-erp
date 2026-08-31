@@ -47,7 +47,7 @@ from app.modules.hospitality.rooms_schemas import (
     RoomTypeUpdate,
     RoomUpdate,
 )
-from app.modules.hospitality.service import housekeeping, rooms
+from app.modules.hospitality.service import housekeeping, rate_plans, rooms
 
 router = APIRouter(prefix="/api/v1/hospitality", tags=["hospitality-rooms"])
 
@@ -221,7 +221,7 @@ async def list_rate_plans(
     room_type_id: uuid.UUID | None = None,
 ) -> Page[RatePlanRead]:
     """The rate sheet, optionally for one room type."""
-    page = await rooms.list_rate_plans(
+    page = await rate_plans.list_rate_plans(
         session,
         current.tenant_id,
         room_type_id=room_type_id,
@@ -241,7 +241,7 @@ async def create_rate_plan(
     holder: dict[str, RatePlanRead] = {}
 
     async def work() -> None:
-        plan = await rooms.create_rate_plan(session, current.tenant_id, payload)
+        plan = await rate_plans.create_rate_plan(session, current.tenant_id, payload)
         await session.refresh(plan)
         holder["read"] = RatePlanRead.model_validate(plan)
 
@@ -263,7 +263,7 @@ async def update_rate_plan(
     holder: dict[str, RatePlanRead] = {}
 
     async def work() -> None:
-        plan = await rooms.update_rate_plan(session, current.tenant_id, rate_plan_id, payload)
+        plan = await rate_plans.update_rate_plan(session, current.tenant_id, rate_plan_id, payload)
         await session.refresh(plan)
         holder["read"] = RatePlanRead.model_validate(plan)
 
