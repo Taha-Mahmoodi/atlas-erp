@@ -199,6 +199,87 @@ async def test_realized_fx_gain_on_later_lower_rate(
     assert Decimal(str(fx_line.functional_credit_amount)) == Decimal("5.00")
 
 
+_PARTS = ("33.33", "33.33", "33.34")  # EUR 100 settled in three payments (#251, D-088)
+
+
+async def _pay_part(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    bill: VendorBill,
+    bank_account_id: uuid.UUID,
+    amount: str,
+) -> None:
+    """Pay ``amount`` of ``bill`` in its own unit of work, as three separate payments would go out —
+    so each clearing reads the open_amount the previous one left behind."""
+    with tenant_context(tenant_id):
+
+        async def work() -> None:
+            await service.create_and_post_payment(
+                session,
+                tenant_id,
+                VendorPaymentCreate(
+                    partner_id=bill.partner_id,
+                    partner_name=bill.partner_name,
+                    payment_date=_R2_DATE,
+                    currency_code="EUR",
+                    bank_account_id=bank_account_id,
+                    amount=Decimal(amount),
+                    allocations=[PaymentAllocationCreate(bill_id=bill.id, amount=Decimal(amount))],
+                ),
+            )
+
+        await run_in_uow(session, work)
+
+
+async def _control_balance(
+    session: AsyncSession, tenant_id: uuid.UUID, account_id: uuid.UUID
+) -> tuple[Decimal, Decimal]:
+    """The functional (debit, credit) totals every posted line put on one control account."""
+    with tenant_context(tenant_id):
+        lines = list(
+            (
+                await session.execute(
+                    select(JournalLine).where(JournalLine.account_id == account_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    debit = sum((Decimal(str(line.functional_debit_amount)) for line in lines), Decimal(0))
+    credit = sum((Decimal(str(line.functional_credit_amount)) for line in lines), Decimal(0))
+    return debit, credit
+
+
+async def test_a_foreign_bill_settled_in_parts_leaves_nothing_on_the_ap_control(
+    db_session: AsyncSession, fx_setup: FxSetup
+) -> None:
+    """#251 (D-088), the AP mirror of the AR case — identical because both legs run through the ONE
+    ``clearing_fx`` builder, and the issue's claim that the mirror is identical is what this proves.
+
+    EUR 100 at 1.10 CREDITS the control one quantized USD 110.00. Paying it as 33.33 / 33.33 /
+    33.34 used to debit ``quantize(part x 1.10)`` per payment — 36.66 + 36.66 + 36.67 = USD 109.99
+    — stranding USD 0.01 on the control forever, silently: the realized-FX line absorbed it, every
+    entry balanced and the bill still read PAID. The telescoped draw-down makes the parts sum back
+    by construction: 36.66 + 36.67 + 36.67.
+    """
+    bill = await _post_eur_bill(db_session, fx_setup)
+    for part in _PARTS:
+        await _pay_part(db_session, fx_setup.tenant_id, bill, fx_setup.accounts["1100"], part)
+
+    await db_session.refresh(bill)
+    assert bill.status == BillStatus.PAID.value
+    assert Decimal(str(bill.open_amount)) == Decimal("0.00")
+
+    debit, credit = await _control_balance(
+        db_session, fx_setup.tenant_id, fx_setup.accounts["2000"]
+    )
+    # The bill credited USD 110.00 once; the three payments must debit exactly that back.
+    assert credit == Decimal("110.00")
+    assert debit == Decimal("110.00")
+    assert debit - credit == Decimal(0)  # a settled payable owes the ledger nothing
+
+
+
 # --- Postgres variant: the realized-FX payment satisfies the balance trigger -------------------
 
 
@@ -340,3 +421,54 @@ async def test_realized_fx_payment_posts_on_postgres(pg_engine: AsyncEngine) -> 
     assert debit == credit == Decimal("120.00")
     fx_line = next(line for line in lines if line.account_id == ids["7110"])
     assert Decimal(str(fx_line.functional_debit_amount)) == Decimal("10.00")
+
+
+async def _post_bill_and_pay_in_parts(
+    session: AsyncSession, ids: dict[str, uuid.UUID]
+) -> tuple[Decimal, Decimal]:
+    """Post a 100 EUR bill at 1.10, pay it as 33.33 / 33.33 / 33.34, and return the AP control's
+    functional (debit, credit) totals."""
+    tenant_id = ids["tenant_id"]
+    partner = uuid.uuid4()
+    with tenant_context(tenant_id):
+        bill = await service.create_vendor_bill(
+            session,
+            tenant_id,
+            VendorBillCreate(
+                partner_id=partner,
+                partner_name="Euro Vendor",
+                bill_date=_R1_DATE,
+                due_date=date(2026, 3, 31),
+                currency_code="EUR",
+                ap_account_id=ids["2000"],
+                lines=[VendorBillLineCreate(account_id=ids["5000"], net_amount=Decimal("100.00"))],
+            ),
+        )
+        await session.commit()
+        await run_in_uow(
+            session,
+            lambda: service.post_vendor_bill(session, tenant_id, bill.id, posting_date=_R1_DATE),
+        )
+    for part in _PARTS:
+        await _pay_part(session, tenant_id, bill, ids["1100"], part)
+    return await _control_balance(session, tenant_id, ids["2000"])
+
+
+@pytest.mark.pg
+async def test_a_partly_settled_ap_control_clears_on_postgres(pg_engine: AsyncEngine) -> None:
+    """#251 (D-088) on the real engine. The residue is arithmetic, but the cumulative it telescopes
+    against is READ BACK from the stored ``open_amount`` between payments, and MoneyType stores
+    NUMERIC on Postgres and scaled integer micro-units on SQLite (D-015) — so the fix is proven on
+    both, not just the one the suite runs on."""
+    async with pg_engine.begin() as conn:
+        await conn.exec_driver_sql(
+            "TRUNCATE fin_vendor_payment_allocations, fin_vendor_payments, "
+            "fin_vendor_bill_lines, fin_vendor_bills, fin_journal_lines, fin_journal_entries, "
+            "fin_posting_defaults, fin_exchange_rates, fin_currencies, fin_fiscal_periods, "
+            "fin_fiscal_years, fin_accounts, core_number_sequences, core_documents, "
+            "core_doc_links, adm_tenants RESTART IDENTITY CASCADE"
+        )
+    async with build_session_factory(pg_engine)() as session:
+        ids = await _setup_fx_ap(session)
+        debit, credit = await _post_bill_and_pay_in_parts(session, ids)
+    assert debit == credit == Decimal("110.00")

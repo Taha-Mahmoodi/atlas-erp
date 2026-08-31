@@ -210,9 +210,8 @@ async def _advance_functional(
     Returns None — the ordinary valuation — when the receipt currency IS functional (rate 1, so
     nothing rounds) or when no advance credit line can be found for this receipt.
 
-    The ITEM side of the same builder still re-derives (a foreign invoice settled by several
-    payments strands the same residue on the AP/AR control): shipped, pinned behaviour, filed as
-    #251 rather than changed under a Phase 20 PR.
+    The ITEM side of the same builder telescopes the same way since #251 (D-088), so one rounding
+    discipline now governs both legs of a clearing entry.
     """
     func_code = await fx.functional_currency_or_none(session, tenant_id)
     if func_code is None or func_code == receipt.currency_code:

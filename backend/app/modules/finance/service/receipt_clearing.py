@@ -117,20 +117,25 @@ async def build_receipt_lines(
     it."""
     items: list[ClearedItem] = []
     for invoice, amount in pairs:
+        gross = Decimal(str(invoice.gross_amount))
         frozen = await clearing_fx.frozen_functional_on_line(
             session,
             tenant_id,
             invoice.journal_entry_id,
             invoice.ar_account_id,
-            Decimal(str(invoice.gross_amount)),
+            gross,
             side="debit",
         )
         items.append(
             ClearedItem(
                 control_account_id=invoice.ar_account_id,
-                gross=Decimal(str(invoice.gross_amount)),
+                gross=gross,
                 cleared=amount,
                 frozen_functional=frozen,
+                # What earlier receipts already cleared. ``open_amount`` is still the PRE-clearing
+                # balance here — every caller draws it down only after the entry has posted — so
+                # this is the cumulative the builder telescopes against (#251, D-088).
+                already_cleared=gross - Decimal(str(invoice.open_amount)),
             )
         )
     return await clearing_fx.build_clearing_lines(
