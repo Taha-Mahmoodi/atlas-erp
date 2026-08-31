@@ -24,6 +24,12 @@ pays for that loss is the ``overbooking_limit`` the property sold into in advanc
 Every counter touch goes through ``allotment.adjust_allotment``: a desk booking, a website booking
 and a manager's move must all touch the SAME row, or the room is sold twice by two paths that each
 believe they are correct.
+
+**Arrival and departure live in ``room_stays.py``**, which this file reached the STRUCTURE §8.4 cap
+by holding. The seam is the BOOK against the OCCUPANCY: what is sold and whether it can be is here,
+which physical room the guest is in is there. :func:`get_room_reservation`,
+:func:`require_transition` and :func:`apply_transition` are public because that file shares them —
+two spellings of "is this move legal" is how the desk and the front desk stop agreeing.
 """
 
 from __future__ import annotations
@@ -40,14 +46,12 @@ from app.core.numbering import claim_number, ensure_sequence
 from app.core.pagination import DEFAULT_LIMIT, OrderKey, SortDirection, filter_fingerprint, paginate
 from app.core.schemas import Page
 from app.modules.hospitality.constants import (
-    HOUSEKEEPING_UNSELLABLE,
     ROOM_RESERVATION_DOC_TYPE,
     ROOM_RESERVATION_FLOW,
     ROOM_RESERVATION_HOLDS_ALLOTMENT,
     ROOM_RESERVATION_NUMBER_PADDING,
     ROOM_RESERVATION_NUMBER_PREFIX,
     ROOM_RESERVATION_SEQUENCE_NAME,
-    HousekeepingStatus,
     RoomReservationStatus,
 )
 from app.modules.hospitality.models import RoomReservation
@@ -69,7 +73,7 @@ async def get_room_reservation(
     return reservation
 
 
-def _require_transition(
+def require_transition(
     reservation: RoomReservation, to_status: RoomReservationStatus
 ) -> RoomReservationStatus:
     """The lifecycle rule, read off ``ROOM_RESERVATION_FLOW``, returning the current status."""
@@ -87,7 +91,7 @@ def _require_transition(
     return current
 
 
-async def _apply_transition(
+async def apply_transition(
     session: AsyncSession,
     tenant_id: uuid.UUID,
     reservation: RoomReservation,
@@ -233,11 +237,11 @@ async def confirm_room_reservation(
     unwound. It refuses before mutating anything, so a sold-out Saturday leaves this TENTATIVE.
     """
     reservation = await get_room_reservation(session, tenant_id, reservation_id)
-    _require_transition(reservation, RoomReservationStatus.CONFIRMED)
+    require_transition(reservation, RoomReservationStatus.CONFIRMED)
     await allotment.adjust_allotment(
         session, tenant_id, reservation.room_type_id, _nights(reservation), 1
     )
-    await _apply_transition(session, tenant_id, reservation, RoomReservationStatus.CONFIRMED)
+    await apply_transition(session, tenant_id, reservation, RoomReservationStatus.CONFIRMED)
     return reservation
 
 
@@ -249,12 +253,12 @@ async def cancel_room_reservation(
     resellable. A TENTATIVE booking releases nothing — it never took anything. Refused once the
     guest is CHECKED_IN: the correction wanted then is on their folio."""
     reservation = await get_room_reservation(session, tenant_id, reservation_id)
-    _require_transition(reservation, RoomReservationStatus.CANCELLED)
+    require_transition(reservation, RoomReservationStatus.CANCELLED)
     if _holds_allotment(reservation):
         await allotment.adjust_allotment(
             session, tenant_id, reservation.room_type_id, _nights(reservation), -1
         )
-    await _apply_transition(session, tenant_id, reservation, RoomReservationStatus.CANCELLED)
+    await apply_transition(session, tenant_id, reservation, RoomReservationStatus.CANCELLED)
     return reservation
 
 
@@ -266,49 +270,8 @@ async def mark_room_no_show(
     the property sold into in advance. The one transition where the hotel and the restaurant
     deliberately disagree (D-087)."""
     reservation = await get_room_reservation(session, tenant_id, reservation_id)
-    _require_transition(reservation, RoomReservationStatus.NO_SHOW)
-    await _apply_transition(session, tenant_id, reservation, RoomReservationStatus.NO_SHOW)
-    return reservation
-
-
-async def check_in_room_reservation(
-    session: AsyncSession, tenant_id: uuid.UUID, reservation_id: uuid.UUID, room_id: uuid.UUID
-) -> RoomReservation:
-    """Put the guest in a physical room. NO COUNTER EFFECT — the nights were taken at confirmation;
-    arriving is the guest using them, not a second claim. The room must be of the booked TYPE and
-    not in ``HOUSEKEEPING_UNSELLABLE``: the type check stops a double being handed a single."""
-    reservation = await get_room_reservation(session, tenant_id, reservation_id)
-    _require_transition(reservation, RoomReservationStatus.CHECKED_IN)
-    room = await rooms.get_room(session, tenant_id, room_id)
-    if room.room_type_id != reservation.room_type_id:
-        raise ValidationFailedError(
-            message="That room is not of the booked room type",
-            code="hospitality.room_type_mismatch",
-            details={"room_id": str(room_id), "room_type_id": str(reservation.room_type_id)},
-        )
-    if HousekeepingStatus(room.housekeeping_status) in HOUSEKEEPING_UNSELLABLE:
-        raise ValidationFailedError(
-            message=f"Room {room.room_number} is not sellable",
-            code="hospitality.room_not_sellable",
-            details={
-                "room_id": str(room_id),
-                "housekeeping_status": room.housekeeping_status,
-            },
-        )
-    reservation.room_id = room_id
-    await _apply_transition(session, tenant_id, reservation, RoomReservationStatus.CHECKED_IN)
-    return reservation
-
-
-async def check_out_room_reservation(
-    session: AsyncSession, tenant_id: uuid.UUID, reservation_id: uuid.UUID
-) -> RoomReservation:
-    """They slept and left (terminal). Bookkeeping only — the nights were spent, not returned.
-    The departure clean and the folio settlement are Task 5's, hung off this document id; neither is
-    invented here, and neither would change the counter."""
-    reservation = await get_room_reservation(session, tenant_id, reservation_id)
-    _require_transition(reservation, RoomReservationStatus.CHECKED_OUT)
-    await _apply_transition(session, tenant_id, reservation, RoomReservationStatus.CHECKED_OUT)
+    require_transition(reservation, RoomReservationStatus.NO_SHOW)
+    await apply_transition(session, tenant_id, reservation, RoomReservationStatus.NO_SHOW)
     return reservation
 
 

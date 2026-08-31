@@ -55,6 +55,7 @@ from app.modules.hospitality.service import (
     rate_plans,
     reservations,
     room_reservations,
+    room_stays,
     rooms,
 )
 from tests.modules.hospitality.conftest import RoomsApi
@@ -702,7 +703,7 @@ async def test_a_checked_in_stay_cannot_be_cancelled(
         db_session,
         tenant_a,
         reservation_id,
-        room_reservations.check_in_room_reservation,
+        room_stays.check_in_room_reservation,
         prop.room_ids[0],
     )
 
@@ -732,7 +733,7 @@ async def test_check_in_refuses_an_out_of_order_room(
             db_session,
             tenant_a,
             reservation_id,
-            room_reservations.check_in_room_reservation,
+            room_stays.check_in_room_reservation,
             prop.room_ids[0],
         )
     assert excinfo.value.code == "hospitality.room_not_sellable"

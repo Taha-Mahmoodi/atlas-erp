@@ -47,7 +47,7 @@ from app.modules.hospitality.rooms_schemas import (
     RoomReservationCreate,
     RoomReservationRead,
 )
-from app.modules.hospitality.service import room_reservations
+from app.modules.hospitality.service import room_reservations, room_stays
 
 router = APIRouter(prefix="/api/v1/hospitality", tags=["hospitality-rooms"])
 website_router = APIRouter(prefix="/api/v1/hospitality", tags=["hospitality-website"])
@@ -230,7 +230,7 @@ async def check_in_room_reservation(
     holder: dict[str, RoomReservationRead] = {}
 
     async def work() -> None:
-        reservation = await room_reservations.check_in_room_reservation(
+        reservation = await room_stays.check_in_room_reservation(
             session, current.tenant_id, reservation_id, payload.room_id
         )
         await session.refresh(reservation)
@@ -253,7 +253,7 @@ async def check_out_room_reservation(
         session,
         current.tenant_id,
         reservation_id,
-        room_reservations.check_out_room_reservation,
+        room_stays.check_out_room_reservation,
     )
 
 
