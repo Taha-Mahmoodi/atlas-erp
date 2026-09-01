@@ -23,11 +23,12 @@ import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import CheckConstraint, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import run_in_uow
@@ -41,7 +42,7 @@ from app.modules.hospitality.constants import (
     ReservationStatus,
     RoomReservationStatus,
 )
-from app.modules.hospitality.models import RoomTypeInventory
+from app.modules.hospitality.models import RoomReservation, RoomTypeInventory
 from app.modules.hospitality.reservation_schemas import TableReservationCreate
 from app.modules.hospitality.rooms_schemas import (
     RatePlanCreate,
@@ -49,6 +50,7 @@ from app.modules.hospitality.rooms_schemas import (
     RoomReservationAmend,
     RoomReservationCreate,
     RoomTypeCreate,
+    RoomUpdate,
 )
 from app.modules.hospitality.service import (
     allotment,
@@ -87,20 +89,30 @@ class Property:
 
 
 async def build_property(
-    session: AsyncSession, tenant_id: uuid.UUID, *, rooms_count: int = 2, capacity: int = 2
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    *,
+    rooms_count: int = 2,
+    capacity: int = 2,
+    code: str = "DBL",
+    floor: str = "10",
 ) -> Property:
     """Seed a room type, a rate plan that prices it, and ``rooms_count`` rooms, through the REAL
     services under the tenant context (D-025), so tenancy stamping and audit fire as in production.
+
+    ``code``/``floor`` exist so a test can build a SECOND sellable type in the same property — what
+    a room moving between types needs, since both counters have to be materialised to be watched.
+    Room numbers are unique per tenant, so the two types cannot share a floor prefix.
     """
     with tenant_context(tenant_id):
         room_type = await rooms.create_room_type(
-            session, tenant_id, RoomTypeCreate(code="DBL", name="Double", base_capacity=capacity)
+            session, tenant_id, RoomTypeCreate(code=code, name=code, base_capacity=capacity)
         )
         plan = await rate_plans.create_rate_plan(
             session,
             tenant_id,
             RatePlanCreate(
-                code="BAR",
+                code=f"BAR-{code}",
                 name="Best available",
                 room_type_id=room_type.id,
                 nightly_amount=Decimal("120.00"),
@@ -113,7 +125,7 @@ async def build_property(
                 await rooms.create_room(
                     session,
                     tenant_id,
-                    RoomCreate(room_number=f"10{index}", room_type_id=room_type.id),
+                    RoomCreate(room_number=f"{floor}{index}", room_type_id=room_type.id),
                 )
             ).id
             for index in range(rooms_count)
@@ -669,6 +681,149 @@ async def test_taking_the_last_sellable_room_off_a_sold_out_night_refuses(
         assert room.housekeeping_status == HousekeepingStatus.DIRTY.value
 
 
+async def test_moving_a_room_to_another_type_moves_the_sellable_count_on_both(
+    db_session: AsyncSession, tenant_a: uuid.UUID, arrival: date
+) -> None:
+    """The SECOND axis that changes supply, and the one that had no hook.
+
+    D-085 gave ``housekeeping_status`` a single writer so the counter could hang off it.
+    ``RoomUpdate.room_type_id`` is a shipped, documented field that changes the same fact and went
+    straight to ``setattr``. Without the hook the losing type's already-materialised nights keep
+    counting a room the type no longer has — ``rooms_sellable`` overstating physical supply, which
+    is a SILENT oversell: the gate then confirms a stay for a room that does not exist, and the walk
+    happens at check-in.
+
+    Both counters must move, so both are materialised first. DBL holds two rooms and one sold night;
+    SGL holds one room and one sold night. Moving 101 out of DBL and into SGL leaves DBL sellable 1
+    (which is what it physically has) and SGL sellable 2.
+    """
+    dbl = await build_property(db_session, tenant_a, rooms_count=2, code="DBL", floor="10")
+    sgl = await build_property(db_session, tenant_a, rooms_count=1, code="SGL", floor="20")
+    for prop in (dbl, sgl):
+        booking = await book(db_session, tenant_a, prop, arrival, 1)
+        await move(db_session, tenant_a, booking, room_reservations.confirm_room_reservation)
+    assert await counters(db_session, tenant_a, dbl.room_type_id) == {arrival: (1, 2, 0)}
+    assert await counters(db_session, tenant_a, sgl.room_type_id) == {arrival: (1, 1, 0)}
+
+    with tenant_context(tenant_a):
+        await run_in_uow(
+            db_session,
+            lambda: rooms.update_room(
+                db_session, tenant_a, dbl.room_ids[0], RoomUpdate(room_type_id=sgl.room_type_id)
+            ),
+        )
+        await db_session.commit()
+
+    assert await counters(db_session, tenant_a, dbl.room_type_id) == {arrival: (1, 1, 0)}
+    assert await counters(db_session, tenant_a, sgl.room_type_id) == {arrival: (1, 2, 0)}
+
+
+async def test_moving_the_last_sellable_room_out_of_a_sold_out_type_refuses(
+    db_session: AsyncSession, tenant_a: uuid.UUID, arrival: date
+) -> None:
+    """A move that would leave the losing type oversold on a future night is REFUSED, exactly as
+    taking that room OUT_OF_ORDER would be — the same helper, the same argument. Atlas has no
+    walk-the-guest flow, so the manager is told which night to move a booking off first, and the
+    room stays on the type it was on."""
+    dbl = await build_property(db_session, tenant_a, rooms_count=1, code="DBL", floor="10")
+    sgl = await build_property(db_session, tenant_a, rooms_count=1, code="SGL", floor="20")
+    booking = await book(db_session, tenant_a, dbl, arrival, 1)
+    await move(db_session, tenant_a, booking, room_reservations.confirm_room_reservation)
+
+    with pytest.raises(ValidationFailedError) as excinfo, tenant_context(tenant_a):
+        await run_in_uow(
+            db_session,
+            lambda: rooms.update_room(
+                db_session, tenant_a, dbl.room_ids[0], RoomUpdate(room_type_id=sgl.room_type_id)
+            ),
+        )
+    assert excinfo.value.code == "hospitality.room_type_sold_out"
+
+    await db_session.rollback()
+    with tenant_context(tenant_a):
+        room = await rooms.get_room(db_session, tenant_a, dbl.room_ids[0])
+        assert room.room_type_id == dbl.room_type_id
+    assert await counters(db_session, tenant_a, dbl.room_type_id) == {arrival: (1, 1, 0)}
+
+
+async def test_moving_an_out_of_order_room_between_types_moves_neither_counter(
+    db_session: AsyncSession, tenant_a: uuid.UUID, arrival: date
+) -> None:
+    """A room in ``HOUSEKEEPING_UNSELLABLE`` is supply for NEITHER type, so moving it changes
+    nothing on either counter — the same set ``allotment`` seeds a new night from, read once. A hook
+    that fired unconditionally would decrement a type that was never counting the room."""
+    dbl = await build_property(db_session, tenant_a, rooms_count=2, code="DBL", floor="10")
+    sgl = await build_property(db_session, tenant_a, rooms_count=1, code="SGL", floor="20")
+    for prop in (dbl, sgl):
+        booking = await book(db_session, tenant_a, prop, arrival, 1)
+        await move(db_session, tenant_a, booking, room_reservations.confirm_room_reservation)
+    with tenant_context(tenant_a):
+        await run_in_uow(
+            db_session,
+            lambda: rooms.set_housekeeping_status(
+                db_session, tenant_a, dbl.room_ids[0], HousekeepingStatus.OUT_OF_ORDER
+            ),
+        )
+        await db_session.commit()
+    before = (
+        await counters(db_session, tenant_a, dbl.room_type_id),
+        await counters(db_session, tenant_a, sgl.room_type_id),
+    )
+
+    with tenant_context(tenant_a):
+        await run_in_uow(
+            db_session,
+            lambda: rooms.update_room(
+                db_session, tenant_a, dbl.room_ids[0], RoomUpdate(room_type_id=sgl.room_type_id)
+            ),
+        )
+        await db_session.commit()
+
+    assert (
+        await counters(db_session, tenant_a, dbl.room_type_id),
+        await counters(db_session, tenant_a, sgl.room_type_id),
+    ) == before
+
+
+async def test_the_supply_hook_leaves_already_slept_nights_alone(
+    db_session: AsyncSession, tenant_a: uuid.UUID, arrival: date
+) -> None:
+    """``adjust_sellable``'s ``on_or_after`` is a real boundary, not decoration.
+
+    A night in the past is history: rewriting what a sold-out Tuesday could have held changes
+    nothing anybody can sell and lies about the past, and on a property with three years of
+    materialised nights it is also the difference between a bounded UPDATE and an unbounded one.
+    Widening the filter to every materialised night leaves every other hospitality test green,
+    which is exactly why this one exists.
+    """
+    # Off ``date.today()`` and not off the ``arrival`` fixture: ``adjust_sellable``'s boundary is
+    # the LOCAL today and the fixture is built from ``utcnow()``, so a machine behind UTC in the
+    # small hours would otherwise put this night exactly ON the boundary it is meant to be under.
+    slept = date.today() - timedelta(days=1)
+    prop = await build_property(db_session, tenant_a, rooms_count=3)
+    for night in (slept, arrival):
+        booking = await book(db_session, tenant_a, prop, night, 1)
+        await move(db_session, tenant_a, booking, room_reservations.confirm_room_reservation)
+    assert await counters(db_session, tenant_a, prop.room_type_id) == {
+        slept: (1, 3, 0),
+        arrival: (1, 3, 0),
+    }
+
+    with tenant_context(tenant_a):
+        await run_in_uow(
+            db_session,
+            lambda: rooms.set_housekeeping_status(
+                db_session, tenant_a, prop.room_ids[0], HousekeepingStatus.OUT_OF_ORDER
+            ),
+        )
+        await db_session.commit()
+
+    assert await counters(db_session, tenant_a, prop.room_type_id) == {
+        slept: (1, 3, 0),  # already slept — untouched
+        arrival: (1, 2, 0),  # still sellable — one room fewer
+    }
+
+
 # --- The document: numbering, transitions and check-in ------------------------
 
 
@@ -737,6 +892,47 @@ async def test_check_in_refuses_an_out_of_order_room(
             prop.room_ids[0],
         )
     assert excinfo.value.code == "hospitality.room_not_sellable"
+
+
+async def test_two_guests_cannot_be_checked_into_the_same_room(
+    db_session: AsyncSession, tenant_a: uuid.UUID, arrival: date
+) -> None:
+    """A guest walking into an occupied room, which nothing above check-in prevents.
+
+    The allotment counter sells a room TYPE, so two confirmed doubles on one night are a perfectly
+    correct book on a two-room property — which physical room each gets is a check-in decision. The
+    type check and the housekeeping check both pass for the second guest, so without an occupancy
+    refusal the desk hands out the same key twice. 409 rather than 422: the room is in a state that
+    forbids the move, like every other ``*_not_transitionable``.
+
+    The partial unique index is the backstop under the read, and the end state is what says the two
+    are not the same guard: the refused booking is still CONFIRMED, still holding its night, and
+    free to be given a different room — or the same one once the first guest leaves.
+    """
+    prop = await build_property(db_session, tenant_a, rooms_count=2)
+    first = await book(db_session, tenant_a, prop, arrival, 1, guest_name="First")
+    second = await book(db_session, tenant_a, prop, arrival, 1, guest_name="Second")
+    for booking in (first, second):
+        await move(db_session, tenant_a, booking, room_reservations.confirm_room_reservation)
+    await move(db_session, tenant_a, first, room_stays.check_in_room_reservation, prop.room_ids[0])
+
+    with pytest.raises(ConflictError) as excinfo:
+        await move(
+            db_session, tenant_a, second, room_stays.check_in_room_reservation, prop.room_ids[0]
+        )
+    assert excinfo.value.code == "hospitality.room_occupied"
+
+    await db_session.rollback()
+    with tenant_context(tenant_a):
+        held = await room_reservations.get_room_reservation(db_session, tenant_a, second)
+        assert held.status == RoomReservationStatus.CONFIRMED.value
+        assert held.room_id is None
+
+    await move(db_session, tenant_a, first, room_stays.check_out_room_reservation)
+    await move(db_session, tenant_a, second, room_stays.check_in_room_reservation, prop.room_ids[0])
+    with tenant_context(tenant_a):
+        moved_in = await room_reservations.get_room_reservation(db_session, tenant_a, second)
+        assert moved_in.room_id == prop.room_ids[0]
 
 
 async def test_a_rate_plan_for_another_room_type_is_refused(
@@ -904,6 +1100,41 @@ async def test_replaying_a_booking_key_returns_the_first_booking(
     assert first.json()["reservation_number"] == second.json()["reservation_number"]
 
 
+async def test_a_website_replay_returns_its_first_booking_and_never_the_desks(
+    rooms_api: RoomsApi, arrival: date
+) -> None:
+    """D-013 on the WEBSITE create, and the separate-namespace claim under it.
+
+    The website is the surface that actually retries: a guest's browser resubmits a timed-out form,
+    and a second RMR- document for one guest who asked once is the duplicate the key exists to
+    prevent. The desk create is replayed by the test above; this replays the route that needs it
+    most, and the one whose principal cannot fix a duplicate afterwards.
+
+    The namespaces are ``hospitality.room_reservation.create`` and ``...book`` — DIFFERENT keys, so
+    the SAME ``Idempotency-Key`` on the two surfaces is two requests and must produce two bookings.
+    One shared namespace would have a website's "1" hand a desk clerk the website's booking, or the
+    reverse: a replay is only ever a replay of the same request.
+    """
+    prop = await api_property(rooms_api.client)
+    body = booking_body(prop, arrival)
+    first = await rooms_api.client.post(
+        WEBSITE_BOOKINGS_URL, json=body, headers={"Idempotency-Key": "same-key"}
+    )
+    replay = await rooms_api.client.post(
+        WEBSITE_BOOKINGS_URL, json=body, headers={"Idempotency-Key": "same-key"}
+    )
+    assert first.status_code == 201 and replay.status_code == 201, replay.text
+    assert first.json()["id"] == replay.json()["id"]
+    assert first.json()["reservation_number"] == replay.json()["reservation_number"]
+
+    desk = await rooms_api.client.post(
+        BOOKINGS_URL, json=body, headers={"Idempotency-Key": "same-key"}
+    )
+    assert desk.status_code == 201, desk.text
+    assert desk.json()["id"] != first.json()["id"]
+    assert desk.json()["reservation_number"] != first.json()["reservation_number"]
+
+
 async def test_the_arrivals_list_is_paginated_and_costs_at_most_three_queries(
     rooms_api: RoomsApi, arrival: date, query_counter: Callable[..., Any]
 ) -> None:
@@ -999,6 +1230,46 @@ async def test_the_website_booking_comes_back_tentative_and_cannot_assert_a_stat
         headers={"Idempotency-Key": "site-2"},
     )
     assert asserted.status_code == 422, asserted.text
+
+
+def test_the_new_tables_emit_the_constraint_names_migration_0056_creates() -> None:
+    """The NAMING_CONVENTION trap, pinned rather than remembered.
+
+    ``Base.metadata``'s convention is ``ck_%(table_name)s_%(constraint_name)s``, and alembic's
+    ``op.create_table`` builds its table on a BARE ``MetaData`` with no convention at all. So a
+    ``ck_``-prefixed name on the model double-prefixes —
+    ``ck_hsp_room_type_inventory_ck_hsp_room_type_inventory_sold_non_negative``, 71 chars — while
+    the migration creates the 44-char literal. The two never match, and past PostgreSQL's 63-byte
+    cap the model's half is machine-truncated on top of that.
+
+    Autogenerate does not compare CHECK constraints, so the drift test cannot see this; the model is
+    read against the migration's SOURCE instead, which is the only place the real DDL is written.
+    Both tables' indexes go through the same check, which is what holds the new partial unique index
+    on ``(tenant_id, room_id) WHERE status = 'CHECKED_IN'`` to one spelling.
+
+    Scope: the 57 OTHER double-prefixed CHECK names already in ``Base.metadata`` are a
+    platform-wide trap this PR does not rename (they are shipped tables), filed separately.
+    """
+    migration = (
+        Path(__file__).resolve().parents[3] / "alembic/versions/0056_hsp_room_bookings.py"
+    ).read_text()
+    emitted = sorted(
+        [
+            str(constraint.name)
+            for model in (RoomTypeInventory, RoomReservation)
+            for constraint in model.__table__.constraints
+            if isinstance(constraint, CheckConstraint)
+        ]
+        + [
+            str(index.name)
+            for model in (RoomTypeInventory, RoomReservation)
+            for index in model.__table__.indexes
+        ]
+    )
+    assert emitted, "the two tables declare CHECKs and indexes; reading none is the test failing"
+    for name in emitted:
+        assert len(name) <= 63, f"{name} is {len(name)} chars; PostgreSQL truncates past 63"
+        assert name in migration, f"{name} is not what migration 0056 creates"
 
 
 async def test_the_restaurant_reservation_status_enum_is_a_different_type(

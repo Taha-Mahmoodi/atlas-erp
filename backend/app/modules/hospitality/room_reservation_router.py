@@ -178,7 +178,9 @@ async def amend_room_reservation(
     """Move the dates or the party size. A CONFIRMED stay releases its old nights and takes the new
     ones in ONE locked pass; a full destination refuses and leaves the booking exactly as it was.
 
-    No idempotency key: an amend creates no document, and replaying it lands on the same state."""
+    No idempotency key: an amend creates no document, and replaying it lands on the same state —
+    which is only true because the reservation row is taken ``with_for_update`` first, so two
+    concurrent moves of one booking serialize instead of both releasing the same old nights."""
     holder: dict[str, RoomReservationRead] = {}
 
     async def work() -> None:
@@ -203,9 +205,19 @@ async def confirm_room_reservation(
     """Sell the stay. 422 ``hospitality.room_type_sold_out`` is a NORMAL ANSWER naming the night
     that refused, so the desk can offer around it.
 
-    No idempotency key: the document already exists, and the transition table rejects a second
-    attempt with 409 ``hospitality.room_reservation_not_transitionable`` (the ``/settle``
-    precedent), which is also what makes a double-click safe: it cannot take the nights twice."""
+    No idempotency key: the document already exists, and a second SEQUENTIAL attempt is rejected
+    409 ``hospitality.room_reservation_not_transitionable`` by the transition table (the
+    ``/settle`` precedent).
+
+    **What makes a double-CLICK safe is the row lock, not that table.** A double-clicked Confirm
+    button is two CONCURRENT requests, and the transition table is an in-Python read on whatever was
+    loaded: under READ COMMITTED both racers see TENTATIVE, both pass it, and both then serialize
+    perfectly correctly on the allotment row and BOTH take them — one booking, two room-nights, and
+    a counter permanently overstated, because the later cancel gives back only one. So
+    ``room_reservations.get_room_reservation`` takes the reservation ``with_for_update`` BEFORE the
+    allotment pass, and the loser's re-read under that lock is what sees CONFIRMED and answers 409.
+    Pinned by ``test_two_concurrent_confirmations_of_one_booking_take_the_nights_once`` (``-m pg``),
+    which reports ``["confirmed", "confirmed"]`` with the lock deleted."""
     return await _transition(
         session,
         current.tenant_id,
@@ -225,8 +237,13 @@ async def check_in_room_reservation(
     current: CurrentUserDep,
     session: SessionDep,
 ) -> RoomReservationRead:
-    """Put the guest in a physical room. The room must be of the booked type and not out of order;
-    the counter is untouched, because the nights were taken at confirmation."""
+    """Put the guest in a physical room. The room must be of the booked type, not out of order, and
+    **EMPTY** — 409 ``hospitality.room_occupied`` names the booking already in there. The counter is
+    untouched, because the nights were taken at confirmation.
+
+    Exclusivity starts here and nowhere earlier: the gate sells a room TYPE, so two confirmed
+    doubles on one night are a correct book and this is the call that decides which of them gets
+    101."""
     holder: dict[str, RoomReservationRead] = {}
 
     async def work() -> None:
@@ -265,7 +282,10 @@ async def check_out_room_reservation(
 async def cancel_room_reservation(
     reservation_id: uuid.UUID, current: CurrentUserDep, session: SessionDep
 ) -> RoomReservationRead:
-    """Call the stay off, releasing every night it was holding."""
+    """Call the stay off, releasing every night it was holding. A double-clicked Cancel releases
+    them ONCE: the reservation row is taken ``with_for_update`` before the release, so the second
+    request re-reads CANCELLED and answers 409 rather than double-releasing into the ``max(0, ...)``
+    floor and silently putting a room back on sale that was never taken."""
     return await _transition(
         session, current.tenant_id, reservation_id, room_reservations.cancel_room_reservation
     )

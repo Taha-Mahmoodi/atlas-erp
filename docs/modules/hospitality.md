@@ -38,6 +38,7 @@ payment, split checks, and tax on a check (see *Known limits*).
 | `models/room_inventory.py` | `RoomTypeInventory` (`hsp_room_type_inventory`) — the allotment counter — and `RoomReservation` (`hsp_room_reservations`), the HOTEL booking. A sibling of `rooms.py` rather than more of it: that file could not take them under the §8.4 cap | D-007, D-012, D-087 |
 | `service/allotment.py` | `adjust_allotment`, `adjust_sellable`, `stay_nights`, `RoomTypeSoldOutError` — the booking gate, and the only code that moves `rooms_sold` | D-003, D-020/D-036, D-087 |
 | `service/room_reservations.py` | the `TENTATIVE → CONFIRMED → CHECKED_IN → CHECKED_OUT \| NO_SHOW \| CANCELLED` lifecycle, and where each transition touches the counter | D-012, D-087 |
+| `service/room_stays.py` | ARRIVAL and DEPARTURE — the only code that reads `Room` or writes `RoomReservation.room_id`, and where the occupancy refusal lives. Split out of `service/room_reservations.py` when that file reached the §8.4 cap; the seam is the BOOK against the OCCUPANCY, and Task 5's folio hangs here | D-012, D-087, STRUCTURE §8.4 |
 | `service/rate_plans.py` | rate-plan CRUD, moved out of `service/rooms.py` when 20.2's allotment hook took that file to the §8.4 cap; it imports `require_code_free` / `sent_fields` / `get_room_type` from there | STRUCTURE §3, §8.4 |
 | `room_reservation_router.py` | the desk's book (`/room-reservations`) and the ONE website route (`/website/room-reservations`), two `APIRouter`s in one file because the website's surface here is a single route sharing the desk's create | D-009, D-013, D-069 |
 | `models/__init__.py` | the one import surface — `from app.modules.hospitality.models import X` for every model above; a `models/` package rather than one file because Phase 21 took `models.py` to 451 lines, past the STRUCTURE §8.4 cap (#176) | STRUCTURE §3, §8.4 |
@@ -711,6 +712,38 @@ suite (D-003) could not exercise the invariant the money path depends on. The sh
 is `inventory/service/stock_quants.apply_bin_delta` (D-020/D-036) — locked read, pre-flight refusal,
 upsert-on-lock, portable CHECK backstop. One pattern, now four counters.
 
+### THREE locks, and each covers a race the other two do not
+
+The night counter is not the only exclusive thing in the module, and treating it as though it were
+is how two of the three races below got in. Every writer takes them in this order and no other:
+
+| lock | taken by | the race it covers |
+|---|---|---|
+| the RESERVATION row (`get_room_reservation(for_update=True)`) | every transition | **one booking moved twice at once.** A double-clicked Confirm is two CONCURRENT requests; `ROOM_RESERVATION_FLOW` is an in-Python read, so both racers see TENTATIVE, both pass it, then both serialize correctly on the night rows and BOTH take the nights. The counter is then overstated forever — the later cancel gives back one, not two. `/cancel` has the same shape on the way out, and worse: a double release is floored at zero and looks perfectly plausible |
+| the per-night ALLOTMENT rows, ascending | confirm, cancel, the date change | **two DIFFERENT bookings overselling one night**, and (via the sort) the deadlock two overlapping multi-night stays would otherwise reach |
+| the ROOM row (`get_room(for_update=True)`) | check-in | **two guests handed the same key.** The gate sells a room TYPE, so two confirmed doubles are a correct book and nothing before check-in makes 101 exclusive |
+
+The reservation is the OUTER lock, which is also what keeps the order deterministic: reservation,
+then nights ascending, then (on the arrival path, which touches no night) the room. Each is pinned
+by its own `-m pg` race, and each of those races fails when its lock is deleted — including the
+cancellation one, which first had to be rewritten because it passed the mutation for the wrong
+reason (see *Racing on purpose* below).
+
+### Racing on purpose
+
+The `-m pg` races in `test_room_booking_races.py` needed two harness fixes before any of them proved
+anything, and both are the same class of mistake as a test that cannot fail:
+
+- **The gate has to release both parties and wait for both to RESUME.** `Event.set()` only makes a
+  waiter runnable; the last arriver keeps the loop and can run its whole transaction to COMMIT
+  before the waiter is scheduled back on.
+- **The connection pool has to be WARM.** A session that finds the pool empty pays a fresh TCP
+  connect plus asyncpg's auth — about fifteen milliseconds — and a racer paying that inside the
+  window reads state its opponent already committed. Real web workers hold warm connections.
+
+Until both were fixed the cancellation race answered 409 for the wrong reason and passed with the
+row lock deleted.
+
 ### A missing allotment row means DEFAULT supply, not zero
 
 Nothing pre-creates the grid — that would be one row per room type per night forever, for nights
@@ -739,6 +772,7 @@ readable `hospitality.stay_range_invalid` both refuse a stay that sleeps nobody.
 | CHECKED_IN, CHECKED_OUT | nothing — the nights are consumed, not re-sold |
 | date change | release the old nights, take the new, in ONE locked ascending pass |
 | room → `OUT_OF_ORDER` | `rooms_sellable -= 1` on materialised FUTURE nights; back on return |
+| room moved to another TYPE | `rooms_sellable -= 1` on the losing type and `+= 1` on the gaining one, both on materialised FUTURE nights |
 
 **NO_SHOW is the row that differs from the restaurant, and it is not an oversight in either
 direction.** A table no-showed before its slot is still resellable, so D-077 gives the covers back;
@@ -758,6 +792,26 @@ past its CHECK would be a 500 on the housekeeping board; recording the oversell 
 booked into a room the property cannot give them, and Atlas has no walk-the-guest flow to resolve
 one. So the manager is told which night to move a booking off first.
 
+**`rooms_sellable` has TWO writers upstream of it, not one.** D-085 gave `housekeeping_status` a
+single writer so the counter could hang off it; `RoomUpdate.room_type_id` — "renumber a room or move
+it to another type" — changes exactly the same fact and had no hook at all, so moving 101 out of DBL
+left every materialised DBL night still counting a room the type no longer has. That is a SILENT
+oversell: the gate then confirms a stay for a room that does not exist and the walk happens at
+check-in. `rooms.update_room` now routes both types through `adjust_sellable`, in ascending room-type
+id order so two rooms swapping types at once cannot deadlock, and the losing type refuses with
+`hospitality.room_type_sold_out` on the same argument as the housekeeping case. A room already in
+`HOUSEKEEPING_UNSELLABLE` is supply for neither type, so moving it moves nothing.
+
+**A physical room holds ONE guest at a time, and that starts at check-in.** The counter sells a room
+TYPE, so two confirmed doubles on one night are a correct book and nothing above check-in makes 101
+exclusive. Check-in reads the room's current occupant and answers 409 `hospitality.room_occupied`,
+under a partial unique index `(tenant_id, room_id) WHERE status = 'CHECKED_IN'` — partial, because a
+room houses a different guest every week and every past stay keeps its `room_id`, and declared
+outside the class body so its dialect predicates are column expressions rather than `sa.text`, which
+the D-007 grep gate bans under `app/modules/` (the `hr/models/payroll.py` precedent). The read gives
+the friendly answer, the index is the backstop, and the room row lock is what makes the read
+trustworthy when two receptionists check in at the same instant.
+
 ### Endpoints
 
 Desk (`/api/v1/hospitality`, `hospitality.room_reservation.read` / `.manage`):
@@ -769,7 +823,7 @@ Desk (`/api/v1/hospitality`, `hospitality.room_reservation.read` / `.manage`):
 | POST | `/room-reservations` | takes a TENTATIVE booking; **idempotent** (D-013) |
 | PATCH | `/room-reservations/{id}` | dates and party size, in one locked pass |
 | POST | `/room-reservations/{id}/confirm` | the sale — the counter touch |
-| POST | `/room-reservations/{id}/check-in` | body `{room_id}`; the room must be of the booked type and sellable |
+| POST | `/room-reservations/{id}/check-in` | body `{room_id}`; the room must be of the booked type, sellable, and unoccupied |
 | POST | `/room-reservations/{id}/check-out` | terminal |
 | POST | `/room-reservations/{id}/cancel` | releases whatever it held |
 | POST | `/room-reservations/{id}/no-show` | releases nothing |
@@ -799,6 +853,7 @@ exists.
 | `hospitality.party_size_exceeds_capacity` | 422 | the party is larger than the type's `base_capacity` |
 | `hospitality.room_type_mismatch` | 422 | check-in into a room of the wrong type |
 | `hospitality.room_not_sellable` | 422 | check-in into an `OUT_OF_ORDER` room |
+| `hospitality.room_occupied` | 409 | check-in into a room another booking is still CHECKED_IN to |
 
 ### Write budget
 
@@ -826,3 +881,15 @@ plain ceiling.
    yet lets a manager set it per night — it is written only by the migration's default of zero.
 7. **Check-out raises no housekeeping task and opens no folio.** Both are Task 5; check-out today is
    a status move, and the `HOUSEKEEPING_TRIGGERED_BY_LINK` edge 20.1 declared still has no writer.
+8. **The Phase 21 TABLE reservation has the room booking's old shape**, and this PR did not change
+   it: `reservations.get_reservation` is a plain read, so two concurrent `/seat` or `/cancel` calls
+   on ONE table booking can both pass `RESERVATION_FLOW` and both move the pacing counter. Same
+   class, different counter — filed rather than fixed here, because it is shipped behaviour with its
+   own tests.
+9. **The `ck_` double-prefix trap is fixed on these two tables only.** `Base.metadata`'s convention
+   is `ck_%(table_name)s_%(constraint_name)s`, so a `ck_`-prefixed CHECK name double-prefixes on the
+   model while `op.create_table` (a bare MetaData, no convention) emits the short literal. The five
+   new CHECKs are declared BARE and pinned by
+   `test_the_new_tables_emit_the_constraint_names_migration_0056_creates`; **57 other CHECK names
+   across the platform are still double-prefixed**, several past PostgreSQL's 63-byte cap, and
+   renaming shipped constraints is its own migration. Filed.

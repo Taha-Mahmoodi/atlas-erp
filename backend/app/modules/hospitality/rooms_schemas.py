@@ -69,7 +69,12 @@ class RoomCreate(ApiModel):
 
 class RoomUpdate(ApiModel):
     """Renumber a room or move it to another type. NOT the housekeeping status — see the module
-    docstring: one writer, because Task 4's counter hangs off it."""
+    docstring: one writer, because Task 4's counter hangs off it.
+
+    ``room_type_id`` moves the allotment counter too (``rooms.update_room`` calls
+    ``allotment.adjust_sellable`` on both the losing and the gaining type), so a move that would
+    leave the losing type oversold on a future night is refused with
+    ``hospitality.room_type_sold_out`` rather than silently overstating its supply."""
 
     model_config = ConfigDict(extra="forbid")
 

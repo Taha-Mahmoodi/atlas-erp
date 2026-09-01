@@ -60,12 +60,41 @@ from app.modules.hospitality.service import allotment, rate_plans, rooms
 
 
 async def get_room_reservation(
-    session: AsyncSession, tenant_id: uuid.UUID, reservation_id: uuid.UUID
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    reservation_id: uuid.UUID,
+    *,
+    for_update: bool = False,
 ) -> RoomReservation:
     """The booking, or 404 ``hospitality.room_reservation_not_found`` — including for another
-    tenant's id, which is what stops a desk reading somebody else's arrivals."""
-    reservation = await session.get(RoomReservation, reservation_id)
-    if reservation is None or reservation.tenant_id != tenant_id:
+    tenant's id, which is what stops a desk reading somebody else's arrivals.
+
+    **``for_update=True`` on EVERY transition path, and it is the OUTER lock.** The status is read
+    in Python and the counter is guarded by ``hsp_room_type_inventory`` row locks, so without this
+    two concurrent confirmations of ONE booking (a double-clicked Confirm button IS two concurrent
+    requests) both read TENTATIVE under READ COMMITTED, then serialize perfectly correctly on the
+    allotment row and BOTH increment it. ``require_transition`` cannot stop that: it has already run
+    on a stale read. The counter is then permanently overstated — the later cancel gives back one
+    night, not two — and the property starts refusing room-nights it can honour.
+
+    Reservation FIRST, allotment rows second, so the lock order stays deterministic (D-020/D-036).
+
+    ``populate_existing`` is a GUARD, not the mechanism, and nothing needs it TODAY: every request
+    has its own session and this is its first load of the row, so deleting it leaves the whole suite
+    (races included) green. It stays because the factory is ``expire_on_commit=False``, so the first
+    caller that reads this booking and THEN locks it in one session would be handed the identity
+    map's pre-lock copy — Task 5's folio is that caller waiting to happen.
+
+    Reads (``GET``, the arrivals book) pass ``for_update=False`` and take no lock at all — a desk
+    refreshing the book must not queue behind a confirmation.
+    """
+    stmt = select(RoomReservation).where(
+        RoomReservation.id == reservation_id, RoomReservation.tenant_id == tenant_id
+    )
+    if for_update:
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
+    reservation = (await session.execute(stmt)).scalar_one_or_none()
+    if reservation is None:
         raise NotFoundError(
             message="Room reservation not found",
             code="hospitality.room_reservation_not_found",
@@ -236,7 +265,7 @@ async def confirm_room_reservation(
     registry row is rewritten — a refusal that has already rewritten a document status has to be
     unwound. It refuses before mutating anything, so a sold-out Saturday leaves this TENTATIVE.
     """
-    reservation = await get_room_reservation(session, tenant_id, reservation_id)
+    reservation = await get_room_reservation(session, tenant_id, reservation_id, for_update=True)
     require_transition(reservation, RoomReservationStatus.CONFIRMED)
     await allotment.adjust_allotment(
         session, tenant_id, reservation.room_type_id, _nights(reservation), 1
@@ -252,7 +281,7 @@ async def cancel_room_reservation(
     cut-off, unlike the restaurant: a room-night cancelled before it is slept is genuinely
     resellable. A TENTATIVE booking releases nothing — it never took anything. Refused once the
     guest is CHECKED_IN: the correction wanted then is on their folio."""
-    reservation = await get_room_reservation(session, tenant_id, reservation_id)
+    reservation = await get_room_reservation(session, tenant_id, reservation_id, for_update=True)
     require_transition(reservation, RoomReservationStatus.CANCELLED)
     if _holds_allotment(reservation):
         await allotment.adjust_allotment(
@@ -269,7 +298,7 @@ async def mark_room_no_show(
     so there is no night left to give back, and what pays for that loss is the ``overbooking_limit``
     the property sold into in advance. The one transition where the hotel and the restaurant
     deliberately disagree (D-087)."""
-    reservation = await get_room_reservation(session, tenant_id, reservation_id)
+    reservation = await get_room_reservation(session, tenant_id, reservation_id, for_update=True)
     require_transition(reservation, RoomReservationStatus.NO_SHOW)
     await apply_transition(session, tenant_id, reservation, RoomReservationStatus.NO_SHOW)
     return reservation
@@ -293,7 +322,7 @@ async def amend_room_reservation(
     still shift a booking by a day. Changing the ROOM TYPE is deliberately not offered: it is two
     counters rather than one and it re-prices the stay, so it is a cancel and a re-book.
     """
-    reservation = await get_room_reservation(session, tenant_id, reservation_id)
+    reservation = await get_room_reservation(session, tenant_id, reservation_id, for_update=True)
     current = RoomReservationStatus(reservation.status)
     if current not in (RoomReservationStatus.TENTATIVE, RoomReservationStatus.CONFIRMED):
         raise ConflictError(

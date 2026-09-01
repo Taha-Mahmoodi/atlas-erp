@@ -8,7 +8,16 @@ PLAN 20.2 — the booking gate. Creates TWO tables and alters NOTHING, so no tri
 touched (D-022) and there is no trigger-recreation concern. All DDL is portable across SQLite and
 PostgreSQL (D-003) — no exclusion constraint, which is the point of Q3's finding: a counter row per
 (room type, night) rather than an `EXCLUDE USING gist` over a daterange, so the SQLite suite can
-exercise the invariant the money path depends on. Every identifier is <= 63 chars (the PG cap).
+exercise the invariant the money path depends on.
+
+**Every CHECK is declared with a BARE name here and on the model**, and that is not cosmetic: the
+metadata's `ck` convention is `ck_%(table_name)s_%(constraint_name)s`, so a `ck_`-prefixed name
+double-prefixes to `ck_hsp_room_type_inventory_ck_hsp_room_type_inventory_sold_non_negative` (71
+chars) on the MODEL while `op.create_table` — which builds its table on a bare MetaData with no
+convention — emits the short literal, and the two stop matching. Bare names make the model emit
+exactly what this file creates. The longest identifier either side emits is
+`uq_hsp_room_type_inventory_tenant_id_room_type_id_stay_date` at 59 chars, inside PostgreSQL's
+63-byte cap, so nothing is silently truncated.
 
 - hsp_room_type_inventory: the ALLOTMENT COUNTER. Unique on (tenant_id, room_type_id, stay_date),
   which doubles as the index every read of this table uses (PERFORMANCE §1: its leading columns
@@ -23,6 +32,10 @@ exercise the invariant the money path depends on. Every identifier is <= 63 char
   type it sells, the rate plan that prices it, and the physical room assigned at check-in (nullable
   — a NULL composite FK is not enforced, MATCH SIMPLE). CHECK departure_date > arrival_date: the
   stay is the half-open range [arrival, departure), so a zero-night stay is a booking for nobody.
+  PARTIAL UNIQUE INDEX (tenant_id, room_id) WHERE status = 'CHECKED_IN': a physical room holds one
+  guest at a time. Partial because a room houses a different guest every week and every past stay
+  keeps its room_id, so a plain UNIQUE would refuse the second stay 101 ever had; both dialect
+  predicates are declared because each engine needs its own (D-021, the core_documents precedent).
 
 Both tables' rows are seeded by nothing: the counter materialises lazily on the first booking of a
 night (a missing row means DEFAULT supply, counted live from hsp_rooms, never zero), so this
@@ -172,6 +185,14 @@ def upgrade() -> None:
         "ix_hsp_room_reservations_tenant_id_rate_plan_id",
         "hsp_room_reservations",
         ["tenant_id", "rate_plan_id"],
+    )
+    op.create_index(
+        "uq_hsp_room_reservations_tenant_id_room_id_checked_in",
+        "hsp_room_reservations",
+        ["tenant_id", "room_id"],
+        unique=True,
+        postgresql_where=sa.text("status = 'CHECKED_IN'"),
+        sqlite_where=sa.text("status = 'CHECKED_IN'"),
     )
 
 

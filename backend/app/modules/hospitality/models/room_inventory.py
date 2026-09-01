@@ -74,7 +74,10 @@ class RoomTypeInventory(UuidPKMixin, TenantMixin, TimestampMixin, Base):
     The two CHECKs are the DB backstop under the service's pre-flight refusal, the
     ``inv_stock_quants`` shape (D-020/D-036): ``adjust_allotment`` refuses
     ``hospitality.room_type_sold_out`` BEFORE writing, and the CHECK is what fires if that is ever
-    bypassed. Plain CHECKs, so they hold on both engines (D-003).
+    bypassed. Plain CHECKs, so they hold on both engines (D-003), and named BARE: the metadata's
+    convention is ``ck_%(table_name)s_%(constraint_name)s``, so a ``ck_``-prefixed name here would
+    double-prefix to 71+ chars past PostgreSQL's 63-byte cap and stop matching what migration 0056
+    creates.
     """
 
     __tablename__ = "hsp_room_type_inventory"
@@ -91,14 +94,14 @@ class RoomTypeInventory(UuidPKMixin, TenantMixin, TimestampMixin, Base):
         tenant_unique(),
         tenant_fk("adm_tenants"),
         tenant_fk("hsp_room_types", "room_type_id"),
-        sa.CheckConstraint("rooms_sold >= 0", name="ck_hsp_room_type_inventory_sold_non_negative"),
+        sa.CheckConstraint("rooms_sold >= 0", name="sold_non_negative"),
         sa.CheckConstraint(
             "rooms_sold <= rooms_sellable + overbooking_limit",
-            name="ck_hsp_room_type_inventory_sold_within_supply",
+            name="sold_within_supply",
         ),
         sa.CheckConstraint(
             "rooms_sellable >= 0 AND overbooking_limit >= 0",
-            name="ck_hsp_room_type_inventory_supply_non_negative",
+            name="supply_non_negative",
         ),
     )
 
@@ -139,6 +142,12 @@ class RoomReservation(UuidPKMixin, TenantMixin, AuditMixin, DocumentMixin, Times
     the 3rd and leaving on the 5th sleeps two nights, so the CHECK is strict: a stay of zero nights
     is a booking for nobody occupying a room somebody else could have had.
 
+    **``room_id`` is EXCLUSIVE while the guest is in it**, and that is an index, not a convention:
+    ``(tenant_id, room_id) WHERE status = 'CHECKED_IN'`` unique. The counter sells a room TYPE, so
+    two confirmed doubles are a correct book and nothing in the gate decides which physical room
+    either gets — check-in does, and without this a desk can hand two guests the same key. Past
+    stays keep their ``room_id`` forever, which is why the index is PARTIAL rather than a UNIQUE.
+
     ``rate_plan_id`` is required, not optional: a booking nobody can price is a booking the Task 7
     night audit cannot post revenue for, and "we will work the rate out later" is how a folio ends
     up empty. The service checks the plan prices THIS room type — otherwise a suite sells at a
@@ -161,9 +170,9 @@ class RoomReservation(UuidPKMixin, TenantMixin, AuditMixin, DocumentMixin, Times
         ),
         sa.CheckConstraint(
             "departure_date > arrival_date",
-            name="ck_hsp_room_reservations_stay_at_least_one_night",
+            name="stay_at_least_one_night",
         ),
-        sa.CheckConstraint("party_size > 0", name="ck_hsp_room_reservations_party_size_positive"),
+        sa.CheckConstraint("party_size > 0", name="party_size_positive"),
         # PERFORMANCE §1: the book is read as "arrivals from this date, optionally in state X",
         # ordered by arrival — (tenant, arrival_date) serves the filter AND the sort from one index.
         sa.Index(
@@ -200,5 +209,20 @@ class RoomReservation(UuidPKMixin, TenantMixin, AuditMixin, DocumentMixin, Times
     guest_contact: Mapped[str | None] = mapped_column(sa.String(200), nullable=True)
     notes: Mapped[str | None] = mapped_column(sa.String(1000), nullable=True)
 
+
+# AT MOST ONE guest in a physical room at a time. Partial and unique rather than a plain UNIQUE,
+# because a room houses a different guest every week and every past stay keeps its `room_id`: only
+# the CHECKED_IN row is exclusive. Declared OUTSIDE the class body so its dialect predicate is a
+# COLUMN EXPRESSION rather than a raw SQL string — the D-007 grep gate bans `sa.text` under
+# app/modules/ (the `hr/models/payroll.py` precedent). Both dialect kwargs, D-021: each engine needs
+# its own and neither is optional.
+sa.Index(
+    "uq_hsp_room_reservations_tenant_id_room_id_checked_in",
+    RoomReservation.tenant_id,
+    RoomReservation.room_id,
+    unique=True,
+    postgresql_where=RoomReservation.status == RoomReservationStatus.CHECKED_IN.value,
+    sqlite_where=RoomReservation.status == RoomReservationStatus.CHECKED_IN.value,
+)
 
 __all__ = ["RoomReservation", "RoomTypeInventory"]

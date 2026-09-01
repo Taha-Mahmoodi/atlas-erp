@@ -387,6 +387,11 @@ ROOM_RESERVATION_FLOW: dict[RoomReservationStatus, frozenset[RoomReservationStat
 # The states that HOLD room-nights on the allotment counter, so "does this booking still own its
 # nights" is written once and cannot drift between confirm, cancel, no-show and the date change.
 # TENTATIVE is absent because it never took them; NO_SHOW and CHECKED_OUT because they spent them.
+# CHECKED_IN is a domain fact no reader can currently OBSERVE, said here rather than left to be
+# discovered: `_holds_allotment` is consulted only by cancel and the date change, and both refuse a
+# CHECKED_IN booking before they ask. It stays because the set answers "which states own their
+# nights" — a guest in the room plainly does — and dropping it would make the set assert the
+# opposite of the truth to save a line. PLAN 20.5's early departure is the reader that will see it.
 ROOM_RESERVATION_HOLDS_ALLOTMENT: frozenset[RoomReservationStatus] = frozenset(
     {RoomReservationStatus.CONFIRMED, RoomReservationStatus.CHECKED_IN}
 )

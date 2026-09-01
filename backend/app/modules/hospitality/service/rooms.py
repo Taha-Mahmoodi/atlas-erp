@@ -16,12 +16,20 @@ reads OTHER modules import, nothing imports hospitality, and that file is at 362
 §8.4 cap. The Phase 19 note in its own docstring already says reads land wherever there is room;
 each sits next to the writes it pages over.
 
-**``set_housekeeping_status`` is the file's whole point.** Phase 20 Task 4 hangs the per-date
-allotment counter off OUT_OF_ORDER — a room taken out of service must lower ``rooms_sellable`` on
-the future dates it covers, and coming back must raise it. That is a set-based counter touch, and
-it only works if the column has ONE writer. So: the update schema cannot carry the column, the
-housekeeping board calls this function rather than writing the room itself, and PLAN 20.2 added
-its ``allotment`` call inside that function without touching a single caller (D-085).
+**TWO things in this file change what the property can sell, and both call
+``allotment.adjust_sellable``.** A room is countable supply for exactly one room type while it is
+outside ``HOUSEKEEPING_UNSELLABLE``, so the counter has to hear about a change to EITHER axis:
+
+- ``set_housekeeping_status`` — OUT_OF_ORDER and back. Phase 20 Task 4 hangs the per-date counter
+  off it, which only works because the column has ONE writer (D-085): the update schema cannot
+  carry it, the housekeeping board calls this function rather than writing the room itself, and
+  PLAN 20.2 added the ``allotment`` call inside the transition branch with no caller touched.
+- ``update_room``'s ``room_type_id`` — a room moved between types. This one had no hook when D-085
+  was written, and its absence was a SILENT OVERSELL: the losing type's materialised nights kept
+  counting a room it no longer has.
+
+One helper, two hooks, and the set they both test against (``HOUSEKEEPING_UNSELLABLE``) is the same
+one ``allotment`` seeds a new night's ``rooms_sellable`` from.
 """
 
 from __future__ import annotations
@@ -195,10 +203,26 @@ async def list_room_types(
 # --- Rooms --------------------------------------------------------------------
 
 
-async def get_room(session: AsyncSession, tenant_id: uuid.UUID, room_id: uuid.UUID) -> Room:
-    """The room, or 404 ``hospitality.room_not_found``."""
-    room = await session.get(Room, room_id)
-    if room is None or room.tenant_id != tenant_id:
+async def get_room(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    room_id: uuid.UUID,
+    *,
+    for_update: bool = False,
+) -> Room:
+    """The room, or 404 ``hospitality.room_not_found``.
+
+    ``for_update=True`` is check-in's: two receptionists putting two guests into 101 at the same
+    instant would otherwise both read it empty and both write, and the partial unique index would
+    turn the loser into a 500 instead of a 409. Locking the ROOM makes the occupancy read that
+    follows authoritative. Taken AFTER the reservation lock, never before — reservation then room is
+    the one order this module's writers use (D-020/D-036).
+    """
+    stmt = select(Room).where(Room.id == room_id, Room.tenant_id == tenant_id)
+    if for_update:
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
+    room = (await session.execute(stmt)).scalar_one_or_none()
+    if room is None:
         raise NotFoundError(message="Room not found", code="hospitality.room_not_found")
     return room
 
@@ -227,16 +251,39 @@ async def update_room(
     """Renumber a room or move it to another type. It CANNOT move the housekeeping status — the
     schema has no such field, so the attempt is a 422 rather than a silent no-op.
 
+    **Moving a room to another type is the SECOND axis that changes supply, and it goes through
+    ``adjust_sellable`` exactly as the housekeeping crossing does.** D-085 gave
+    ``housekeeping_status`` one writer so the counter could have one hook; ``room_type_id`` had no
+    hook at all, so moving 101 out of DBL left every materialised DBL night still claiming the
+    room — ``rooms_sellable`` overstating physical supply, the gate then confirming a stay that
+    check-in has no room to give. Both counters move, the loser's ``-1`` and the winner's ``+1``,
+    and the losing type REFUSES with ``hospitality.room_type_sold_out`` if any future night is
+    already sold to the room being taken away: Atlas has no walk-the-guest flow, so the manager is
+    told which night to move a booking off first (``adjust_sellable``'s own argument). A room
+    already in ``HOUSEKEEPING_UNSELLABLE`` counts toward neither type, so moving it moves nothing.
+
     Both columns are NOT NULL, so an explicitly-sent ``null`` is dropped rather than flushed into an
     IntegrityError; ``exclude_unset`` is what distinguishes "not sent" from "sent as null", and
     neither field has a meaning for null the way ``RatePlanUpdate.valid_to`` does.
     """
     room = await get_room(session, tenant_id, room_id)
     data = sent_fields(payload)
+    moved_to: uuid.UUID | None = None
     if "room_type_id" in data:
         await get_room_type(session, tenant_id, data["room_type_id"])
+        if data["room_type_id"] != room.room_type_id:
+            moved_to = data["room_type_id"]
     if "room_number" in data and data["room_number"] != room.room_number:
         await _require_room_number_free(session, tenant_id, data["room_number"])
+    countable = HousekeepingStatus(room.housekeeping_status) not in HOUSEKEEPING_UNSELLABLE
+    if moved_to is not None and countable:
+        # The losing type first or the gaining type first is decided by id, not by role: two rooms
+        # swapping types at the same instant would otherwise lock the two counters in opposite
+        # orders, which is the deadlock D-020/D-036 forbids. Same rule as the night pass's sort.
+        for type_id, delta in sorted(((room.room_type_id, -1), (moved_to, 1))):
+            await allotment.adjust_sellable(
+                session, tenant_id, type_id, delta, on_or_after=date.today()
+            )
     for field, value in data.items():
         setattr(room, field, value)
     await session.flush()
