@@ -5,7 +5,8 @@ document constants were added to Phase 19's ordering set and Phase 21's reservat
 KIND rather than by phase — the ``sales/constants/`` and ``finance/constants/`` precedent, both of
 which made the same move at the same cap:
 
-- ``enums``: every status/lifecycle StrEnum with its transition table, plus the numeric defaults.
+- ``enums``: the RESTAURANT's status/lifecycle StrEnums with their transition tables and defaults.
+- ``rooms``: the same for the HOTEL — the room's condition, housekeeping, the room booking.
 - ``permissions``: the ``hospitality.*`` keys, registered into the RBAC catalog AT IMPORT (D-009).
 - ``documents``: doc types, number sequences, docflow link types, domain-event keys, job keys.
 
@@ -29,6 +30,10 @@ from app.modules.hospitality.constants.documents import (
     ORDER_TICKET_SEQUENCE_NAME,
     ORDER_TICKET_SETTLED_EVENT_KEY,
     RESERVATION_SEATED_AS_TICKET_LINK,
+    ROOM_RESERVATION_DOC_TYPE,
+    ROOM_RESERVATION_NUMBER_PADDING,
+    ROOM_RESERVATION_NUMBER_PREFIX,
+    ROOM_RESERVATION_SEQUENCE_NAME,
     TABLE_RESERVATION_DOC_TYPE,
     TABLE_RESERVATION_NUMBER_PADDING,
     TABLE_RESERVATION_NUMBER_PREFIX,
@@ -46,18 +51,12 @@ from app.modules.hospitality.constants.enums import (
     DEFAULT_SERVICE_CLOSE,
     DEFAULT_SERVICE_OPEN,
     DEPLETE_MAX_COMPONENTS_PER_JOB,
-    HOUSEKEEPING_FLOW,
-    HOUSEKEEPING_TASK_FLOW,
-    HOUSEKEEPING_UNSELLABLE,
     RESERVATION_FLOW,
     SLOT_MINUTES,
     TICKET_FLOW,
     TICKET_PROGRESS_STATES,
     AvailabilitySource,
     AvailabilityState,
-    HousekeepingStatus,
-    HousekeepingTaskStatus,
-    HousekeepingTrigger,
     OrderTicketStatus,
     ReservationStatus,
 )
@@ -68,11 +67,26 @@ from app.modules.hospitality.constants.permissions import (
     HOSPITALITY_RESERVATION_BOOK,
     HOSPITALITY_RESERVATION_MANAGE,
     HOSPITALITY_RESERVATION_READ,
+    HOSPITALITY_ROOM_RESERVATION_BOOK,
+    HOSPITALITY_ROOM_RESERVATION_MANAGE,
+    HOSPITALITY_ROOM_RESERVATION_READ,
     HOSPITALITY_ROOMS_MANAGE,
     HOSPITALITY_ROOMS_READ,
     HOSPITALITY_TICKET_MANAGE,
     HOSPITALITY_TICKET_READ,
     HOSPITALITY_TICKET_SETTLE,
+)
+from app.modules.hospitality.constants.rooms import (
+    DEFAULT_OVERBOOKING_LIMIT,
+    HOUSEKEEPING_FLOW,
+    HOUSEKEEPING_TASK_FLOW,
+    HOUSEKEEPING_UNSELLABLE,
+    ROOM_RESERVATION_FLOW,
+    ROOM_RESERVATION_HOLDS_ALLOTMENT,
+    HousekeepingStatus,
+    HousekeepingTaskStatus,
+    HousekeepingTrigger,
+    RoomReservationStatus,
 )
 
 __all__ = [
@@ -81,6 +95,7 @@ __all__ = [
     "DEFAULT_COVERS_MAX",
     "DEFAULT_MAX_PARTY",
     "DEFAULT_MIN_PARTY",
+    "DEFAULT_OVERBOOKING_LIMIT",
     "DEFAULT_PARTIES_MAX",
     "DEFAULT_SERVICE_CLOSE",
     "DEFAULT_SERVICE_OPEN",
@@ -92,6 +107,9 @@ __all__ = [
     "HOSPITALITY_RESERVATION_BOOK",
     "HOSPITALITY_RESERVATION_MANAGE",
     "HOSPITALITY_RESERVATION_READ",
+    "HOSPITALITY_ROOM_RESERVATION_BOOK",
+    "HOSPITALITY_ROOM_RESERVATION_MANAGE",
+    "HOSPITALITY_ROOM_RESERVATION_READ",
     "HOSPITALITY_ROOMS_MANAGE",
     "HOSPITALITY_ROOMS_READ",
     "HOSPITALITY_TICKET_MANAGE",
@@ -113,6 +131,12 @@ __all__ = [
     "ORDER_TICKET_SETTLED_EVENT_KEY",
     "RESERVATION_FLOW",
     "RESERVATION_SEATED_AS_TICKET_LINK",
+    "ROOM_RESERVATION_DOC_TYPE",
+    "ROOM_RESERVATION_FLOW",
+    "ROOM_RESERVATION_HOLDS_ALLOTMENT",
+    "ROOM_RESERVATION_NUMBER_PADDING",
+    "ROOM_RESERVATION_NUMBER_PREFIX",
+    "ROOM_RESERVATION_SEQUENCE_NAME",
     "SLOT_MINUTES",
     "TABLE_RESERVATION_DOC_TYPE",
     "TABLE_RESERVATION_NUMBER_PADDING",
@@ -129,4 +153,5 @@ __all__ = [
     "HousekeepingTrigger",
     "OrderTicketStatus",
     "ReservationStatus",
+    "RoomReservationStatus",
 ]

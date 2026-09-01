@@ -1,4 +1,5 @@
-"""Wire shapes for the rooms masters and the housekeeping board (PLAN 20.1).
+"""Wire shapes for the HOTEL side of hospitality: the rooms masters and the housekeeping board
+(PLAN 20.1), and the room reservation the booking gate sells (PLAN 20.2).
 
 A SIBLING of ``schemas.py``/``menu_schemas.py``/``reservation_schemas.py``, the
 ``finance/payables_schemas.py`` precedent (D-030/D-031): the hotel side is a third document family
@@ -23,6 +24,7 @@ from app.modules.hospitality.constants import (
     HousekeepingStatus,
     HousekeepingTaskStatus,
     HousekeepingTrigger,
+    RoomReservationStatus,
 )
 
 
@@ -67,7 +69,12 @@ class RoomCreate(ApiModel):
 
 class RoomUpdate(ApiModel):
     """Renumber a room or move it to another type. NOT the housekeeping status — see the module
-    docstring: one writer, because Task 4's counter hangs off it."""
+    docstring: one writer, because Task 4's counter hangs off it.
+
+    ``room_type_id`` moves the allotment counter too (``rooms.update_room`` calls
+    ``allotment.adjust_sellable`` on both the losing and the gaining type), so a move that would
+    leave the losing type oversold on a future night is refused with
+    ``hospitality.room_type_sold_out`` rather than silently overstating its supply."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -171,3 +178,82 @@ class HousekeepingTaskRead(ApiModel):
     status: str
     assigned_user_id: uuid.UUID | None
     notes: str | None
+
+
+# --- The room reservation (PLAN 20.2) -----------------------------------------
+# ONE create shape for both surfaces, the ``TableReservationCreate`` precedent: a booking carries no
+# money and no internal master data beyond the two ids the property published, so a desk booking and
+# a website booking are the same request. What differs is what the CALLER may do next, and that is a
+# permission (``room_reservation.book`` cannot confirm), not a second schema.
+#
+# There is no ``status`` field on any request shape, and ``extra="forbid"`` makes that a REFUSAL
+# rather than a silent drop. That is the acknowledgment rule ``place_website_order`` set: an
+# external client is told what state its booking is actually in (``RoomReservationRead.status`` is
+# TENTATIVE) and cannot assert its way past the human check by sending a state it wants.
+
+
+class RoomReservationCreate(ApiModel):
+    """Ask for a stay. ``departure_date`` is the morning the guest LEAVES and is never a night sold,
+    so a 3rd-to-5th booking is two nights — the half-open range the counter keys on."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    room_type_id: uuid.UUID
+    rate_plan_id: uuid.UUID
+    arrival_date: date
+    departure_date: date
+    party_size: int = Field(gt=0)
+    guest_name: str = Field(min_length=1, max_length=200)
+    # ONE free-text field. Structured phone/email parsing is the website's job (Q1): it has already
+    # authenticated its guest and owns notification.
+    guest_contact: str | None = Field(default=None, max_length=200)
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class RoomReservationAmend(ApiModel):
+    """Move a stay — dates and party, in ONE call, because a desk re-booking a guest is doing one
+    thing and two calls would be two counter passes (see ``amend_room_reservation``).
+
+    ``room_type_id`` and ``rate_plan_id`` are absent: changing the type is two counters rather than
+    one AND re-prices the stay, so it is a cancel and a re-book, not an amend.
+    ``guest_name``/``guest_contact``/``notes`` are absent for the opposite reason — they touch no
+    counter, and folding them in would make a typo correction take the allotment lock.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    arrival_date: date | None = None
+    departure_date: date | None = None
+    party_size: int | None = Field(default=None, gt=0)
+
+
+class RoomCheckIn(ApiModel):
+    """Which physical room the guest is being put in. Required: check-in without a room is the state
+    the booking is already in."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    room_id: uuid.UUID
+
+
+class RoomReservationRead(ApiModel):
+    """A stay as the book, the desk and the website all see it.
+
+    ``status`` is AUTHORITATIVE and is why the website never has to guess: a booking it just placed
+    comes back TENTATIVE, which is the property's answer that a human still has to confirm it.
+    ``document_id`` is the D-012 registry id ``GET /api/v1/documents/{id}/chain`` takes.
+    """
+
+    id: uuid.UUID
+    document_id: uuid.UUID
+    reservation_number: str
+    status: RoomReservationStatus
+    room_type_id: uuid.UUID
+    rate_plan_id: uuid.UUID
+    arrival_date: date
+    departure_date: date
+    party_size: int
+    room_id: uuid.UUID | None = None
+    guest_name: str
+    guest_contact: str | None = None
+    notes: str | None = None

@@ -79,3 +79,20 @@ HOUSEKEEPING_TASK_NUMBER_PADDING = 6
 # check-out passes the departing reservation's document id through
 # ``HousekeepingTaskCreate.predecessor_document_id``.
 HOUSEKEEPING_TRIGGERED_BY_LINK = "triggers_housekeeping"
+
+
+# --- The ROOM reservation (Phase 20.2, D-012) ---------------------------------
+# A SECOND reservation document type in one module, and the constants are spelled ROOM_RESERVATION_*
+# throughout so no reader has to work out whether a bare RESERVATION_* meant the restaurant's table
+# booking or the hotel's room booking. The prefix is RMR-, distinct from the table booking's RSV-:
+# the two number series must never interleave, because a guest quoting "RSV-2026-000012" down the
+# phone is quoting exactly one document.
+#
+# Numbered AT CREATION, on the order-ticket branch, even though the booking starts TENTATIVE and
+# holds no room-nights: the number is the confirmation reference the website shows the guest and the
+# desk searches on, so it exists before the sale does. Confirming it later is a status move, not a
+# second document.
+ROOM_RESERVATION_DOC_TYPE = "hospitality.room_reservation"
+ROOM_RESERVATION_SEQUENCE_NAME = "hospitality.room_reservation"
+ROOM_RESERVATION_NUMBER_PREFIX = "RMR"
+ROOM_RESERVATION_NUMBER_PADDING = 6

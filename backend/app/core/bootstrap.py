@@ -25,6 +25,12 @@ from app.modules.hospitality.reservation_router import (
 from app.modules.hospitality.reservation_website_router import (
     website_router as hospitality_reservation_website_router,
 )
+from app.modules.hospitality.room_reservation_router import (
+    router as hospitality_room_reservation_router,
+)
+from app.modules.hospitality.room_reservation_router import (
+    website_router as hospitality_room_reservation_website_router,
+)
 from app.modules.hospitality.rooms_router import router as hospitality_rooms_router
 from app.modules.hospitality.router import router as hospitality_router
 from app.modules.hospitality.website_router import router as hospitality_website_router
@@ -155,6 +161,14 @@ def mount_routers(app: FastAPI) -> None:
     # never read that six rooms are out of order). No route here collides with the three above: the
     # prefixes /room-types, /rooms, /rate-plans and /housekeeping-tasks are all new.
     app.include_router(hospitality_rooms_router)
+    # PLAN 20.2's booking gate: the desk's room-reservation book and the ONE website route that
+    # takes a TENTATIVE booking. Both routers live in one file because the website's whole surface
+    # here is that single route sharing the desk's create; the split by PRINCIPAL is preserved in
+    # the guards (hospitality.room_reservation.book cannot confirm, cannot read the arrivals list).
+    # Paths are /room-reservations and /website/room-reservations — the same noun on both, and
+    # neither collides with Phase 21's /reservations or /table-reservations above.
+    app.include_router(hospitality_room_reservation_router)
+    app.include_router(hospitality_room_reservation_website_router)
     # Industry module (PLAN 14.1): the INDUSTRY CONFIGURATION LAYER at /api/v1/industry — the YAML
     # template catalog + the idempotent apply endpoint (D-060). Mounted last; it imports core +
     # admin (it applies to a tenant + writes settings) and PUBLISHES IndustryTemplateApplying for

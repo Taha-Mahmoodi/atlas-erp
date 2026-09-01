@@ -33,7 +33,21 @@ from app.modules.finance.receivables_schemas import (
 from app.modules.finance.service import customer_invoices, customer_receipts
 from app.modules.hospitality.constants import AvailabilityState
 from app.modules.hospitality.reservation_schemas import TableReservationCreate
-from app.modules.hospitality.service import availability, depletion, reservations, tickets
+from app.modules.hospitality.rooms_schemas import (
+    RatePlanCreate,
+    RoomCreate,
+    RoomReservationCreate,
+    RoomTypeCreate,
+)
+from app.modules.hospitality.service import (
+    availability,
+    depletion,
+    rate_plans,
+    reservations,
+    room_reservations,
+    rooms,
+    tickets,
+)
 from app.modules.inventory import service
 from app.modules.inventory.constants import MoveType
 from app.modules.inventory.schemas import StockMoveCreate
@@ -90,6 +104,28 @@ TABLE_BOOKING_CEILING = 16
 # Phase 20 Task 1's ratchet on the SHIPPED AR money path, pinned before Task 2 (PLAN 20.4) widens
 # the receipt. See the test's docstring for what the measured number is made of.
 AR_ROUND_TRIP_CEILING = 85
+
+# PLAN 20.2's ratchet, and the shape it pins is FLATNESS-EXCEPT-FOR-NIGHTS.
+#
+# Confirming a stay is the one write in this phase whose cost is legitimately linear: one
+# ``hsp_room_type_inventory`` row per night slept, locked and updated. Everything else — the
+# document read, the transition check, the status write and its registry mirror — is fixed. So the
+# ratchet asserts the DIFFERENCE between a 14-night and a 3-night confirmation is exactly eleven
+# nights' worth, which is what catches the two shapes that have no behavioural symptom: a gate that
+# re-counted the property's rooms per night (``_sellable_rooms`` inside the loop rather than
+# memoised across it) and a per-night document or reservation read. A ceiling alone is satisfied by
+# a shape that still grows the wrong way — the Phase 19 lesson from ``test_firing_does_not_scale``.
+#
+# MEASURED on this branch: a 3-night confirmation costs 13 statements — the reservation load, the
+# SHARE lock on the room-type row (the supply gate, ONE per call), the room COUNT that seeds a new
+# night's supply (also ONE per call, not one per night), three locked SELECT + INSERT pairs, the
+# counter UPDATE, the status write, and the registry read + UPDATE — and each further night costs
+# exactly 2 more (its locked SELECT and its INSERT; the UPDATEs batch). 14 nights therefore costs
+# 35. Both measurements run after the tenant's RMR- sequence exists, so they differ in nothing but
+# the number of nights. The supply gate is a FLAT cost by construction, which is the property this
+# ratchet exists to hold: it is taken once, before the night pass, never inside it.
+ROOM_BOOKING_CEILING = 16
+ROOM_BOOKING_PER_NIGHT = 2
 
 # The service window a tenant that has never configured one books inside (constants.DEFAULT_*), and
 # the grid step. Spelled here rather than imported so the ratchet keeps measuring the same shape
@@ -449,3 +485,108 @@ async def test_an_invoice_to_cleared_receipt_round_trip_stays_within_its_ceiling
         "rewrites:\n" + "\n".join(counted.statements)
     )
     print(f"\n[perf] invoice -> receipt -> cleared round trip: {counted.count} statements")
+
+
+async def test_confirming_a_stay_costs_the_same_plus_exactly_its_nights(
+    db_session: AsyncSession,
+    tenant_a: uuid.UUID,
+    query_counter: Callable[[], QueryCounter],
+) -> None:
+    """A 3-night booking and a 14-night booking differ by EXACTLY eleven nights of counter rows.
+
+    Q3's argument for a per-date counter over an interval lock is that a stay's cost is one row per
+    night and nothing else: the gate locks those rows, reads three integers each and writes one, and
+    never looks at the property's other room types, at its other nights, or at the bookings already
+    in the book. Two shapes would break that and NEITHER has a behavioural symptom — a gate that
+    re-counted ``hsp_rooms`` per night to seed ``rooms_sellable`` (O(nights) COUNTs on the request a
+    guest waits on), and a per-night reservation or document read. A THIRD now: the supply gate on
+    the room-type row, which must be taken once before the night pass and never inside it. Asserting
+    the DIFFERENCE rather than only the ceiling is what catches all three: a ceiling alone is
+    satisfied by a shape that still grows the wrong way.
+
+    Both bookings are created and committed first, so only the CONFIRM — the counter touch — is
+    measured, and both run after the tenant's RMR- sequence exists.
+    """
+    register_event_handlers()
+    with tenant_context(tenant_a):
+        room_type = await rooms.create_room_type(
+            db_session, tenant_a, RoomTypeCreate(code="DBL", name="Double", base_capacity=2)
+        )
+        plan = await rate_plans.create_rate_plan(
+            db_session,
+            tenant_a,
+            RatePlanCreate(
+                code="BAR",
+                name="Best available",
+                room_type_id=room_type.id,
+                nightly_amount=Decimal("120.00"),
+                currency_code="USD",
+                valid_from=date(2020, 1, 1),
+            ),
+        )
+        for index in range(4):
+            await rooms.create_room(
+                db_session,
+                tenant_a,
+                RoomCreate(room_number=f"4{index:02d}", room_type_id=room_type.id),
+            )
+        await db_session.commit()
+
+    taken: dict[str, uuid.UUID] = {}
+
+    async def take(arrival: date, nights: int) -> uuid.UUID:
+        async def work() -> None:
+            booking = await room_reservations.create_room_reservation(
+                db_session,
+                tenant_a,
+                RoomReservationCreate(
+                    room_type_id=room_type.id,
+                    rate_plan_id=plan.id,
+                    arrival_date=arrival,
+                    departure_date=arrival + timedelta(days=nights),
+                    party_size=2,
+                    guest_name="Ratchet",
+                ),
+            )
+            taken["id"] = booking.id
+
+        with tenant_context(tenant_a):
+            await run_in_uow(db_session, work)
+            await db_session.commit()
+            return taken["id"]
+
+    async def confirm(booking_id: uuid.UUID) -> None:
+        with tenant_context(tenant_a):
+            await run_in_uow(
+                db_session,
+                lambda: room_reservations.confirm_room_reservation(
+                    db_session, tenant_a, booking_id
+                ),
+            )
+            await db_session.commit()
+
+    base = datetime.now(UTC).date() + timedelta(days=1)
+    # The tenant's RMR- sequence row is created by its FIRST booking (``ensure_sequence``), a
+    # one-time cost that would otherwise land on whichever measurement ran first.
+    await confirm(await take(base, 1))
+
+    short_id = await take(base + timedelta(days=10), 3)
+    long_id = await take(base + timedelta(days=40), 14)
+    with query_counter() as short, tenant_context(tenant_a):
+        await confirm(short_id)
+    with query_counter() as long, tenant_context(tenant_a):
+        await confirm(long_id)
+
+    assert long.count - short.count == 11 * ROOM_BOOKING_PER_NIGHT, (
+        f"a 3-night confirmation cost {short.count} statements and a 14-night one {long.count} — "
+        f"the difference is not the {ROOM_BOOKING_PER_NIGHT} statements a night should cost, so "
+        "the gate scales on some other axis:\n" + "\n".join(long.statements)
+    )
+    assert short.count <= ROOM_BOOKING_CEILING, (
+        f"confirming a 3-night stay now costs {short.count} statements "
+        f"(ceiling {ROOM_BOOKING_CEILING}):\n" + "\n".join(short.statements)
+    )
+    print(
+        f"\n[perf] confirming a stay: {short.count} statements for 3 nights, "
+        f"{long.count} for 14"
+    )

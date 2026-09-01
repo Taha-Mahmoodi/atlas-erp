@@ -1,21 +1,46 @@
-"""The rooms masters and the one state machine among them (PLAN 20.1).
+"""The room type, the physical room, and the one state machine among them (PLAN 20.1).
+
+The RATE PLAN moved to ``rate_plans.py`` when PLAN 20.2 added the allotment hook below and this
+file reached the STRUCTURE §8.4 cap — its own aggregate (STRUCTURE §3), and the only one of the
+three masters that carries money. It imports :func:`require_code_free`, :func:`sent_fields` and
+:func:`get_room_type` from here, which is why those two are public rather than underscored: they
+are the master-CRUD plumbing the hotel side shares, and one copy each is the point of them.
 
 Ordinary tenant-scoped master CRUD in the ``inventory/service/items.py`` anatomy — a friendly
 ``*_conflict`` before the DB UNIQUE would raise, a tenant-scoped getter that 404s rather than
-leaking, keyset-paginated reads (D-014) — for three masters, plus ``set_housekeeping_status``,
+leaking, keyset-paginated reads (D-014) — for two masters, plus ``set_housekeeping_status``,
 which is not CRUD.
 
 **Why the reads live here and not in ``queries.py``.** STRUCTURE §5 reserves ``queries.py`` for the
 reads OTHER modules import, nothing imports hospitality, and that file is at 362 lines against the
 §8.4 cap. The Phase 19 note in its own docstring already says reads land wherever there is room;
-these three sit next to the writes they page over.
+each sits next to the writes it pages over.
 
-**``set_housekeeping_status`` is the file's whole point.** Phase 20 Task 4 hangs the per-date
-allotment counter off OUT_OF_ORDER — a room taken out of service must lower ``rooms_sellable`` on
-the future dates it covers, and coming back must raise it. That is a set-based counter touch, and
-it only works if the column has ONE writer. So: the update schema cannot carry the column, the
-housekeeping board calls this function rather than writing the room itself, and Task 4 adds its
-``adjust_allotment`` call inside the ``if`` below without touching any caller.
+**TWO things in this file change what the property can sell, and both call
+``allotment.adjust_sellable``.** A room is countable supply for exactly one room type while it is
+outside ``HOUSEKEEPING_UNSELLABLE``, so the counter has to hear about a change to EITHER axis:
+
+- ``set_housekeeping_status`` — OUT_OF_ORDER and back. Phase 20 Task 4 hangs the per-date counter
+  off it, which only works because the column has ONE writer (D-085): the update schema cannot
+  carry it, the housekeeping board calls this function rather than writing the room itself, and
+  PLAN 20.2 added the ``allotment`` call inside the transition branch with no caller touched.
+- ``update_room``'s ``room_type_id`` — a room moved between types. This one had no hook when D-085
+  was written, and its absence was a SILENT OVERSELL: the losing type's materialised nights kept
+  counting a room it no longer has.
+
+One helper, two hooks, and the set they both test against (``HOUSEKEEPING_UNSELLABLE``) is the same
+one ``allotment`` seeds a new night's ``rooms_sellable`` from.
+
+**BOTH HOOKS LOCK THE ROOM FIRST, and that is not optional.** Each computes its delta from state it
+read off the ``Room`` — the type it is moving OUT of, the status it is moving out of — so an
+unlocked read is a lost update with a permanent consequence: two concurrent
+``PATCH {room_type_id: SGL}`` on one room both see DBL, both compute a move, and both apply −1 to
+DBL's materialised nights. The property then refuses a room a night it physically has, on every
+materialised night, forever, and nothing ever notices because each write on its own is legal and the
+CHECKs all hold. ``for_update=True`` makes the losing request re-read the row under the lock, find
+the move already made, and do nothing. Same shape, same fix, as the reservation lock on every
+booking transition (D-087); the module-wide order is **reservation → room → room type → nights**,
+and these two paths take its last three links.
 """
 
 from __future__ import annotations
@@ -26,22 +51,25 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ConflictError, NotFoundError, ValidationFailedError
+from app.core.exceptions import ConflictError, NotFoundError
 from app.core.pagination import DEFAULT_LIMIT, OrderKey, SortDirection, filter_fingerprint, paginate
 from app.core.schemas import ApiModel, Page
-from app.modules.hospitality.constants import HOUSEKEEPING_FLOW, HousekeepingStatus
+from app.modules.hospitality.constants import (
+    HOUSEKEEPING_FLOW,
+    HOUSEKEEPING_UNSELLABLE,
+    HousekeepingStatus,
+)
 from app.modules.hospitality.models import RatePlan, Room, RoomType
 from app.modules.hospitality.rooms_schemas import (
-    RatePlanCreate,
-    RatePlanUpdate,
     RoomCreate,
     RoomTypeCreate,
     RoomTypeUpdate,
     RoomUpdate,
 )
+from app.modules.hospitality.service import allotment
 
 
-async def _require_code_free(
+async def require_code_free(
     session: AsyncSession,
     tenant_id: uuid.UUID,
     model: type[RoomType] | type[RatePlan],
@@ -110,7 +138,7 @@ async def get_room_type(
 async def create_room_type(
     session: AsyncSession, tenant_id: uuid.UUID, payload: RoomTypeCreate
 ) -> RoomType:
-    await _require_code_free(
+    await require_code_free(
         session,
         tenant_id,
         RoomType,
@@ -129,18 +157,19 @@ async def create_room_type(
     return room_type
 
 
-def _sent_fields(payload: ApiModel, *, nullable: frozenset[str] = frozenset()) -> dict[str, object]:
+def sent_fields(payload: ApiModel, *, nullable: frozenset[str] = frozenset()) -> dict[str, object]:
     """The fields a PATCH actually sent, with explicit ``null`` dropped unless the column means
     something by it.
 
-    ``exclude_unset`` distinguishes "not sent" from "sent as null", but every updatable column here
-    except ``RatePlanUpdate.valid_to`` is NOT NULL — so a client sending ``{"name": null}`` would
-    otherwise reach the flush and surface as a 500 IntegrityError, or (for ``valid_from``) crash in
-    :func:`_require_window` comparing a date against None. Dropping the null makes it a no-op field,
-    which is what a partial update of a required column can honestly mean.
+    ``exclude_unset`` distinguishes "not sent" from "sent as null", but every updatable column in
+    the hotel masters except ``RatePlanUpdate.valid_to`` is NOT NULL — so a client sending
+    ``{"name": null}`` would otherwise reach the flush and surface as a 500 IntegrityError, or
+    (for ``valid_from``) crash in ``rate_plans._require_window`` comparing a date against None.
+    Dropping the null makes it a no-op field, which is what a partial update of a required column
+    can honestly mean.
 
-    One helper rather than the same comprehension in three services: this bug was fixed in
-    ``update_room`` alone and stayed live in the two siblings.
+    One helper rather than the same comprehension in three updaters: this bug was fixed in
+    ``update_room`` alone and stayed live in the two siblings. Public so ``rate_plans`` shares it.
     """
     return {
         field: value
@@ -157,7 +186,7 @@ async def update_room_type(
 ) -> RoomType:
     """Partial update (D-010: mutate the loaded object so the audit listener sees a diff)."""
     room_type = await get_room_type(session, tenant_id, room_type_id)
-    for field, value in _sent_fields(payload).items():
+    for field, value in sent_fields(payload).items():
         setattr(room_type, field, value)
     await session.flush()
     return room_type
@@ -185,10 +214,36 @@ async def list_room_types(
 # --- Rooms --------------------------------------------------------------------
 
 
-async def get_room(session: AsyncSession, tenant_id: uuid.UUID, room_id: uuid.UUID) -> Room:
-    """The room, or 404 ``hospitality.room_not_found``."""
-    room = await session.get(Room, room_id)
-    if room is None or room.tenant_id != tenant_id:
+async def get_room(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    room_id: uuid.UUID,
+    *,
+    for_update: bool = False,
+) -> Room:
+    """The room, or 404 ``hospitality.room_not_found``.
+
+    ``for_update=True`` is taken by EVERY writer of this row and by check-in, and it covers two
+    different races with one lock:
+
+    - **check-in** — two receptionists putting two guests into 101 at the same instant would
+      otherwise both read it empty and both write, and the partial unique index would turn the loser
+      into a 500 instead of a 409. Locking the ROOM makes the occupancy read that follows
+      authoritative.
+    - **:func:`update_room` and :func:`set_housekeeping_status`** — both derive an allotment delta
+      from the value this read returns, so an unlocked read double-applies it (see the module
+      docstring). The lock is what makes the loser's re-read see the winner's move.
+
+    Reads (the board, the room list) pass ``for_update=False`` and take no lock: a housekeeping
+    board refreshing must not queue behind a renumber. Taken AFTER the reservation lock and BEFORE
+    any room-type or night lock — reservation → room → room type → nights is the one order this
+    module's writers use (D-020/D-036).
+    """
+    stmt = select(Room).where(Room.id == room_id, Room.tenant_id == tenant_id)
+    if for_update:
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
+    room = (await session.execute(stmt)).scalar_one_or_none()
+    if room is None:
         raise NotFoundError(message="Room not found", code="hospitality.room_not_found")
     return room
 
@@ -197,7 +252,25 @@ async def create_room(
     session: AsyncSession, tenant_id: uuid.UUID, payload: RoomCreate
 ) -> Room:
     """Add a physical room. It starts DIRTY (see ``HousekeepingStatus``): nobody has made it up,
-    and starting sellable is the assumption that walks a guest into an unserviced room."""
+    and starting sellable is the assumption that walks a guest into an unserviced room.
+
+    **Building a room is the FOURTH axis that changes supply, and the last one.** What a type can
+    sell is ``_sellable_rooms``' COUNT over ``hsp_rooms`` filtered on
+    ``(tenant_id, room_type_id, housekeeping_status)``, so exactly four operations can move it:
+    INSERT a room (here), change its type (:func:`update_room`), change its condition
+    (:func:`set_housekeeping_status`), and DELETE one — which has no path in this module. DIRTY is
+    countable (only ``HOUSEKEEPING_UNSELLABLE`` is not), so a room is sellable from birth and every
+    ALREADY-MATERIALISED future night must learn about it.
+
+    Without this the room reaches nights materialised AFTER it is built, through the seed, and never
+    the ones materialised before — so one type reports two different supplies on two nights, and the
+    property is refused a room it physically has on every night booked before the build, permanently
+    and with nothing that notices.
+
+    No new lock: ``adjust_sellable`` takes the room-type row EXCLUSIVE itself, and there is no
+    earlier row to lock — the deciding state is the row being inserted. Two concurrent builds are
+    two different rooms and legitimately both count.
+    """
     await _require_room_number_free(session, tenant_id, payload.room_number)
     await get_room_type(session, tenant_id, payload.room_type_id)
     room = Room(
@@ -208,6 +281,9 @@ async def create_room(
     )
     session.add(room)
     await session.flush()
+    await allotment.adjust_sellable(
+        session, tenant_id, payload.room_type_id, 1, on_or_after=date.today()
+    )
     return room
 
 
@@ -217,16 +293,44 @@ async def update_room(
     """Renumber a room or move it to another type. It CANNOT move the housekeeping status — the
     schema has no such field, so the attempt is a 422 rather than a silent no-op.
 
+    **Moving a room to another type is the SECOND axis that changes supply, and it goes through
+    ``adjust_sellable`` exactly as the housekeeping crossing does.** D-085 gave
+    ``housekeeping_status`` one writer so the counter could have one hook; ``room_type_id`` had no
+    hook at all, so moving 101 out of DBL left every materialised DBL night still claiming the
+    room — ``rooms_sellable`` overstating physical supply, the gate then confirming a stay that
+    check-in has no room to give. Both counters move, the loser's ``-1`` and the winner's ``+1``,
+    and the losing type REFUSES with ``hospitality.room_type_sold_out`` if any future night is
+    already sold to the room being taken away: Atlas has no walk-the-guest flow, so the manager is
+    told which night to move a booking off first (``adjust_sellable``'s own argument). A room
+    already in ``HOUSEKEEPING_UNSELLABLE`` counts toward neither type, so moving it moves nothing.
+
+    **The room row is LOCKED before it is read**, because ``room.room_type_id`` is what decides the
+    delta: two concurrent moves of one room off DBL both read DBL unlocked, both compute a move, and
+    both take a room off every materialised DBL night. Under the lock the loser re-reads SGL,
+    ``moved_to`` stays None, and its PATCH is the no-op it should be.
+
     Both columns are NOT NULL, so an explicitly-sent ``null`` is dropped rather than flushed into an
     IntegrityError; ``exclude_unset`` is what distinguishes "not sent" from "sent as null", and
     neither field has a meaning for null the way ``RatePlanUpdate.valid_to`` does.
     """
-    room = await get_room(session, tenant_id, room_id)
-    data = _sent_fields(payload)
+    room = await get_room(session, tenant_id, room_id, for_update=True)
+    data = sent_fields(payload)
+    moved_to: uuid.UUID | None = None
     if "room_type_id" in data:
         await get_room_type(session, tenant_id, data["room_type_id"])
+        if data["room_type_id"] != room.room_type_id:
+            moved_to = data["room_type_id"]
     if "room_number" in data and data["room_number"] != room.room_number:
         await _require_room_number_free(session, tenant_id, data["room_number"])
+    countable = HousekeepingStatus(room.housekeeping_status) not in HOUSEKEEPING_UNSELLABLE
+    if moved_to is not None and countable:
+        # The losing type first or the gaining type first is decided by id, not by role: two rooms
+        # swapping types at the same instant would otherwise lock the two counters in opposite
+        # orders, which is the deadlock D-020/D-036 forbids. Same rule as the night pass's sort.
+        for type_id, delta in sorted(((room.room_type_id, -1), (moved_to, 1))):
+            await allotment.adjust_sellable(
+                session, tenant_id, type_id, delta, on_or_after=date.today()
+            )
     for field, value in data.items():
         setattr(room, field, value)
     await session.flush()
@@ -245,12 +349,24 @@ async def set_housekeeping_status(
     endpoint and the housekeeping board cannot disagree about whether a dirty room can be declared
     clean (it cannot: somebody has to be in it).
 
-    **This is the Task 4 hook.** Crossing into or out of ``HOUSEKEEPING_UNSELLABLE`` is the moment
-    the property's sellable-room count changes, so Task 4's ``adjust_allotment`` call goes in the
-    branch below — comparing ``current`` and ``to_status`` against that set — and every caller in
-    this module already routes through here. Nothing above needs to change.
+    **The allotment hook is here (D-085, PLAN 20.2).** Crossing into or out of
+    ``HOUSEKEEPING_UNSELLABLE`` is the moment the property's sellable-room count changes, so the
+    counter move is written once, in the branch below, against the SAME set ``allotment`` seeds a
+    new night's ``rooms_sellable`` from. Only the crossing counts: DIRTY -> IN_PROGRESS -> CLEAN
+    is the whole of an ordinary day and moves nothing on sale.
+
+    Taking the last room off sale on a night already fully sold is REFUSED
+    (``hospitality.room_type_sold_out``), not silently oversold — ``allotment.adjust_sellable``
+    is where that is argued. The refusal is raised before the column moves, so it leaves the room
+    exactly as it was.
+
+    **The room row is LOCKED before it is read**, for the reason :func:`update_room` states: the
+    delta is derived from ``room.housekeeping_status``, so two concurrent moves of one room out of
+    OUT_OF_ORDER both read OUT_OF_ORDER unlocked and both give the type a room back. Under the lock
+    the loser re-reads the winner's status and ``HOUSEKEEPING_FLOW`` refuses it with a 409 —
+    ``DIRTY -> DIRTY`` is not a legal move — instead of silently inflating supply.
     """
-    room = await get_room(session, tenant_id, room_id)
+    room = await get_room(session, tenant_id, room_id, for_update=True)
     current = HousekeepingStatus(room.housekeeping_status)
     if to_status not in HOUSEKEEPING_FLOW[current]:
         raise ConflictError(
@@ -261,6 +377,15 @@ async def set_housekeeping_status(
                 "housekeeping_status": current.value,
                 "requested_status": to_status.value,
             },
+        )
+    was_unsellable = current in HOUSEKEEPING_UNSELLABLE
+    if was_unsellable != (to_status in HOUSEKEEPING_UNSELLABLE):
+        await allotment.adjust_sellable(
+            session,
+            tenant_id,
+            room.room_type_id,
+            1 if was_unsellable else -1,
+            on_or_after=date.today(),
         )
     room.housekeeping_status = to_status.value
     await session.flush()
@@ -294,100 +419,4 @@ async def list_rooms(
         cursor=cursor,
         limit=limit,
         filters=filter_fingerprint(room_type_id, housekeeping_status),
-    )
-
-
-# --- Rate plans ---------------------------------------------------------------
-
-
-async def get_rate_plan(
-    session: AsyncSession, tenant_id: uuid.UUID, rate_plan_id: uuid.UUID
-) -> RatePlan:
-    """The plan, or 404 ``hospitality.rate_plan_not_found``."""
-    plan = await session.get(RatePlan, rate_plan_id)
-    if plan is None or plan.tenant_id != tenant_id:
-        raise NotFoundError(message="Rate plan not found", code="hospitality.rate_plan_not_found")
-    return plan
-
-
-def _require_window(valid_from: date, valid_to: date | None) -> None:
-    """A validity window is the whole of v1's rate calendar, so the one thing it must not be is
-    backwards — a window covering no night is a rate nothing can ever resolve. The DB CHECK is the
-    backstop; this is the readable refusal."""
-    if valid_to is not None and valid_to < valid_from:
-        raise ValidationFailedError(
-            message="A rate plan cannot end before it starts",
-            code="hospitality.rate_plan_window_invalid",
-            details={"valid_from": str(valid_from), "valid_to": str(valid_to)},
-        )
-
-
-async def create_rate_plan(
-    session: AsyncSession, tenant_id: uuid.UUID, payload: RatePlanCreate
-) -> RatePlan:
-    await _require_code_free(
-        session,
-        tenant_id,
-        RatePlan,
-        payload.code,
-        label="rate plan",
-        error_code="hospitality.rate_plan_code_conflict",
-    )
-    _require_window(payload.valid_from, payload.valid_to)
-    await get_room_type(session, tenant_id, payload.room_type_id)
-    plan = RatePlan(
-        tenant_id=tenant_id,
-        code=payload.code,
-        name=payload.name,
-        room_type_id=payload.room_type_id,
-        nightly_amount=payload.nightly_amount,
-        currency_code=payload.currency_code.upper(),
-        valid_from=payload.valid_from,
-        valid_to=payload.valid_to,
-    )
-    session.add(plan)
-    await session.flush()
-    return plan
-
-
-async def update_rate_plan(
-    session: AsyncSession,
-    tenant_id: uuid.UUID,
-    rate_plan_id: uuid.UUID,
-    payload: RatePlanUpdate,
-) -> RatePlan:
-    """Re-price or re-window. The window is re-checked against whichever half is NOT being sent,
-    so shortening a plan cannot leave it backwards."""
-    plan = await get_rate_plan(session, tenant_id, rate_plan_id)
-    # valid_to is the one nullable column: sending null OPENS the window (see RatePlanUpdate).
-    data = _sent_fields(payload, nullable=frozenset({"valid_to"}))
-    _require_window(
-        data.get("valid_from", plan.valid_from), data.get("valid_to", plan.valid_to)
-    )
-    for field, value in data.items():
-        setattr(plan, field, value)
-    await session.flush()
-    return plan
-
-
-async def list_rate_plans(
-    session: AsyncSession,
-    tenant_id: uuid.UUID,
-    *,
-    room_type_id: uuid.UUID | None = None,
-    cursor: str | None = None,
-    limit: int = DEFAULT_LIMIT,
-) -> Page[RatePlan]:
-    """The property's rates in code order, optionally for one room type."""
-    stmt = select(RatePlan).where(RatePlan.tenant_id == tenant_id)
-    if room_type_id is not None:
-        stmt = stmt.where(RatePlan.room_type_id == room_type_id)
-    return await paginate(
-        session,
-        stmt,
-        order_by=[OrderKey(RatePlan.code, SortDirection.ASC)],
-        pk=RatePlan.id,
-        cursor=cursor,
-        limit=limit,
-        filters=filter_fingerprint(room_type_id),
     )

@@ -87,3 +87,32 @@ register_permissions(
         ),
     },
 )
+
+
+# --- The room booking (Phase 20.2) --------------------------------------------
+# The SAME three-key shape as the table booking, spelled ``room_reservation`` rather than
+# ``reservation`` so a role editor never has to guess which of the two ``hospitality.reservation.*``
+# would have meant. Read is the arrivals list — every guest's name and contact for the week — and is
+# staff-only for the D-069 reason ``reservation.read`` is.
+#
+# ``room_reservation.book`` is the ONE key the property's website holds: it may ask for a room and
+# take a TENTATIVE booking, and nothing else. Not even confirming, which is the counter touch and
+# the sale — an external caller never silently skips the human check (Q6). Splitting it from
+# ``.manage`` is what makes a leaked website credential unable to confirm, check in, or read the
+# arrivals list.
+HOSPITALITY_ROOM_RESERVATION_READ = "hospitality.room_reservation.read"
+HOSPITALITY_ROOM_RESERVATION_MANAGE = "hospitality.room_reservation.manage"
+HOSPITALITY_ROOM_RESERVATION_BOOK = "hospitality.room_reservation.book"
+
+register_permissions(
+    HOSPITALITY_ROOM_RESERVATION_READ,
+    HOSPITALITY_ROOM_RESERVATION_MANAGE,
+    HOSPITALITY_ROOM_RESERVATION_BOOK,
+    descriptions={
+        HOSPITALITY_ROOM_RESERVATION_READ: "Read the room-reservation book and room allotment",
+        HOSPITALITY_ROOM_RESERVATION_MANAGE: (
+            "Confirm, amend, check in, check out, cancel and no-show room reservations"
+        ),
+        HOSPITALITY_ROOM_RESERVATION_BOOK: "Take a tentative room booking on a guest's behalf",
+    },
+)
