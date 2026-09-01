@@ -279,7 +279,6 @@ async def test_a_foreign_bill_settled_in_parts_leaves_nothing_on_the_ap_control(
     assert debit - credit == Decimal(0)  # a settled payable owes the ledger nothing
 
 
-
 # --- Postgres variant: the realized-FX payment satisfies the balance trigger -------------------
 
 

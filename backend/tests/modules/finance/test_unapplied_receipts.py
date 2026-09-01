@@ -498,6 +498,114 @@ async def test_a_foreign_deposit_applied_in_parts_leaves_nothing_on_the_advance_
     assert debit - credit == Decimal(0)  # a fully-spent deposit owes the guest nothing
 
 
+async def _eur_deposit(
+    session: AsyncSession, fx_setup: FxSetup, partner_id: uuid.UUID, amount: str
+) -> CustomerReceipt:
+    """An allocation-less EUR deposit at _R2_DATE (SPOT 1.20), so its whole amount is unapplied."""
+    return await _post_receipt(
+        session,
+        fx_setup.tenant_id,
+        CustomerReceiptCreate(
+            partner_id=partner_id,
+            partner_name="Euro Customer",
+            receipt_date=_R2_DATE,
+            currency_code="EUR",
+            bank_account_id=fx_setup.eur_bank_id,
+            amount=Decimal(amount),
+            allocations=[],
+        ),
+    )
+
+
+async def test_one_invoice_settled_by_two_allocations_in_one_application_clears_its_control(
+    db_session: AsyncSession, fx_setup: FxSetup
+) -> None:
+    """#251 (D-088) INSIDE a single entry: two allocations naming the SAME invoice in ONE
+    ``apply_receipt`` call must still clear the AR control exactly.
+
+    ``receipt_advances._record_application`` EXTENDS an existing allocation row instead of
+    inserting, so ``UNIQUE(tenant_id, receipt_id, customer_invoice_id)`` never fires on this path
+    and the payload reaches the builder intact — which is why the telescoping cumulative has to be
+    accumulated per item WITHIN the entry, not read once off each pair's unrefreshed
+    ``open_amount``. A folio settling one invoice in parts in a single call is exactly this shape.
+
+    EUR 100 at 1.10 DEBITS the control one quantized USD 110.00. Split 50.05 / 49.95, a per-pair
+    ``quantize(part x 1.10)`` credits 55.06 + 54.95 = USD 110.01 — both halves round UP, since
+    55.055 and 54.945 are each a HALF_UP tie — and USD 0.01 sits on the control forever. One
+    running cumulative per invoice gives 55.06 then 110.00 - 55.06 = 54.94, which sums back.
+    """
+    await seed_advance_account(db_session, fx_setup.tenant_id)
+    invoice = await _post_eur_invoice(db_session, fx_setup)  # EUR 100.00, frozen at USD 110.00
+    deposit = await _eur_deposit(db_session, fx_setup, invoice.partner_id, "100.00")
+
+    async def apply() -> None:
+        await service.apply_receipt(
+            db_session,
+            fx_setup.tenant_id,
+            deposit.id,
+            [
+                ReceiptAllocationCreate(invoice_id=invoice.id, amount=Decimal("50.05")),
+                ReceiptAllocationCreate(invoice_id=invoice.id, amount=Decimal("49.95")),
+            ],
+        )
+
+    with tenant_context(fx_setup.tenant_id):
+        await run_in_uow(db_session, apply)
+
+    await db_session.refresh(invoice)
+    assert invoice.status == InvoiceStatus.PAID.value
+    assert Decimal(str(invoice.open_amount)) == Decimal("0.00")
+
+    with tenant_context(fx_setup.tenant_id):
+        ar_lines = list(
+            (
+                await db_session.execute(
+                    select(JournalLine).where(
+                        JournalLine.account_id == fx_setup.accounts["1900"]
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    debit = sum((Decimal(str(line.functional_debit_amount)) for line in ar_lines), Decimal(0))
+    credit = sum((Decimal(str(line.functional_credit_amount)) for line in ar_lines), Decimal(0))
+    # The invoice debited USD 110.00 once; the two allocations must credit exactly that back.
+    assert debit == Decimal("110.00")
+    assert credit == Decimal("110.00")
+    assert debit - credit == Decimal(0)  # a settled receivable owes the ledger nothing
+
+
+async def test_two_allocations_may_not_together_exceed_one_invoice_open_amount(
+    db_session: AsyncSession, fx_setup: FxSetup
+) -> None:
+    """The open-amount ceiling is a per-INVOICE fact, so it is checked on the payload's CUMULATIVE.
+
+    ``invoice.open_amount`` is not refreshed between allocations, so checking each one against it
+    alone lets 60 + 60 clear an invoice with 100 open — and on the ``apply_receipt`` path nothing
+    downstream stops it either: ``_record_application`` extends the existing allocation row rather
+    than inserting a duplicate, so the UNIQUE constraint never fires and the invoice's open amount
+    is driven NEGATIVE by a payload that passed validation (#251)."""
+    await seed_advance_account(db_session, fx_setup.tenant_id)
+    invoice = await _post_eur_invoice(db_session, fx_setup)  # EUR 100.00 open
+    deposit = await _eur_deposit(db_session, fx_setup, invoice.partner_id, "300.00")
+
+    with tenant_context(fx_setup.tenant_id), pytest.raises(ValidationFailedError) as excinfo:
+        await service.apply_receipt(
+            db_session,
+            fx_setup.tenant_id,
+            deposit.id,
+            [
+                ReceiptAllocationCreate(invoice_id=invoice.id, amount=Decimal("60.00")),
+                ReceiptAllocationCreate(invoice_id=invoice.id, amount=Decimal("60.00")),
+            ],
+        )
+    assert excinfo.value.code == "finance.receipt_overallocated"
+    await db_session.rollback()
+    await db_session.refresh(invoice)
+    assert Decimal(str(invoice.open_amount)) == Decimal("100.00")  # untouched, not negative
+
+
 async def test_applying_a_deposit_announces_the_clearing_like_any_other_receipt(
     db_session: AsyncSession, ar_setup: ArSetup
 ) -> None:

@@ -130,6 +130,7 @@ async def build_payment_lines(
         )
         items.append(
             ClearedItem(
+                item_id=bill.id,
                 control_account_id=bill.ap_account_id,
                 gross=gross,
                 cleared=amount,
