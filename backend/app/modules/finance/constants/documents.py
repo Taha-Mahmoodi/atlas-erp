@@ -177,7 +177,7 @@ AP_CONTROL = "ap_control"
 AR_CONTROL = "ar_control"
 SALES_REVENUE = "sales_revenue"
 
-# --- Customer advances / on-account receipts (PLAN 20.4, D-084) ---------------
+# --- Customer advances / on-account receipts (PLAN 20.4, D-086) ---------------
 # The LIABILITY control account an UNAPPLIED customer receipt credits: cash received before (or in
 # excess of) any invoice is money owed back to the payer, not revenue and not a negative receivable.
 # The line carries partner_type/partner_id so the pooled control reconciles per customer, and

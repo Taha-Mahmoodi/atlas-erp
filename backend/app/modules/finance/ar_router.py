@@ -214,7 +214,7 @@ async def apply_customer_receipt(
     session: SessionDep,
     idem: IdempotentDep = _ApplyReceiptIdempotentDep,
 ) -> CustomerReceiptDetail:
-    """Apply a receipt's unapplied (on-account) balance to open invoices (PLAN 20.4, D-084).
+    """Apply a receipt's unapplied (on-account) balance to open invoices (PLAN 20.4, D-086).
     IDEMPOTENT (D-013): it posts a reclass journal entry + clears open items, so a retried request
     must not spend the deposit twice."""
     holder: dict[str, CustomerReceiptDetail] = {}

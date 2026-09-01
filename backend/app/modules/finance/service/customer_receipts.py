@@ -10,7 +10,7 @@ each invoice's open_amount and flips its status, records the allocations, links 
 (docflow 'receipts'), and publishes ``CustomerReceiptPosted``.
 
 A receipt may also arrive with NOTHING to clear, or with more cash than it clears (PLAN 20.4,
-D-084): ``amount`` must be >= the allocation sum, and the excess becomes ``unapplied_amount``,
+D-086): ``amount`` must be >= the allocation sum, and the excess becomes ``unapplied_amount``,
 credited to the ``customer_advances`` control account with partner_type/partner_id stamped so the
 pooled liability reconciles per customer. ``receipt_advances.apply_receipt`` spends that balance
 later. Allocating MORE than was received stays refused (#73 with the sign flipped: the difference
@@ -73,7 +73,7 @@ async def create_and_post_receipt(
     open_amount and flips its status (PARTIALLY_PAID/PAID), records allocations, links
     receipt->invoices (docflow 'receipts'), and publishes ``CustomerReceiptPosted``. Caller commits.
 
-    ``allocations`` may be empty and ``amount`` may EXCEED their sum (PLAN 20.4, D-084): the excess
+    ``allocations`` may be empty and ``amount`` may EXCEED their sum (PLAN 20.4, D-086): the excess
     is the receipt's ``unapplied_amount``, credited to the ``customer_advances`` control on a
     partner-stamped line inside the same entry. Only the reverse — allocating more than was
     received — is refused.
@@ -89,7 +89,7 @@ async def create_and_post_receipt(
     if receipt_amount < allocated_total:
         # #73: without this, the difference flows into the realized-FX line and a plain
         # same-currency under-payment is misbooked as a phantom FX gain/loss. The OTHER direction
-        # (more cash than allocations) is the D-084 unapplied balance below, not an error.
+        # (more cash than allocations) is the D-086 unapplied balance below, not an error.
         raise ValidationFailedError(
             message="The receipt amount cannot be less than the sum of its allocations",
             code="finance.receipt_allocation_sum_mismatch",

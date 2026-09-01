@@ -1,4 +1,4 @@
-"""Unapplied / on-account customer receipts (PLAN 20.4, D-084).
+"""Unapplied / on-account customer receipts (PLAN 20.4, D-086).
 
 A hospitality advance deposit is cash received BEFORE any invoice exists, so it has no allocation
 to make. Phase 20 Task 2 widens ``CustomerReceipt`` rather than giving hospitality its own deposit
@@ -427,7 +427,7 @@ async def test_partner_ledger_shows_the_unapplied_balance(
 async def test_a_foreign_deposit_applied_in_parts_leaves_nothing_on_the_advance_control(
     db_session: AsyncSession, fx_setup: FxSetup
 ) -> None:
-    """The residue bug, and the reason the advance leg is read back instead of re-rated (D-084).
+    """The residue bug, and the reason the advance leg is read back instead of re-rated (D-086).
 
     A EUR 100 deposit at SPOT 1.20 is credited ONCE, as one quantized USD 120.00. Applying it in
     three parts — 33.33 / 33.33 / 33.34, the shape Task 5's folio produces at check-in and

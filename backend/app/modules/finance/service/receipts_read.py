@@ -22,7 +22,7 @@ async def get_customer_receipt(
     session: AsyncSession, tenant_id: uuid.UUID, receipt_id: uuid.UUID, *, for_update: bool = False
 ) -> CustomerReceipt:
     """One receipt, or 404. ``for_update`` takes the row lock before the caller reads
-    ``unapplied_amount`` to spend it (D-084): on Postgres a second application waits and then reads
+    ``unapplied_amount`` to spend it (D-086): on Postgres a second application waits and then reads
     the drawn-down balance, on SQLite FOR UPDATE is a no-op (D-020/D-036, the ``inv_stock_quants``
     precedent) and the DB CHECK is the backstop. ``populate_existing`` is not optional here — a
     plain re-SELECT returns the session's already-loaded row with its STALE balance, which is the

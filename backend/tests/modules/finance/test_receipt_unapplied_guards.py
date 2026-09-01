@@ -1,4 +1,4 @@
-"""The row lock and the DB backstop under a deposit's draw-down (PLAN 20.4, D-084), on BOTH engines.
+"""The row lock and the DB backstop under a deposit's draw-down (PLAN 20.4, D-086), on BOTH engines.
 
 ``unapplied_amount`` is money, and spending it is a read-then-write: two ``apply_receipt`` calls
 under DIFFERENT idempotency keys (so D-013 replay protection does not apply) both read 500, both

@@ -42,7 +42,7 @@ from app.modules.finance.service.posting_defaults import get_posting_default
 
 # The realized-FX line's descriptions. Constants because they are also how the line is IDENTIFIED
 # after posting (``set_fx_line_currency``): it used to be "the third line", which held only while
-# every clearing entry had exactly two other lines — an unapplied receipt (D-084) appends a fourth.
+# every clearing entry had exactly two other lines — an unapplied receipt (D-086) appends a fourth.
 FX_GAIN_DESCRIPTION = "Realized FX gain"
 FX_LOSS_DESCRIPTION = "Realized FX loss"
 
@@ -134,7 +134,7 @@ async def build_clearing_lines(
     checks the functional sums and ``post_entry`` runs with ``skip_translation``.
 
     ``bank_functional`` overrides the bank side's functional amount for a caller that is DRAWING
-    DOWN a functional balance already booked rather than valuing a fresh cash movement (D-084's
+    DOWN a functional balance already booked rather than valuing a fresh cash movement (D-086's
     advance application): re-deriving ``quantize(amount x rate)`` on every draw-down quantizes N
     times against one quantized credit and leaves a residue on the control that never clears.
     ``None`` keeps the cash-movement valuation every other caller wants. The ITEM side telescopes
@@ -215,7 +215,7 @@ async def _fx_line(
 ) -> tuple[JournalLineCreate, tuple[Decimal, Decimal]] | None:
     """The realized-FX line, when the control and bank functional sides differ, else None (D-019).
     It is APPENDED last, and is found after posting by its description rather than its position —
-    an unapplied receipt (D-084) posts a fourth line, so "the third line" stopped being true. The
+    an unapplied receipt (D-086) posts a fourth line, so "the third line" stopped being true. The
     line balances the entry in functional and carries a positive transaction side equal to its
     functional amount so the per-line one-side CHECK holds (D-017).
 
@@ -253,7 +253,7 @@ async def set_fx_line_currency(
 
     The line is found by the description ``_fx_line`` gave it, not by position: "the third line"
     was true only while a clearing entry was exactly control + bank + FX, and an unapplied customer
-    receipt (D-084) posts a fourth. Same two queries either way."""
+    receipt (D-086) posts a fourth. Same two queries either way."""
     func_code = await fx.functional_currency_or_none(session, tenant_id)
     if func_code is None:
         return

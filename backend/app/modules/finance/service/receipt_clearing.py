@@ -1,4 +1,4 @@
-"""AR clearing validation + journal-line construction (PLAN 4.6 / 20.4, D-019, D-084).
+"""AR clearing validation + journal-line construction (PLAN 4.6 / 20.4, D-019, D-086).
 
 The three builders both AR money paths share, split out of ``customer_receipts.py`` at the
 STRUCTURE §8.4 cap: ``validated_clearing`` (every rule an allocation must satisfy),
@@ -113,7 +113,7 @@ async def build_receipt_lines(
     balanced receipt journal lines + explicit functional amounts via the shared FX helper (D-019).
     AR clears by CREDITING the AR control (Cr AR / Dr bank); each invoice's frozen functional is
     read from the DEBIT side of its posting line. ``bank_functional`` passes straight through: an
-    advance application (D-084) draws its already-booked functional down rather than re-deriving
+    advance application (D-086) draws its already-booked functional down rather than re-deriving
     it."""
     items: list[ClearedItem] = []
     for invoice, amount in pairs:
@@ -164,7 +164,7 @@ async def advance_credit(
     receipt_date: date,
 ) -> tuple[JournalLineCreate, tuple[Decimal, Decimal]]:
     """The Cr advance-control line for the part of a receipt that clears nothing (PLAN 20.4,
-    D-084), plus its explicit functional (debit, credit) pair.
+    D-086), plus its explicit functional (debit, credit) pair.
 
     The account is the ``customer_advances`` posting default — the D-019 data-driven wiring, so a
     tenant that never mapped it fails loud (422) instead of guessing a liability account. The line
