@@ -44,13 +44,20 @@ async def validated_clearing(
     allocations: list[ReceiptAllocationCreate],
 ) -> list[tuple[CustomerInvoice, Decimal]]:
     """Validate every allocation clears an OPEN invoice of this partner + currency, by no more than
-    the invoice's open amount; return the (invoice, allocated) pairs (PLAN 4.6). Clear 422/409.
+    the invoice's open amount CUMULATIVELY across the payload; return the (invoice, allocated) pairs
+    (PLAN 4.6). Clear 422/409.
 
     An EMPTY list is valid here since PLAN 20.4 — an unapplied receipt clears nothing — so the
     "must clear something" rule belongs to the caller that needs it (``apply_receipt``), not to the
     per-allocation validation every applied allocation still passes unchanged. Shared with
     ``receipt_advances`` so an application obeys exactly the rules a direct allocation does."""
     pairs: list[tuple[CustomerInvoice, Decimal]] = []
+    # Allocated SO FAR in this payload, per invoice. The open-amount ceiling is a per-INVOICE fact
+    # and ``invoice.open_amount`` is not refreshed inside the loop, so checking each allocation
+    # against it alone lets two allocations naming one invoice sail past it together — 60 + 60 on
+    # an invoice with 100 open. ``apply_receipt`` reaches that shape: it EXTENDS an existing
+    # allocation row instead of inserting, so UNIQUE(receipt, invoice) never catches it (#251).
+    allocated: dict[uuid.UUID, Decimal] = {}
     for alloc in allocations:
         invoice = await session.get(CustomerInvoice, alloc.invoice_id)
         if invoice is None or invoice.tenant_id != tenant_id:
@@ -87,7 +94,8 @@ async def validated_clearing(
                 code="finance.receipt_allocation_not_positive",
                 details={"invoice_id": str(invoice.id)},
             )
-        if amount > Decimal(str(invoice.open_amount)):
+        allocated[invoice.id] = allocated.get(invoice.id, Decimal(0)) + amount
+        if allocated[invoice.id] > Decimal(str(invoice.open_amount)):
             raise ValidationFailedError(
                 message="An allocation cannot exceed the invoice's open amount",
                 code="finance.receipt_overallocated",
@@ -128,6 +136,7 @@ async def build_receipt_lines(
         )
         items.append(
             ClearedItem(
+                item_id=invoice.id,
                 control_account_id=invoice.ar_account_id,
                 gross=gross,
                 cleared=amount,
