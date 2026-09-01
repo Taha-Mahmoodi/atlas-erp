@@ -244,7 +244,11 @@ async def _record_application(
 
     An allocation row is UNIQUE per (receipt, invoice), so a second application to an invoice this
     receipt already cleared ADDS to the existing row rather than inserting a duplicate — and its
-    docflow edge (also unique per pair) is written only the first time.
+    docflow edge (also unique per pair) is written only the first time. ``existing`` therefore
+    takes the row this call just added as well as the ones earlier calls left: two allocations
+    naming ONE invoice inside a SINGLE application are the folio's part-settlement shape, and
+    without that the second would insert a duplicate row and a duplicate docflow edge, both of
+    which the DB refuses (#251).
     """
     existing = {
         allocation.customer_invoice_id: allocation
@@ -266,14 +270,14 @@ async def _record_application(
         )
         allocation = existing.get(invoice.id)
         if allocation is None:
-            session.add(
-                CustomerReceiptAllocation(
-                    tenant_id=tenant_id,
-                    receipt_id=receipt.id,
-                    customer_invoice_id=invoice.id,
-                    allocated_amount=amount,
-                )
+            allocation = CustomerReceiptAllocation(
+                tenant_id=tenant_id,
+                receipt_id=receipt.id,
+                customer_invoice_id=invoice.id,
+                allocated_amount=amount,
             )
+            session.add(allocation)
+            existing[invoice.id] = allocation
             await docflow.link_documents(
                 session,
                 tenant_id,

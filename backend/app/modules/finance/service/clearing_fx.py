@@ -49,15 +49,18 @@ FX_LOSS_DESCRIPTION = "Realized FX loss"
 
 @dataclass(frozen=True)
 class ClearedItem:
-    """One open item a clearing entry settles (PLAN 4.6, D-019). ``control_account_id`` is the AP/AR
-    control account booked on the item's posting; ``gross`` is the item's full transaction gross
-    (the denominator for its frozen rate); ``cleared`` is the transaction amount this entry settles;
-    ``frozen_functional`` is the functional amount the control line carried when the item posted
-    (read from its journal line so the rate comes from the actual posting, not a re-lookup);
-    ``already_cleared`` is how much of the item EARLIER entries settled (``gross - open_amount``,
-    read before this entry draws the balance down), which is what lets the functional draw-down
-    telescope instead of re-rating each part (D-088)."""
+    """One open item a clearing entry settles (PLAN 4.6, D-019). ``item_id`` is the invoice/bill the
+    entry is settling — the IDENTITY the builder accumulates on, because one entry may carry SEVERAL
+    items naming the same document; ``control_account_id`` is the AP/AR control account booked on
+    the item's posting; ``gross`` is the item's full transaction gross (the denominator for its
+    frozen rate); ``cleared`` is the transaction amount this entry settles; ``frozen_functional`` is
+    the functional amount the control line carried when the item posted (read from its journal line
+    so the rate comes from the actual posting, not a re-lookup); ``already_cleared`` is how much of
+    the item EARLIER entries settled (``gross - open_amount``, read before this entry draws the
+    balance down), which is what lets the functional draw-down telescope instead of re-rating each
+    part (D-088)."""
 
+    item_id: uuid.UUID
     control_account_id: uuid.UUID
     gross: Decimal
     cleared: Decimal
@@ -138,7 +141,8 @@ async def build_clearing_lines(
     advance application): re-deriving ``quantize(amount x rate)`` on every draw-down quantizes N
     times against one quantized credit and leaves a residue on the control that never clears.
     ``None`` keeps the cash-movement valuation every other caller wants. The ITEM side telescopes
-    for the same reason and needs no flag — see the loop below (#251, D-088)."""
+    for the same reason and needs no flag — see the loop below (#251, D-088); it accumulates per
+    ``item_id``, so items repeating one document inside a single entry share one cumulative."""
     func_code = await fx.functional_currency_or_none(session, tenant_id)
     func_decimals = currency_decimals(func_code) if func_code else currency_decimals(currency_code)
     is_foreign = func_code is not None and currency_code != func_code
@@ -154,7 +158,16 @@ async def build_clearing_lines(
         else Decimal(1)
     )
     func_control = Decimal(0)
+    # The running cumulative PER ITEM, carried across the loop so two entries in this one clearing
+    # that name the SAME document telescope against each other instead of both starting from the
+    # item's stored ``already_cleared``. ``apply_receipt`` extends an existing allocation row rather
+    # than inserting a second one, so its UNIQUE(receipt, invoice) never fires and a folio settling
+    # one invoice in two goes down this path (#251, D-088).
+    cumulative: dict[uuid.UUID, Decimal] = {}
     for item in items:
+        before_amount = cumulative.get(item.item_id, item.already_cleared)
+        after_amount = before_amount + item.cleared
+        cumulative[item.item_id] = after_amount
         if is_foreign:
             # TELESCOPE the item's functional, never re-rate it (#251, D-088). The control carries
             # ONE quantized ``frozen_functional`` from the item's posting, so a clearing takes the
@@ -164,9 +177,9 @@ async def build_clearing_lines(
             # SEVERAL parts strands the difference on the AP/AR control forever — silently, because
             # the realized-FX line absorbs it. Same discipline the advance leg already uses.
             item_rate = item.frozen_functional / item.gross
-            after = quantize_money((item.already_cleared + item.cleared) * item_rate, func_decimals)
-            before = quantize_money(item.already_cleared * item_rate, func_decimals)
-            func_control += after - before
+            func_control += quantize_money(
+                after_amount * item_rate, func_decimals
+            ) - quantize_money(before_amount * item_rate, func_decimals)
         else:
             func_control += item.cleared
     func_bank = (

@@ -289,7 +289,6 @@ async def test_a_foreign_invoice_settled_in_parts_leaves_nothing_on_the_ar_contr
     assert debit - credit == Decimal(0)  # a settled receivable owes the ledger nothing
 
 
-
 # --- Postgres variant: the realized-FX receipt satisfies the balance trigger -------------------
 
 
