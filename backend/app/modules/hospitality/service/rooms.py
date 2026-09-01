@@ -252,7 +252,25 @@ async def create_room(
     session: AsyncSession, tenant_id: uuid.UUID, payload: RoomCreate
 ) -> Room:
     """Add a physical room. It starts DIRTY (see ``HousekeepingStatus``): nobody has made it up,
-    and starting sellable is the assumption that walks a guest into an unserviced room."""
+    and starting sellable is the assumption that walks a guest into an unserviced room.
+
+    **Building a room is the FOURTH axis that changes supply, and the last one.** What a type can
+    sell is ``_sellable_rooms``' COUNT over ``hsp_rooms`` filtered on
+    ``(tenant_id, room_type_id, housekeeping_status)``, so exactly four operations can move it:
+    INSERT a room (here), change its type (:func:`update_room`), change its condition
+    (:func:`set_housekeeping_status`), and DELETE one — which has no path in this module. DIRTY is
+    countable (only ``HOUSEKEEPING_UNSELLABLE`` is not), so a room is sellable from birth and every
+    ALREADY-MATERIALISED future night must learn about it.
+
+    Without this the room reaches nights materialised AFTER it is built, through the seed, and never
+    the ones materialised before — so one type reports two different supplies on two nights, and the
+    property is refused a room it physically has on every night booked before the build, permanently
+    and with nothing that notices.
+
+    No new lock: ``adjust_sellable`` takes the room-type row EXCLUSIVE itself, and there is no
+    earlier row to lock — the deciding state is the row being inserted. Two concurrent builds are
+    two different rooms and legitimately both count.
+    """
     await _require_room_number_free(session, tenant_id, payload.room_number)
     await get_room_type(session, tenant_id, payload.room_type_id)
     room = Room(
@@ -263,6 +281,9 @@ async def create_room(
     )
     session.add(room)
     await session.flush()
+    await allotment.adjust_sellable(
+        session, tenant_id, payload.room_type_id, 1, on_or_after=date.today()
+    )
     return room
 
 

@@ -55,9 +55,20 @@ SUPPLY_WRITERS: dict[tuple[str, str], tuple[str, str]] = {
     ("room_reservations.py", "confirm_room_reservation"): ("get_room_reservation", "the booking"),
     ("room_reservations.py", "cancel_room_reservation"): ("get_room_reservation", "the booking"),
     ("room_reservations.py", "amend_room_reservation"): ("get_room_reservation", "the booking"),
+    ("rooms.py", "create_room"): ("", "nothing — the deciding row is the one being inserted"),
     ("rooms.py", "update_room"): ("get_room", "the room"),
     ("rooms.py", "set_housekeeping_status"): ("get_room", "the room"),
 }
+
+# The fields `_sellable_rooms` COUNTs over, and therefore the ONLY state whose mutation can change
+# what a type can sell. A function that touches one of these MUST also move the counter.
+#
+# This is the half the first version of this file was missing, and it is the half that matters.
+# Censusing the callers of the counter can only ever find a writer that locks WRONGLY; it is
+# structurally blind to a path that changes physical supply and never calls the counter at all —
+# which is exactly what `create_room` did, found in the fourth review round, after a census that
+# advertised itself as the control against a fourth round.
+_SUPPLY_STATE = frozenset({"room_type_id", "housekeeping_status"})
 
 
 def _called_name(node: ast.Call) -> str:
@@ -93,6 +104,77 @@ def _writers() -> dict[tuple[str, str], ast.AsyncFunctionDef | ast.FunctionDef]:
     return found
 
 
+def _supply_mutators() -> set[tuple[str, str]]:
+    """Every function under ``service/`` that changes what :func:`_sellable_rooms` would COUNT —
+    by constructing a ``Room``, by assigning one of :data:`_SUPPLY_STATE`, or by deleting one.
+
+    The inverse census. :func:`_writers` asks "who calls the counter"; this asks "who changes the
+    number the counter is supposed to track", and the two sets must be equal. A path in this set but
+    not in :data:`SUPPLY_WRITERS` is a silent oversell or under-sell.
+    """
+    found: set[tuple[str, str]] = set()
+    for path in sorted(_SERVICE.glob("*.py")):
+        if path.name == "allotment.py":
+            continue
+        for function in _functions(path):
+            for node in ast.walk(function):
+                touches = (
+                    # `Room(...)` — a new physical room, countable from birth.
+                    (isinstance(node, ast.Call) and _called_name(node) == "Room")
+                    # `room.room_type_id = ...` / `room.housekeeping_status = ...`
+                    or (
+                        isinstance(node, ast.Assign)
+                        and any(
+                            isinstance(target, ast.Attribute) and target.attr in _SUPPLY_STATE
+                            for target in node.targets
+                        )
+                    )
+                    # `setattr(room, field, value)` where field is a supply column: the loop shape
+                    # `update_room` uses. Conservative — any setattr in a function that also names a
+                    # supply column counts, because the field is a variable at parse time.
+                    or (
+                        isinstance(node, ast.Call)
+                        and _called_name(node) == "setattr"
+                        and any(
+                            isinstance(inner, ast.Constant) and inner.value in _SUPPLY_STATE
+                            for inner in ast.walk(function)
+                        )
+                    )
+                    # `delete(Room)` — no such path exists today; this is the guard for the day one
+                    # is added. Narrowed to Room on purpose: a bare `delete(...)` also matches the
+                    # restaurant's menu and 86-board paths, which touch no room supply.
+                    or (
+                        isinstance(node, ast.Call)
+                        and _called_name(node) == "delete"
+                        and any(
+                            isinstance(arg, ast.Name) and arg.id == "Room" for arg in node.args
+                        )
+                    )
+                )
+                if touches:
+                    found.add((path.name, function.name))
+                    break
+    return found
+
+
+def test_every_path_that_changes_physical_supply_moves_the_counter() -> None:
+    """The inverse census: nothing may change what a type can sell without telling the counter.
+
+    ``_sellable_rooms`` COUNTs ``hsp_rooms`` on ``(tenant_id, room_type_id, housekeeping_status)``,
+    so exactly four operations can move that number — INSERT a room, change its type, change its
+    condition, DELETE one — and the fourth has no path in this module. Three were hooked; INSERT was
+    not, for four review rounds, because the only control was a whitelist of functions that already
+    called the counter.
+    """
+    mutators = _supply_mutators()
+    undeclared = sorted(mutators - set(SUPPLY_WRITERS))
+    assert not undeclared, (
+        "these change what a room type can sell but never move the allotment counter, so nights "
+        "materialised before the change keep the old supply forever: "
+        + ", ".join(f"{name}:{function}" for name, function in undeclared)
+    )
+
+
 def test_the_census_of_allotment_writers_is_closed() -> None:
     """A new path into the counter fails until it is named here with the row it locks.
 
@@ -119,9 +201,15 @@ def test_every_allotment_writer_locks_the_row_that_decides_its_delta(
     Mutation: drop the ``for_update=True`` from either ``rooms.update_room`` or
     ``rooms.set_housekeeping_status`` (the two this repair adds) and the matching case goes red;
     move the lock below the ``adjust_*`` call and it goes red on the ordering clause.
+
+    A writer with an EMPTY getter has no earlier row to lock — ``create_room``'s deciding state
+    is the row it is inserting, and two concurrent builds are two different rooms that both
+    legitimately count. It is still censused by the two tests above; only this does not apply.
     """
     function = _writers()[where]
     getter_name, subject = getter
+    if not getter_name:
+        pytest.skip(f"{where[0]}:{where[1]} has no deciding row to lock — {subject}")
     calls = [node for node in ast.walk(function) if isinstance(node, ast.Call)]
 
     locked_at = [
