@@ -89,7 +89,7 @@ async def customer_unapplied_balance(
     session: AsyncSession, tenant_id: uuid.UUID, partner_id: uuid.UUID
 ) -> Decimal:
     """A partner's ON-ACCOUNT money: the sum of ``unapplied_amount`` across their receipts (PLAN
-    20.4, D-084) — deposits taken before an invoice existed, plus the excess of any over-payment.
+    20.4, D-086) — deposits taken before an invoice existed, plus the excess of any over-payment.
 
     Deliberately a SEPARATE number from ``customer_open_balance`` rather than netted into it. A
     deposit is a liability the property owes back, not a negative receivable, and netting it would

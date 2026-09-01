@@ -327,7 +327,7 @@ async def test_cannot_overreceive_an_invoice(
 async def test_an_overpayment_lands_unapplied_and_never_in_a_phantom_fx_line(
     db_session: AsyncSession, ar_setup: ArSetup
 ) -> None:
-    """Regression for #73, restated for PLAN 20.4 (D-084). #73 was never "over-payment is illegal"
+    """Regression for #73, restated for PLAN 20.4 (D-086). #73 was never "over-payment is illegal"
     — it was "the difference must not be misbooked as a realized FX gain". The widening keeps that
     invariant and gives the difference a real home: 110 received against a 100 invoice clears the
     invoice, credits 10 to the advance control, and posts NO FX line in a single-currency tenant.

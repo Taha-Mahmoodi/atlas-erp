@@ -161,7 +161,7 @@ class CustomerReceipt(UuidPKMixin, TenantMixin, AuditMixin, TimestampMixin, Docu
 
     __tablename__ = "fin_customer_receipts"
     __table_args__ = (
-        # The floor under the ``unapplied_amount`` draw-down (D-084): a customer can never be owed
+        # The floor under the ``unapplied_amount`` draw-down (D-086): a customer can never be owed
         # a negative deposit, whichever writer got there. Serializing two concurrent applications
         # is the with_for_update lock's job, not this one's — they are complementary, not
         # substitutes. A single-column comparison, exact on PG NUMERIC and SQLite micro-unit
@@ -187,7 +187,7 @@ class CustomerReceipt(UuidPKMixin, TenantMixin, AuditMixin, TimestampMixin, Docu
     bank_account_id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, nullable=False)
     amount: Mapped[object] = mapped_column(MoneyType(), nullable=False)
     # The part of ``amount`` that cleared no invoice — an advance deposit, or the excess of an
-    # over-payment (PLAN 20.4, D-084). Credited to the ``customer_advances`` control at posting and
+    # over-payment (PLAN 20.4, D-086). Credited to the ``customer_advances`` control at posting and
     # reduced by ``apply_receipt`` as it is spent on invoices; 0 on a fully allocated receipt.
     # It is a BALANCE, not a total: allocations only ever subtract from it, never re-derive it.
     unapplied_amount: Mapped[object] = mapped_column(

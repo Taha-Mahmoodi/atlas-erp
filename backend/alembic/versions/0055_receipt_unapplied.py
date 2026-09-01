@@ -4,7 +4,7 @@ Revision ID: 0055
 Revises: 0054
 Create Date: 2026-08-30
 
-PLAN 20.4 / D-084 — a hospitality advance deposit is cash received before any invoice exists, so it
+PLAN 20.4 / D-086 — a hospitality advance deposit is cash received before any invoice exists, so it
 has nothing to allocate. ``unapplied_amount`` is the part of a receipt that cleared no invoice: it
 is credited to the ``customer_advances`` control at posting and drawn down by ``apply_receipt``.
 

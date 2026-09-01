@@ -131,7 +131,7 @@ class CustomerReceiptCreate(ApiModel):
     the bank/cash account debited; ``amount`` is the cash received. Realized FX (D-019) computed and
     posted inside the receipt entry by the service.
 
-    ``allocations`` is OPTIONAL (PLAN 20.4, D-084): ``amount`` must be >= their sum, and the excess
+    ``allocations`` is OPTIONAL (PLAN 20.4, D-086): ``amount`` must be >= their sum, and the excess
     posts to the ``customer_advances`` control as ``unapplied_amount`` — an advance deposit is an
     empty list. Allocating MORE than was received stays refused."""
 
@@ -146,7 +146,7 @@ class CustomerReceiptCreate(ApiModel):
 
 
 class ReceiptApplyRequest(ApiModel):
-    """Apply part (or all) of a receipt's unapplied balance to open invoices (PLAN 20.4, D-084).
+    """Apply part (or all) of a receipt's unapplied balance to open invoices (PLAN 20.4, D-086).
     The invoices must be open, of the receipt's partner and in the receipt's currency — the same
     rules a directly allocated receipt obeys — and their sum must not exceed the receipt's
     ``unapplied_amount``. ``application_date`` is the posting date of the reclass entry (Dr advance
