@@ -119,20 +119,25 @@ async def build_payment_lines(
     from the CREDIT side of its posting line."""
     items: list[ClearedItem] = []
     for bill, amount in pairs:
+        gross = Decimal(str(bill.gross_amount))
         frozen = await clearing_fx.frozen_functional_on_line(
             session,
             tenant_id,
             bill.journal_entry_id,
             bill.ap_account_id,
-            Decimal(str(bill.gross_amount)),
+            gross,
             side="credit",
         )
         items.append(
             ClearedItem(
                 control_account_id=bill.ap_account_id,
-                gross=Decimal(str(bill.gross_amount)),
+                gross=gross,
                 cleared=amount,
                 frozen_functional=frozen,
+                # What earlier payments already cleared. ``open_amount`` is still the PRE-clearing
+                # balance here — ``_record_payment`` draws it down only after the entry has posted
+                # — so this is the cumulative the builder telescopes against (#251, D-088).
+                already_cleared=gross - Decimal(str(bill.open_amount)),
             )
         )
     return await clearing_fx.build_clearing_lines(
