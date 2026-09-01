@@ -19,6 +19,7 @@ the mechanism is pinned in ``test_room_booking_races.py`` under ``-m pg``. What 
 engine-independent: the arithmetic, the refusals and the transition table.
 """
 
+import importlib.util
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime, time, timedelta
@@ -27,13 +28,15 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from httpx import AsyncClient
-from sqlalchemy import CheckConstraint, select
+from sqlalchemy import CheckConstraint, create_engine, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import run_in_uow
 from app.core.exceptions import ConflictError, ValidationFailedError
-from app.core.models import utcnow
+from app.core.models import Base, utcnow
 from app.core.tenancy import tenant_context
 from app.modules.hospitality.constants import (
     HOSPITALITY_ROOM_RESERVATION_BOOK,
@@ -1232,28 +1235,9 @@ async def test_the_website_booking_comes_back_tentative_and_cannot_assert_a_stat
     assert asserted.status_code == 422, asserted.text
 
 
-def test_the_new_tables_emit_the_constraint_names_migration_0056_creates() -> None:
-    """The NAMING_CONVENTION trap, pinned rather than remembered.
-
-    ``Base.metadata``'s convention is ``ck_%(table_name)s_%(constraint_name)s``, and alembic's
-    ``op.create_table`` builds its table on a BARE ``MetaData`` with no convention at all. So a
-    ``ck_``-prefixed name on the model double-prefixes —
-    ``ck_hsp_room_type_inventory_ck_hsp_room_type_inventory_sold_non_negative``, 71 chars — while
-    the migration creates the 44-char literal. The two never match, and past PostgreSQL's 63-byte
-    cap the model's half is machine-truncated on top of that.
-
-    Autogenerate does not compare CHECK constraints, so the drift test cannot see this; the model is
-    read against the migration's SOURCE instead, which is the only place the real DDL is written.
-    Both tables' indexes go through the same check, which is what holds the new partial unique index
-    on ``(tenant_id, room_id) WHERE status = 'CHECKED_IN'`` to one spelling.
-
-    Scope: the 57 OTHER double-prefixed CHECK names already in ``Base.metadata`` are a
-    platform-wide trap this PR does not rename (they are shipped tables), filed separately.
-    """
-    migration = (
-        Path(__file__).resolve().parents[3] / "alembic/versions/0056_hsp_room_bookings.py"
-    ).read_text()
-    emitted = sorted(
+def _emitted_by_the_models() -> list[str]:
+    """Every CHECK and index name the two new models declare, as SQLAlchemy composes them."""
+    return sorted(
         [
             str(constraint.name)
             for model in (RoomTypeInventory, RoomReservation)
@@ -1266,10 +1250,87 @@ def test_the_new_tables_emit_the_constraint_names_migration_0056_creates() -> No
             for index in model.__table__.indexes
         ]
     )
+
+
+def _created_by_migration_0056() -> list[str]:
+    """The same names read back out of a REAL DATABASE, after alembic really ran 0056 against it.
+
+    ``op.create_table`` is executed through alembic's own ``Operations`` against a live SQLite
+    connection, with ``target_metadata`` set exactly as ``env.py`` sets it — which is the whole
+    point, because that is where the naming convention is picked up. The names are then reflected
+    out of ``sqlite_master``, not read off the migration's source text.
+
+    Only revision 0056 is run, on an empty database: SQLite accepts a foreign key to a table that
+    does not exist yet (enforcement is at DML), so the 55 revisions before it buy nothing here and
+    cost seconds on every suite run.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "_migration_0056",
+        Path(__file__).resolve().parents[3] / "alembic/versions/0056_hsp_room_bookings.py",
+    )
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    engine = create_engine("sqlite://")
+    try:
+        with engine.begin() as connection:
+            context = MigrationContext.configure(
+                connection=connection, opts={"target_metadata": Base.metadata}
+            )
+            with Operations.context(context):
+                migration.upgrade()
+            inspector = inspect(connection)
+            return sorted(
+                [
+                    str(check["name"])
+                    for table in ("hsp_room_type_inventory", "hsp_room_reservations")
+                    for check in inspector.get_check_constraints(table)
+                ]
+                + [
+                    str(index["name"])
+                    for table in ("hsp_room_type_inventory", "hsp_room_reservations")
+                    for index in inspector.get_indexes(table)
+                ]
+            )
+    finally:
+        engine.dispose()
+
+
+def test_the_new_tables_emit_the_constraint_names_the_database_gets() -> None:
+    """The NAMING_CONVENTION trap, pinned against the REAL DDL rather than against a source grep.
+
+    ``Base.metadata``'s convention is ``ck_%(table_name)s_%(constraint_name)s``, and because that
+    pattern contains ``%(constraint_name)s`` it composes with an EXPLICITLY NAMED check rather than
+    only filling in an anonymous one. Alembic applies the same convention: ``schemaobj.metadata()``
+    copies ``naming_convention`` off ``env.py``'s ``target_metadata``, which is ``Base.metadata``.
+    So both sides compose, a ``ck_``-prefixed literal double-prefixes on both, and the ONLY way to
+    make model and migration disagree is to make exactly one of them bare — which is what an earlier
+    round of this PR did, and what shipped for a round.
+
+    **This test's predecessor could not see that.** It asserted ``name in migration_source``, and a
+    bare model name like ``ck_hsp_room_type_inventory_sold_non_negative`` is a substring of the
+    migration's ``ck_hsp_room_type_inventory_ck_hsp_room_type_inventory_sold_non_negative``, so it
+    passed green while PostgreSQL held five names none of which the model knew. Reading the database
+    is the fix: run the migration, reflect the names, compare.
+
+    Autogenerate does not compare CHECK constraints, so the drift test cannot cover this either.
+
+    Mutation: put a ``ck_``-prefixed name back into 0056 and this goes red on that name.
+
+    Scope: the 57 OTHER double-prefixed CHECK names already in ``Base.metadata`` are a platform-wide
+    trap this PR does not rename (they are shipped tables), filed as #260.
+    """
+    emitted = _emitted_by_the_models()
+    created = _created_by_migration_0056()
     assert emitted, "the two tables declare CHECKs and indexes; reading none is the test failing"
     for name in emitted:
         assert len(name) <= 63, f"{name} is {len(name)} chars; PostgreSQL truncates past 63"
-        assert name in migration, f"{name} is not what migration 0056 creates"
+    assert emitted == created, (
+        "the models and migration 0056 disagree about what the database is called.\n"
+        f"  the models emit:      {emitted}\n"
+        f"  the migration created: {created}"
+    )
 
 
 async def test_the_restaurant_reservation_status_enum_is_a_different_type(

@@ -116,12 +116,14 @@ AR_ROUND_TRIP_CEILING = 85
 # memoised across it) and a per-night document or reservation read. A ceiling alone is satisfied by
 # a shape that still grows the wrong way — the Phase 19 lesson from ``test_firing_does_not_scale``.
 #
-# MEASURED on this branch: a 3-night confirmation costs 12 statements — the reservation load, the
-# room COUNT that seeds a new night's supply (ONE per call, not one per night), three locked
-# SELECT + INSERT pairs, the counter UPDATE, the status write, and the registry read + UPDATE — and
-# each further night costs exactly 2 more (its locked SELECT and its INSERT; the UPDATEs batch).
-# 14 nights therefore costs 34. Both measurements run after the tenant's RMR- sequence exists, so
-# they differ in nothing but the number of nights.
+# MEASURED on this branch: a 3-night confirmation costs 13 statements — the reservation load, the
+# SHARE lock on the room-type row (the supply gate, ONE per call), the room COUNT that seeds a new
+# night's supply (also ONE per call, not one per night), three locked SELECT + INSERT pairs, the
+# counter UPDATE, the status write, and the registry read + UPDATE — and each further night costs
+# exactly 2 more (its locked SELECT and its INSERT; the UPDATEs batch). 14 nights therefore costs
+# 35. Both measurements run after the tenant's RMR- sequence exists, so they differ in nothing but
+# the number of nights. The supply gate is a FLAT cost by construction, which is the property this
+# ratchet exists to hold: it is taken once, before the night pass, never inside it.
 ROOM_BOOKING_CEILING = 16
 ROOM_BOOKING_PER_NIGHT = 2
 
@@ -497,9 +499,10 @@ async def test_confirming_a_stay_costs_the_same_plus_exactly_its_nights(
     never looks at the property's other room types, at its other nights, or at the bookings already
     in the book. Two shapes would break that and NEITHER has a behavioural symptom — a gate that
     re-counted ``hsp_rooms`` per night to seed ``rooms_sellable`` (O(nights) COUNTs on the request a
-    guest waits on), and a per-night reservation or document read. Asserting the DIFFERENCE rather
-    than only the ceiling is what catches them: a ceiling alone is satisfied by a shape that still
-    grows the wrong way.
+    guest waits on), and a per-night reservation or document read. A THIRD now: the supply gate on
+    the room-type row, which must be taken once before the night pass and never inside it. Asserting
+    the DIFFERENCE rather than only the ceiling is what catches all three: a ceiling alone is
+    satisfied by a shape that still grows the wrong way.
 
     Both bookings are created and committed first, so only the CONFIRM — the counter touch — is
     measured, and both run after the tenant's RMR- sequence exists.

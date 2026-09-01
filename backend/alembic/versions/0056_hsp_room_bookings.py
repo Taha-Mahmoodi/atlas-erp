@@ -10,12 +10,23 @@ PostgreSQL (D-003) — no exclusion constraint, which is the point of Q3's findi
 (room type, night) rather than an `EXCLUDE USING gist` over a daterange, so the SQLite suite can
 exercise the invariant the money path depends on.
 
-**Every CHECK is declared with a BARE name here and on the model**, and that is not cosmetic: the
-metadata's `ck` convention is `ck_%(table_name)s_%(constraint_name)s`, so a `ck_`-prefixed name
-double-prefixes to `ck_hsp_room_type_inventory_ck_hsp_room_type_inventory_sold_non_negative` (71
-chars) on the MODEL while `op.create_table` — which builds its table on a bare MetaData with no
-convention — emits the short literal, and the two stop matching. Bare names make the model emit
-exactly what this file creates. The longest identifier either side emits is
+**Every CHECK is declared with a BARE name here and on the model**, and that is not cosmetic — but
+the reason is the OPPOSITE of what an earlier version of this docstring claimed. `op.create_table`
+does NOT build its table on a convention-free MetaData: `alembic/operations/schemaobj.py` copies
+`naming_convention` off `env.py`'s `target_metadata`, which is `Base.metadata`. So BOTH sides apply
+`ck_%(table_name)s_%(constraint_name)s`, and a `ck_`-prefixed literal double-prefixes on BOTH — to
+`ck_hsp_room_type_inventory_ck_hsp_room_type_inventory_sold_non_negative` (71 chars), which
+PostgreSQL then takes at 60 as SQLAlchemy hash-truncates it while SQLite keeps all 71. A bare name
+composes ONCE, on both sides, so the model, this migration, PostgreSQL and SQLite all agree on
+`ck_hsp_room_type_inventory_sold_non_negative` (44).
+
+Making only ONE side bare is the actual trap: it is the single way to make the two disagree, and it
+shipped for one review round. `test_the_new_tables_emit_the_constraint_names_the_database_gets`
+reads the names back out of `sqlite_master`/`pg_constraint` after a real migration rather than
+grepping this file's source, because a bare model name is trivially a substring of a `ck_`-prefixed
+literal and the source check passed while the DDL differed.
+
+The longest identifier either side emits is
 `uq_hsp_room_type_inventory_tenant_id_room_type_id_stay_date` at 59 chars, inside PostgreSQL's
 63-byte cap, so nothing is silently truncated.
 
@@ -69,15 +80,15 @@ def upgrade() -> None:
             "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
         ),
         sa.CheckConstraint(
-            "rooms_sold >= 0", name="ck_hsp_room_type_inventory_sold_non_negative"
+            "rooms_sold >= 0", name="sold_non_negative"
         ),
         sa.CheckConstraint(
             "rooms_sold <= rooms_sellable + overbooking_limit",
-            name="ck_hsp_room_type_inventory_sold_within_supply",
+            name="sold_within_supply",
         ),
         sa.CheckConstraint(
             "rooms_sellable >= 0 AND overbooking_limit >= 0",
-            name="ck_hsp_room_type_inventory_supply_non_negative",
+            name="supply_non_negative",
         ),
         sa.ForeignKeyConstraint(
             ["tenant_id"],
@@ -126,10 +137,10 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "departure_date > arrival_date",
-            name="ck_hsp_room_reservations_stay_at_least_one_night",
+            name="stay_at_least_one_night",
         ),
         sa.CheckConstraint(
-            "party_size > 0", name="ck_hsp_room_reservations_party_size_positive"
+            "party_size > 0", name="party_size_positive"
         ),
         sa.ForeignKeyConstraint(
             ["tenant_id"],

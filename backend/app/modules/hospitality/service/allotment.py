@@ -23,6 +23,23 @@ are stated where they are decided:
 The gate is a COUNTER and not an interval lock, and that is Q3's central finding: an
 ``EXCLUDE USING gist`` over a daterange is PostgreSQL-only, which would leave the SQLite suite
 (D-003) unable to exercise the invariant the money path depends on.
+
+**THE SUPPLY GATE IS TAKEN HERE, NOT BY THE CALLER** (:func:`_lock_room_type_supply`). Three rounds
+of review found the same defect one call site over — a path writing supply from state it had read
+without a lock — so the lock a supply write needs is taken by the function that does the writing,
+where no future caller can forget it. Every entry point into this module locks the
+``hsp_room_types`` row before it reads or writes a single counter: SHARE when it is moving
+``rooms_sold`` (many bookings of one type are concurrent by design), EXCLUSIVE when it is moving
+``rooms_sellable`` (that is a change to the property's physical supply, and it must not interleave
+with the live COUNT a new night's row is seeded from). What remains the CALLER's job is the row
+whose own state decides the delta — the ``RoomReservation`` for a booking, the ``Room`` for a supply
+change — and ``test_every_allotment_writer_locks_the_row_that_decides_its_delta`` is the mechanical
+guard that no new call site skips it.
+
+**The module-wide lock order is RESERVATION → ROOM → ROOM TYPE → NIGHTS ascending**, and where a
+path takes two room types (a room moved between them) they are taken in ascending id order. Every
+writer takes a SUBSEQUENCE of that order and none takes it out of order; the table of paths against
+locks is in ``docs/modules/hospitality.md``.
 """
 
 from __future__ import annotations
@@ -41,7 +58,7 @@ from app.modules.hospitality.constants import (
     DEFAULT_OVERBOOKING_LIMIT,
     HOUSEKEEPING_UNSELLABLE,
 )
-from app.modules.hospitality.models import Room, RoomTypeInventory
+from app.modules.hospitality.models import Room, RoomType, RoomTypeInventory
 
 _UNSELLABLE_VALUES = tuple(status.value for status in HOUSEKEEPING_UNSELLABLE)
 
@@ -90,6 +107,39 @@ def stay_nights(arrival_date: date, departure_date: date) -> list[date]:
         date.fromordinal(day)
         for day in range(arrival_date.toordinal(), departure_date.toordinal())
     ]
+
+
+async def _lock_room_type_supply(
+    session: AsyncSession, tenant_id: uuid.UUID, room_type_id: uuid.UUID, *, exclusive: bool
+) -> None:
+    """THE SUPPLY GATE: lock the ``hsp_room_types`` row before touching this type's counters.
+
+    One row, taken by the two functions below rather than by their callers, because "the caller
+    remembers to lock" is the defect this module has now shipped three times.
+
+    **Why the type row and not the counter rows.** The counter rows already serialize two bookings
+    of the same night. What they cannot serialize is a supply change against the MATERIALISATION of
+    a night that has no row yet: :func:`_sellable_rooms` COUNTs ``hsp_rooms`` outside any lock, so a
+    room going OUT_OF_ORDER at the same instant as the first booking of an unmaterialised night
+    leaves that night seeded from the pre-change count and permanently one room over — the same
+    silent oversell as the double room-move, one layer down. :func:`adjust_sellable` takes this row
+    EXCLUSIVE, the booking gate takes it SHARE, so the count and the supply change cannot interleave
+    while two concurrent bookings of one type still run in parallel.
+
+    **Why it is taken before the night pass and not inside the seed.** Locking rooms lazily, at the
+    moment a missing night is found, would take the type lock AFTER a night row — the one ordering
+    that can deadlock against ``adjust_sellable``, which takes them the other way round. Taken here
+    it is unconditional and the module-wide order (reservation → room → room type → nights) holds on
+    every path. The cost is one indexed PK read per counter call.
+
+    A no-op on SQLite, where ``FOR UPDATE``/``FOR SHARE`` are dropped by the dialect and the
+    single-writer lock serializes instead (D-003/D-020, the ``inv_stock_quants`` precedent).
+    """
+    await session.execute(
+        select(RoomType.id)
+        .where(RoomType.tenant_id == tenant_id, RoomType.id == room_type_id)
+        .with_for_update(read=not exclusive)
+    )
 
 
 async def _sellable_rooms(
@@ -198,8 +248,10 @@ async def adjust_allotment(
     ``released_dates`` is therefore only meaningful alongside a positive ``delta``: it is the other
     half of a move, not a release in its own right (a plain release is ``delta = -1``).
 
-    THREE PHASES, in this order, and the order is the contract:
+    FOUR PHASES, in this order, and the order is the contract:
 
+    0. **Gate** — the room type row SHARE, so a supply change cannot interleave with the live COUNT
+       phase 1 seeds a missing night from (:func:`_lock_room_type_supply`).
     1. **Lock** every night ascending, materialising a missing row from the live room count.
     2. **Check** every night. Refusing before any counter has moved is what lets a caller promise
        that a refused booking leaves the book exactly as it was, without depending on the rollback.
@@ -237,6 +289,9 @@ async def apply_allotment_deltas(
     wanted = sorted(stay_date for stay_date, moved in deltas.items() if moved)
     if not wanted:
         return
+
+    # PHASE 0 — the supply gate, SHARE. Before any night, so it can never be taken after one.
+    await _lock_room_type_supply(session, tenant_id, room_type_id, exclusive=False)
 
     # ONE count for the whole call, memoised, and paid only if a night really is missing.
     cached: list[int] = []
@@ -295,9 +350,15 @@ async def adjust_sellable(
     shape: a property with a year of materialised nights must not pay 365 statements for one boiler
     failure. ``synchronize_session`` is off and the loaded rows are expired instead — nothing on
     this path reads them again.
+
+    **The type row is taken EXCLUSIVE first** (:func:`_lock_room_type_supply`), which is what stops
+    a concurrent booking materialising a night from a room count this call is in the middle of
+    invalidating. The CALLER still owes the lock on the ``Room`` whose own state decided ``delta``;
+    see ``rooms.update_room`` and ``rooms.set_housekeeping_status``.
     """
     if delta == 0:
         return
+    await _lock_room_type_supply(session, tenant_id, room_type_id, exclusive=True)
     stmt = (
         select(RoomTypeInventory)
         .where(

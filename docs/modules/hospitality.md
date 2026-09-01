@@ -31,7 +31,7 @@ payment, split checks, and tax on a check (see *Known limits*).
 
 | File | Concern | Key decision |
 |---|---|---|
-| `constants/` | a PACKAGE since 20.1 (the single file hit the §8.4 cap, the `sales/constants/` precedent): `enums.py` (`AvailabilityState` / `AvailabilitySource` / `OrderTicketStatus` + `TICKET_FLOW`, and every later lifecycle with its transition table), `permissions.py` (the keys, registered at import), `documents.py` (doc types, number sequences, docflow link types, event and job keys). `__init__` re-exports everything, so `from ...constants import X` is unchanged | D-009, D-012, D-072, STRUCTURE §8.4 |
+| `constants/` | a PACKAGE since 20.1 (the single file hit the §8.4 cap, the `sales/constants/` precedent): `enums.py` (the RESTAURANT's lifecycles — `AvailabilityState` / `AvailabilitySource` / `OrderTicketStatus` + `TICKET_FLOW`, the table booking), `rooms.py` (the HOTEL's — `HousekeepingStatus`, the two housekeeping flows, `RoomReservationStatus` + `ROOM_RESERVATION_FLOW`, `DEFAULT_OVERBOOKING_LIMIT`; split out at the §8.4 cap in 20.2, the same seam `models/rooms.py` cut), `permissions.py` (the keys, registered at import), `documents.py` (doc types, number sequences, docflow link types, event and job keys). `__init__` re-exports everything, so `from ...constants import X` is unchanged | D-009, D-012, D-072, STRUCTURE §8.4 |
 | `models/ordering.py` | `MenuAvailability` (`hsp_menu_availability`), `OrderTicket` (`hsp_order_tickets`), `OrderTicketLine` (`hsp_order_ticket_lines`) | D-007, D-015, D-029 |
 | `models/menu.py` | `MenuSection` (`hsp_menu_sections`), `MenuPlacement` (`hsp_menu_placements`), `MenuItemTag` (`hsp_menu_item_tags`) | D-081 |
 | `models/table_reservations.py` | `ReservationSettings` (`hsp_reservation_settings`), `ServiceSlot` (`hsp_service_slots`), `TableReservation` (`hsp_table_reservations`) | D-007, D-012 |
@@ -544,7 +544,7 @@ deposits and the night audit are Tasks 5–7.
 
 | File | Concern |
 |---|---|
-| `constants/` | the package `constants.py` became at the §8.4 cap — `enums.py` (every status enum + its transition table + the numeric defaults), `permissions.py` (the keys, registered at import), `documents.py` (doc types, sequences, link and event keys). `__init__` re-exports everything, so every `from ...constants import X` still resolves from one surface |
+| `constants/` | the package `constants.py` became at the §8.4 cap — `enums.py` (the restaurant's status enums + transition tables + defaults), `rooms.py` (the hotel's, split out at the same cap in 20.2), `permissions.py` (the keys, registered at import), `documents.py` (doc types, sequences, link and event keys). `__init__` re-exports everything, so every `from ...constants import X` still resolves from one surface |
 | `models/rooms.py` | `RoomType` (`hsp_room_types`), `Room` (`hsp_rooms`), `RatePlan` (`hsp_rate_plans`), `HousekeepingTask` (`hsp_housekeeping_tasks`) |
 | `rooms_schemas.py` | the wire shapes; a fourth schemas sibling (D-030/D-031) |
 | `service/rooms.py` | the three masters' CRUD + paginated reads, and `set_housekeeping_status` |
@@ -712,21 +712,41 @@ suite (D-003) could not exercise the invariant the money path depends on. The sh
 is `inventory/service/stock_quants.apply_bin_delta` (D-020/D-036) — locked read, pre-flight refusal,
 upsert-on-lock, portable CHECK backstop. One pattern, now four counters.
 
-### THREE locks, and each covers a race the other two do not
+### FOUR locks, and the order is reservation → room → room type → nights
 
 The night counter is not the only exclusive thing in the module, and treating it as though it were
-is how two of the three races below got in. Every writer takes them in this order and no other:
+is how three separate double-write paths got in — one per review round, each a call site further
+over than the last. The rule that replaces "remember to lock" is: **every path that writes
+`rooms_sold` or `rooms_sellable` locks the row whose state decides its delta, before it reads the
+counter.** Every writer takes a subsequence of the order below and none takes it out of order.
 
 | lock | taken by | the race it covers |
 |---|---|---|
-| the RESERVATION row (`get_room_reservation(for_update=True)`) | every transition | **one booking moved twice at once.** A double-clicked Confirm is two CONCURRENT requests; `ROOM_RESERVATION_FLOW` is an in-Python read, so both racers see TENTATIVE, both pass it, then both serialize correctly on the night rows and BOTH take the nights. The counter is then overstated forever — the later cancel gives back one, not two. `/cancel` has the same shape on the way out, and worse: a double release is floored at zero and looks perfectly plausible |
+| the RESERVATION row (`get_room_reservation(for_update=True)`) | confirm, cancel, no-show, amend, check-in, check-out | **one booking moved twice at once.** A double-clicked Confirm is two CONCURRENT requests; `ROOM_RESERVATION_FLOW` is an in-Python read, so both racers see TENTATIVE, both pass it, then both serialize correctly on the night rows and BOTH take the nights. The counter is then overstated forever — the later cancel gives back one, not two. `/cancel` has the same shape on the way out, and worse: a double release is floored at zero and looks perfectly plausible |
+| the ROOM row (`get_room(for_update=True)`) | check-in, `update_room`, `set_housekeeping_status` | **two guests handed the same key** at check-in; and **one room taken off its type twice** on the two paths that change what the property can sell. `room.room_type_id` and `room.housekeeping_status` are both read in Python, so two concurrent `PATCH {room_type_id: SGL}` both see DBL and both apply −1: a silent, permanent UNDER-sell on every materialised night |
+| the ROOM TYPE row (`allotment._lock_room_type_supply`) — SHARE on the counter path, EXCLUSIVE on the supply path | taken by `allotment` itself, not by its callers | **a night materialising from a supply that has already changed.** `adjust_sellable` reaches only MATERIALISED nights, while a night with no row is seeded from a live `COUNT(hsp_rooms)`; unordered, a booking counts three rooms while a closure commits the second, and the night is one room over forever |
 | the per-night ALLOTMENT rows, ascending | confirm, cancel, the date change | **two DIFFERENT bookings overselling one night**, and (via the sort) the deadlock two overlapping multi-night stays would otherwise reach |
-| the ROOM row (`get_room(for_update=True)`) | check-in | **two guests handed the same key.** The gate sells a room TYPE, so two confirmed doubles are a correct book and nothing before check-in makes 101 exclusive |
 
-The reservation is the OUTER lock, which is also what keeps the order deterministic: reservation,
-then nights ascending, then (on the arrival path, which touches no night) the room. Each is pinned
-by its own `-m pg` race, and each of those races fails when its lock is deleted — including the
-cancellation one, which first had to be rewritten because it passed the mutation for the wrong
+Every path in the module that writes either counter, and what it locks:
+
+| path | writes | the row that decides the delta | locks |
+|---|---|---|---|
+| `room_reservations.confirm_room_reservation` | `rooms_sold` +1/night | the RoomReservation (its status) | reservation FOR UPDATE → type SHARE → nights asc |
+| `room_reservations.cancel_room_reservation` | `rooms_sold` −1/night | the RoomReservation (its status) | reservation FOR UPDATE → type SHARE → nights asc |
+| `room_reservations.amend_room_reservation` | `rooms_sold` ±1/night | the RoomReservation (its status and dates) | reservation FOR UPDATE → type SHARE → nights asc |
+| `rooms.update_room` (`room_type_id` changed) | `rooms_sellable` −1 and +1 | the Room (its current type) | room FOR UPDATE → each type FOR UPDATE in ascending id order → that type's nights asc |
+| `rooms.set_housekeeping_status` (crossing `HOUSEKEEPING_UNSELLABLE`) | `rooms_sellable` ±1 | the Room (its current status) | room FOR UPDATE → type FOR UPDATE → nights asc |
+| `allotment._row_for_update` (materialising a night) | `rooms_sellable` at birth | every `hsp_rooms` row of the type, so no single row lock can order it | type SHARE, taken before the first night — the reason that lock exists |
+| `room_stays.check_in/check_out` | **nothing** | — | reservation FOR UPDATE → room FOR UPDATE |
+
+The type lock is taken by `allotment` itself rather than by its callers, because a lock a caller
+must remember is the defect this module shipped three times. What remains the caller's job — the
+reservation or the room — is held by a STATIC census,
+`test_allotment_lock_discipline.py`: it fails on any function under `service/` that reaches the
+counter without appearing in its table, and on any declared writer whose lock is missing or taken
+after the counter call. Each lock is ALSO pinned by its own `-m pg` race in
+`test_room_booking_races.py`, and each of those races fails when its lock is deleted — including
+the cancellation one, which first had to be rewritten because it passed the mutation for the wrong
 reason (see *Racing on purpose* below).
 
 ### Racing on purpose
@@ -792,15 +812,21 @@ past its CHECK would be a 500 on the housekeeping board; recording the oversell 
 booked into a room the property cannot give them, and Atlas has no walk-the-guest flow to resolve
 one. So the manager is told which night to move a booking off first.
 
-**`rooms_sellable` has TWO writers upstream of it, not one.** D-085 gave `housekeeping_status` a
-single writer so the counter could hang off it; `RoomUpdate.room_type_id` — "renumber a room or move
-it to another type" — changes exactly the same fact and had no hook at all, so moving 101 out of DBL
-left every materialised DBL night still counting a room the type no longer has. That is a SILENT
-oversell: the gate then confirms a stay for a room that does not exist and the walk happens at
-check-in. `rooms.update_room` now routes both types through `adjust_sellable`, in ascending room-type
-id order so two rooms swapping types at once cannot deadlock, and the losing type refuses with
-`hospitality.room_type_sold_out` on the same argument as the housekeeping case. A room already in
-`HOUSEKEEPING_UNSELLABLE` is supply for neither type, so moving it moves nothing.
+**`rooms_sellable` has THREE writers, not one, and none of them is the counter's own file.** D-085
+gave `housekeeping_status` a single writer so the counter could hang off it; `RoomUpdate.room_type_id`
+— "renumber a room or move it to another type" — changes exactly the same fact and had no hook at
+all, so moving 101 out of DBL left every materialised DBL night still counting a room the type no
+longer has. That is a SILENT oversell: the gate then confirms a stay for a room that does not exist
+and the walk happens at check-in. `rooms.update_room` now routes both types through
+`adjust_sellable`, in ascending room-type id order so two rooms swapping types at once cannot
+deadlock, and the losing type refuses with `hospitality.room_type_sold_out` on the same argument as
+the housekeeping case. A room already in `HOUSEKEEPING_UNSELLABLE` is supply for neither type, so
+moving it moves nothing. The third writer is `_row_for_update` **seeding a new night** from a live
+`COUNT(hsp_rooms)`, which is why the room-type row is locked SHARE by the counter path and EXCLUSIVE
+by the two supply paths: it is the only one of the three whose deciding state is a SET of rows, so
+no `for_update` on a single row can order it. All three, and the rows they lock, are in the table
+under *FOUR locks* above — and that table is enforced by `test_allotment_lock_discipline.py`, not
+just written down.
 
 **A physical room holds ONE guest at a time, and that starts at check-in.** The counter sells a room
 TYPE, so two confirmed doubles on one night are a correct book and nothing above check-in makes 101
@@ -887,9 +913,16 @@ plain ceiling.
    class, different counter — filed rather than fixed here, because it is shipped behaviour with its
    own tests.
 9. **The `ck_` double-prefix trap is fixed on these two tables only.** `Base.metadata`'s convention
-   is `ck_%(table_name)s_%(constraint_name)s`, so a `ck_`-prefixed CHECK name double-prefixes on the
-   model while `op.create_table` (a bare MetaData, no convention) emits the short literal. The five
-   new CHECKs are declared BARE and pinned by
-   `test_the_new_tables_emit_the_constraint_names_migration_0056_creates`; **57 other CHECK names
-   across the platform are still double-prefixed**, several past PostgreSQL's 63-byte cap, and
-   renaming shipped constraints is its own migration. Filed.
+   is `ck_%(table_name)s_%(constraint_name)s`, and because that pattern contains
+   `%(constraint_name)s` it composes with an explicitly named CHECK rather than only filling in an
+   anonymous one. **Alembic applies the same convention** — `schemaobj.metadata()` copies
+   `naming_convention` off `env.py`'s `target_metadata`, which is `Base.metadata` — so a
+   `ck_`-prefixed literal double-prefixes on BOTH sides, to 71 chars, which PostgreSQL then takes at
+   60 (SQLAlchemy hash-truncates past its 63-byte cap) while SQLite keeps all 71. Making only ONE
+   side bare is the single way to make the two disagree, and it shipped for a review round. The five
+   new CHECKs are declared bare on both, verified against a real PostgreSQL 17 and against
+   `sqlite_master` after a real migration by
+   `test_the_new_tables_emit_the_constraint_names_the_database_gets` and
+   `test_the_phase_20_check_constraints_are_named_on_postgres_as_the_models_declare`; **57 other
+   CHECK names across the platform are still double-prefixed**, several past 63 bytes, and renaming
+   shipped constraints is its own migration. Filed as #260.

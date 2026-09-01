@@ -30,6 +30,17 @@ outside ``HOUSEKEEPING_UNSELLABLE``, so the counter has to hear about a change t
 
 One helper, two hooks, and the set they both test against (``HOUSEKEEPING_UNSELLABLE``) is the same
 one ``allotment`` seeds a new night's ``rooms_sellable`` from.
+
+**BOTH HOOKS LOCK THE ROOM FIRST, and that is not optional.** Each computes its delta from state it
+read off the ``Room`` — the type it is moving OUT of, the status it is moving out of — so an
+unlocked read is a lost update with a permanent consequence: two concurrent
+``PATCH {room_type_id: SGL}`` on one room both see DBL, both compute a move, and both apply −1 to
+DBL's materialised nights. The property then refuses a room a night it physically has, on every
+materialised night, forever, and nothing ever notices because each write on its own is legal and the
+CHECKs all hold. ``for_update=True`` makes the losing request re-read the row under the lock, find
+the move already made, and do nothing. Same shape, same fix, as the reservation lock on every
+booking transition (D-087); the module-wide order is **reservation → room → room type → nights**,
+and these two paths take its last three links.
 """
 
 from __future__ import annotations
@@ -212,11 +223,21 @@ async def get_room(
 ) -> Room:
     """The room, or 404 ``hospitality.room_not_found``.
 
-    ``for_update=True`` is check-in's: two receptionists putting two guests into 101 at the same
-    instant would otherwise both read it empty and both write, and the partial unique index would
-    turn the loser into a 500 instead of a 409. Locking the ROOM makes the occupancy read that
-    follows authoritative. Taken AFTER the reservation lock, never before — reservation then room is
-    the one order this module's writers use (D-020/D-036).
+    ``for_update=True`` is taken by EVERY writer of this row and by check-in, and it covers two
+    different races with one lock:
+
+    - **check-in** — two receptionists putting two guests into 101 at the same instant would
+      otherwise both read it empty and both write, and the partial unique index would turn the loser
+      into a 500 instead of a 409. Locking the ROOM makes the occupancy read that follows
+      authoritative.
+    - **:func:`update_room` and :func:`set_housekeeping_status`** — both derive an allotment delta
+      from the value this read returns, so an unlocked read double-applies it (see the module
+      docstring). The lock is what makes the loser's re-read see the winner's move.
+
+    Reads (the board, the room list) pass ``for_update=False`` and take no lock: a housekeeping
+    board refreshing must not queue behind a renumber. Taken AFTER the reservation lock and BEFORE
+    any room-type or night lock — reservation → room → room type → nights is the one order this
+    module's writers use (D-020/D-036).
     """
     stmt = select(Room).where(Room.id == room_id, Room.tenant_id == tenant_id)
     if for_update:
@@ -262,11 +283,16 @@ async def update_room(
     told which night to move a booking off first (``adjust_sellable``'s own argument). A room
     already in ``HOUSEKEEPING_UNSELLABLE`` counts toward neither type, so moving it moves nothing.
 
+    **The room row is LOCKED before it is read**, because ``room.room_type_id`` is what decides the
+    delta: two concurrent moves of one room off DBL both read DBL unlocked, both compute a move, and
+    both take a room off every materialised DBL night. Under the lock the loser re-reads SGL,
+    ``moved_to`` stays None, and its PATCH is the no-op it should be.
+
     Both columns are NOT NULL, so an explicitly-sent ``null`` is dropped rather than flushed into an
     IntegrityError; ``exclude_unset`` is what distinguishes "not sent" from "sent as null", and
     neither field has a meaning for null the way ``RatePlanUpdate.valid_to`` does.
     """
-    room = await get_room(session, tenant_id, room_id)
+    room = await get_room(session, tenant_id, room_id, for_update=True)
     data = sent_fields(payload)
     moved_to: uuid.UUID | None = None
     if "room_type_id" in data:
@@ -312,8 +338,14 @@ async def set_housekeeping_status(
     (``hospitality.room_type_sold_out``), not silently oversold — ``allotment.adjust_sellable``
     is where that is argued. The refusal is raised before the column moves, so it leaves the room
     exactly as it was.
+
+    **The room row is LOCKED before it is read**, for the reason :func:`update_room` states: the
+    delta is derived from ``room.housekeeping_status``, so two concurrent moves of one room out of
+    OUT_OF_ORDER both read OUT_OF_ORDER unlocked and both give the type a room back. Under the lock
+    the loser re-reads the winner's status and ``HOUSEKEEPING_FLOW`` refuses it with a 409 —
+    ``DIRTY -> DIRTY`` is not a legal move — instead of silently inflating supply.
     """
-    room = await get_room(session, tenant_id, room_id)
+    room = await get_room(session, tenant_id, room_id, for_update=True)
     current = HousekeepingStatus(room.housekeeping_status)
     if to_status not in HOUSEKEEPING_FLOW[current]:
         raise ConflictError(

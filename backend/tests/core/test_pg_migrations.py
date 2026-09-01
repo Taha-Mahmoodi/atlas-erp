@@ -18,9 +18,11 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from sqlalchemy import text
+from sqlalchemy import CheckConstraint, text
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
+
+from app.core.models import Base
 
 pytestmark = pytest.mark.pg
 
@@ -245,3 +247,51 @@ def test_0046_round_trips_on_postgres(make_alembic_config: Callable[[str], Confi
         "ix_core_api_keys_tenant_id",
         "ix_core_api_keys_tenant_id_user_id",
     } <= restored
+
+
+async def test_the_phase_20_check_constraints_are_named_on_postgres_as_the_models_declare() -> None:
+    """PLAN 20.2's five CHECKs land on the REAL engine under the names the models emit.
+
+    Here rather than beside the hospitality tests because a real ``alembic upgrade head`` against
+    PostgreSQL exists only in this job, and because the failure mode is PostgreSQL's alone: the
+    ``ck_%(table_name)s_%(constraint_name)s`` convention is applied by BOTH the model and alembic's
+    ``op.create_table`` (``schemaobj.metadata()`` copies it off ``env.py``'s ``target_metadata``),
+    so a ``ck_``-prefixed literal composes twice, and past 63 bytes PostgreSQL takes SQLAlchemy's
+    hash-truncated 60-char form while SQLite keeps all 71. Model and database then disagree on the
+    real engine in a way the SQLite suite reads as a mere long name.
+
+    The composition itself is pinned engine-independently in
+    ``test_the_new_tables_emit_the_constraint_names_the_database_gets``; this is the runtime proof
+    on the engine that truncates. Mutation: put a ``ck_``-prefixed name back into 0056, re-migrate,
+    and this reports the 60-char double-prefixed names.
+
+    Scope: the 57 other double-prefixed CHECK names across the platform are #260 and are not
+    asserted here — these two tables are what PLAN 20.2 creates.
+    """
+    engine = create_async_engine(_URL)
+    try:
+        async with engine.connect() as conn:
+            landed = set(
+                await conn.scalars(
+                    text(
+                        "SELECT conname FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid "
+                        "WHERE c.contype = 'c' AND t.relname IN "
+                        "('hsp_room_type_inventory', 'hsp_room_reservations')"
+                    )
+                )
+            )
+    finally:
+        await engine.dispose()
+
+    declared = {
+        str(constraint.name)
+        for table in ("hsp_room_type_inventory", "hsp_room_reservations")
+        for constraint in Base.metadata.tables[table].constraints
+        if isinstance(constraint, CheckConstraint)
+    }
+    assert len(declared) == 5, f"PLAN 20.2 declares five CHECKs; the models emit {sorted(declared)}"
+    assert landed == declared, (
+        "PostgreSQL holds different CHECK names than the models emit.\n"
+        f"  the models emit: {sorted(declared)}\n"
+        f"  the database has: {sorted(landed)}"
+    )

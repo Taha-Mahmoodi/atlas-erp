@@ -1,12 +1,22 @@
-"""The booking under CONCURRENCY (PLAN 20.2, spec Q3). TWO locks are exercised here and they are
-not the same lock:
+"""The booking under CONCURRENCY (PLAN 20.2, spec Q3). FOUR locks are exercised here and no two of
+them cover the same race:
 
 - the RESERVATION row, taken ``with_for_update`` by every transition path, which is what stops one
-  booking being confirmed (or cancelled) twice by two requests that both read it TENTATIVE; and
-- the per-night ALLOTMENT rows, taken ascending inside it, which is what stops two DIFFERENT
-  bookings overselling one night.
+  booking being confirmed (or cancelled) twice by two requests that both read it TENTATIVE;
+- the ROOM row, taken by check-in and by BOTH writers of the room's own state, which is what stops
+  two guests being handed one key and what stops one room being taken off its type's supply twice;
+- the ROOM TYPE row — taken by ``allotment`` itself, SHARE when moving ``rooms_sold`` and EXCLUSIVE
+  when moving ``rooms_sellable`` — which is what stops a night materialising from a room count a
+  concurrent closure has already invalidated; and
+- the per-night ALLOTMENT rows, taken ascending, which is what stops two DIFFERENT bookings
+  overselling one night.
 
-Neither covers the other's race, and the first one is the one a double-clicked button produces.
+The order is **reservation → room → room type → nights ascending**, every writer takes a
+subsequence of it, and the paths × locks table is in ``docs/modules/hospitality.md``.
+
+Three of the four exist because a review round found a path that had skipped one — each time one
+call site further over than the round before. The static census that catches the NEXT such path is
+``test_allotment_lock_discipline.py``; these are the runtime proof that each lock is the right one.
 
 **These are ``-m pg`` tests, and that is the point.** ``with_for_update`` is a NO-OP on SQLite
 (D-003/D-020, the ``inv_stock_quants`` precedent), so a gated race there shows a lost update that
@@ -48,12 +58,14 @@ from app.core.exceptions import ConflictError, ValidationFailedError
 from app.core.models import utcnow
 from app.core.tenancy import system_context, tenant_context
 from app.modules.admin.models import Tenant
+from app.modules.hospitality.constants import HousekeepingStatus
 from app.modules.hospitality.models import Room, RoomReservation, RoomTypeInventory
 from app.modules.hospitality.rooms_schemas import (
     RatePlanCreate,
     RoomCreate,
     RoomReservationAmend,
     RoomTypeCreate,
+    RoomUpdate,
 )
 from app.modules.hospitality.rooms_schemas import RoomReservationCreate as BookingCreate
 from app.modules.hospitality.service import (
@@ -847,3 +859,297 @@ async def test_two_guests_cannot_be_checked_into_one_room_at_the_same_instant(
             )
     assert occupants == ["CHECKED_IN"]
     assert await _sold(pg_engine, pg_tenant, room_type_id) == {arrival: 2}
+
+
+async def _sellable(
+    pg_engine: AsyncEngine, tenant_id: uuid.UUID, room_type_id: uuid.UUID
+) -> dict[date, int]:
+    """``rooms_sellable`` per materialised night — the SUPPLY half of the counter, which the three
+    races below are about and the six above never move."""
+    async with build_session_factory(pg_engine)() as session:
+        with tenant_context(tenant_id):
+            rows = (
+                await session.execute(
+                    select(RoomTypeInventory).where(
+                        RoomTypeInventory.room_type_id == room_type_id
+                    )
+                )
+            ).scalars()
+            return {row.stay_date: row.rooms_sellable for row in rows}
+
+
+async def _second_room_type(
+    factory: Callable[[], AsyncSession], tenant_id: uuid.UUID
+) -> uuid.UUID:
+    """A SGL for a room to be moved onto. ``_seed_property`` sells one type; a room move needs two.
+    """
+    async with factory() as session:
+        with tenant_context(tenant_id):
+            room_type = await rooms.create_room_type(
+                session, tenant_id, RoomTypeCreate(code="SGL", name="Single", base_capacity=1)
+            )
+            await session.commit()
+            return room_type.id
+
+
+async def _change_room(
+    factory: Callable[[], AsyncSession],
+    tenant_id: uuid.UUID,
+    room_id: uuid.UUID,
+    payload: RoomUpdate,
+    label: str,
+) -> str:
+    """One ``PATCH /rooms/{id}`` in its own session and uow, reporting the outcome as a string so
+    ``gather`` collects both racers without one failure hiding the other's."""
+    async with factory() as session:
+        try:
+            with tenant_context(tenant_id):
+                await run_in_uow(
+                    session, lambda: rooms.update_room(session, tenant_id, room_id, payload)
+                )
+            return label
+        except ConflictError as exc:
+            return f"conflict:{exc.code}"
+        except ValidationFailedError as exc:
+            return f"refused:{exc.code}"
+
+
+async def _set_status(
+    factory: Callable[[], AsyncSession],
+    tenant_id: uuid.UUID,
+    room_id: uuid.UUID,
+    to_status: HousekeepingStatus,
+    label: str,
+) -> str:
+    """One housekeeping move, same reporting shape as :func:`_change_room`."""
+    async with factory() as session:
+        try:
+            with tenant_context(tenant_id):
+                await run_in_uow(
+                    session,
+                    lambda: rooms.set_housekeeping_status(
+                        session, tenant_id, room_id, to_status
+                    ),
+                )
+            return label
+        except ConflictError as exc:
+            return f"conflict:{exc.code}"
+        except ValidationFailedError as exc:
+            return f"refused:{exc.code}"
+
+
+@pytest.mark.pg
+async def test_two_concurrent_moves_of_one_room_take_it_off_the_losing_type_once(
+    pg_engine: AsyncEngine, pg_tenant: uuid.UUID, factory: Callable[[], AsyncSession]
+) -> None:
+    """TWO CONCURRENT ``PATCH /rooms/{id} {room_type_id: SGL}`` ON ONE ROOM. The losing type gives
+    up the room ONCE.
+
+    The supply half of the defect the reservation lock covers on the sold half, and it is a
+    permanent UNDER-sell rather than an oversell. ``room.room_type_id`` decides the delta and it is
+    read in Python, so two requests both see DBL, both compute a move, and both apply -1 to
+    every materialised DBL night: three rooms become one, and the property then refuses two rooms a
+    night it physically has, on every materialised night, FOREVER. Nothing notices — each write is
+    legal on its own, both CHECKs hold, and the only symptom is bookings quietly turned away.
+
+    ``rooms.get_room(..., for_update=True)`` is what prevents it: the loser re-reads the room under
+    the lock, finds it already on SGL, and its move is the no-op it should be. Delete that
+    ``for_update`` and this test reports ``rooms_sellable == 1`` on a night with three rooms.
+
+    The night is MATERIALISED FIRST and holds a live booking, so the assertion is arithmetic on a
+    real row rather than on a grid that does not exist yet.
+    """
+    arrival = _tomorrow()
+    room_type_id, rate_plan_id = await _seed_property(factory, pg_tenant, rooms_count=3)
+    single_id = await _second_room_type(factory, pg_tenant)
+    assert (
+        await _book_and_confirm(
+            factory, pg_tenant, room_type_id, rate_plan_id, arrival, 1, "Sleeping"
+        )
+        == "confirmed"
+    )
+    assert await _sellable(pg_engine, pg_tenant, room_type_id) == {arrival: 3}
+    assert await _sold(pg_engine, pg_tenant, room_type_id) == {arrival: 1}
+    moving = (await _room_ids(factory, pg_tenant))[0]
+
+    # BEFORE the read: ``get_room(for_update=True)`` IS the lock, so gating after it would park the
+    # winner at a gate the loser can only reach through the lock the winner holds.
+    async with interleaved((rooms, "get_room"), before=True):
+        results = await asyncio.wait_for(
+            asyncio.gather(
+                *(
+                    _change_room(
+                        factory, pg_tenant, moving, RoomUpdate(room_type_id=single_id), "moved"
+                    )
+                    for _ in range(RACERS)
+                )
+            ),
+            timeout=GATE_TIMEOUT * 3,
+        )
+
+    assert results == ["moved", "moved"], results
+    assert await _sellable(pg_engine, pg_tenant, room_type_id) == {arrival: 2}, (
+        "the losing type gave up the room twice"
+    )
+    assert await _sold(pg_engine, pg_tenant, room_type_id) == {arrival: 1}
+
+
+@pytest.mark.pg
+async def test_two_concurrent_housekeeping_moves_take_the_room_off_sale_once(
+    pg_engine: AsyncEngine, pg_tenant: uuid.UUID, factory: Callable[[], AsyncSession]
+) -> None:
+    """TWO CONCURRENT ``OUT_OF_ORDER`` MOVES ON ONE ROOM. Supply drops by one, not two.
+
+    Identical in shape to the room move above and to the double-clicked Confirm: the delta is
+    derived from ``room.housekeeping_status``, read in Python, so two requests both see DIRTY, both
+    cross into ``HOUSEKEEPING_UNSELLABLE``, and both take a room off every materialised night.
+    ``HOUSEKEEPING_FLOW`` cannot stop it — like ``ROOM_RESERVATION_FLOW``, it has already run on a
+    stale read.
+
+    Under the room lock the loser re-reads OUT_OF_ORDER and the flow refuses it 409
+    ``hospitality.room_not_transitionable`` (the only move out of OUT_OF_ORDER is DIRTY), which is
+    both the correct answer and the proof the re-read happened. Delete the ``for_update`` and this
+    reports two successes and ``rooms_sellable == 1``.
+    """
+    arrival = _tomorrow()
+    room_type_id, rate_plan_id = await _seed_property(factory, pg_tenant, rooms_count=3)
+    assert (
+        await _book_and_confirm(
+            factory, pg_tenant, room_type_id, rate_plan_id, arrival, 1, "Sleeping"
+        )
+        == "confirmed"
+    )
+    assert await _sellable(pg_engine, pg_tenant, room_type_id) == {arrival: 3}
+    closing = (await _room_ids(factory, pg_tenant))[2]
+
+    async with interleaved((rooms, "get_room"), before=True):
+        results = await asyncio.wait_for(
+            asyncio.gather(
+                *(
+                    _set_status(
+                        factory, pg_tenant, closing, HousekeepingStatus.OUT_OF_ORDER, "closed"
+                    )
+                    for _ in range(RACERS)
+                )
+            ),
+            timeout=GATE_TIMEOUT * 3,
+        )
+
+    assert sorted(results) == [
+        "closed",
+        "conflict:hospitality.room_not_transitionable",
+    ], results
+    assert await _sellable(pg_engine, pg_tenant, room_type_id) == {arrival: 2}
+
+
+@pytest.mark.pg
+async def test_a_night_materialising_after_a_closure_is_seeded_from_the_new_supply(
+    pg_engine: AsyncEngine, pg_tenant: uuid.UUID, factory: Callable[[], AsyncSession]
+) -> None:
+    """THE SUPPLY GATE, half one: the CLOSURE reaches it first, so the count must wait for it.
+
+    This is the one supply write no ROW lock can cover.
+
+    ``adjust_sellable`` deliberately touches only MATERIALISED nights, because a night with no row
+    is seeded from a live COUNT of the property's rooms the moment somebody books it. That COUNT is
+    the third writer of ``rooms_sellable``, and the state deciding it is not one row but every
+    ``hsp_rooms`` row of the type — so no ``for_update`` on a single row can order it against a room
+    going out of service. A booking that counts BEFORE the closure commits materialises the night at
+    the pre-closure supply, and ``adjust_sellable`` has already passed a row that did not exist: the
+    night is permanently one room over, and the property oversells it.
+
+    ``allotment._lock_room_type_supply`` is what orders the two — the ``hsp_room_types`` row, taken
+    EXCLUSIVE by the supply change and SHARE by the booking gate, so the count and the change cannot
+    interleave while two concurrent bookings of one type still run in parallel. Both orders give the
+    same answer, and each order is a separate test because each proves a different half of the lock:
+    here the closure gets there first, so the SHARE side is what has to wait. Delete the SHARE lock
+    from ``apply_allotment_deltas`` and the night materialises at THREE on a property with two rooms
+    left. The other half is the test below.
+
+    The gate opens after the closure's ``adjust_sellable`` has run and before the booking's count,
+    which is the exact window.
+    """
+    arrival = _tomorrow() + timedelta(days=7)
+    room_type_id, rate_plan_id = await _seed_property(factory, pg_tenant, rooms_count=3)
+    assert await _sellable(pg_engine, pg_tenant, room_type_id) == {}, "the night must be UNMADE"
+    booking_id = await _take_booking(
+        factory, pg_tenant, room_type_id, rate_plan_id, arrival, 1, "Arriving"
+    )
+    closing = (await _room_ids(factory, pg_tenant))[2]
+
+    async with interleaved(
+        (room_reservations, "get_room_reservation"), (allotment, "adjust_sellable")
+    ):
+        results = await asyncio.wait_for(
+            asyncio.gather(
+                _move(
+                    factory,
+                    pg_tenant,
+                    booking_id,
+                    room_reservations.confirm_room_reservation,
+                    "confirmed",
+                ),
+                _set_status(
+                    factory, pg_tenant, closing, HousekeepingStatus.OUT_OF_ORDER, "closed"
+                ),
+            ),
+            timeout=GATE_TIMEOUT * 3,
+        )
+
+    assert sorted(results) == ["closed", "confirmed"], results
+    assert await _sellable(pg_engine, pg_tenant, room_type_id) == {arrival: 2}, (
+        "the night was seeded from a room count the closure had already invalidated"
+    )
+    assert await _sold(pg_engine, pg_tenant, room_type_id) == {arrival: 1}
+
+
+@pytest.mark.pg
+async def test_a_closure_racing_a_night_that_materialises_first_still_reaches_that_night(
+    pg_engine: AsyncEngine, pg_tenant: uuid.UUID, factory: Callable[[], AsyncSession]
+) -> None:
+    """THE SUPPLY GATE, half two: the BOOKING reaches it first, so the closure must wait for it.
+
+    The mirror of the test above, and it proves the other side of the same lock — a lock only orders
+    anything if BOTH parties take it, so a test that fails when the SHARE half is deleted proves
+    nothing about the EXCLUSIVE half.
+
+    Here the booking materialises the night while the closure is still upstream. ``adjust_sellable``
+    reaches only MATERIALISED rows, and an uncommitted INSERT is not one: without the EXCLUSIVE lock
+    the closure's ``FOR UPDATE`` scan simply does not see the new night, decrements nothing, and
+    leaves it holding three rooms on a property that has two — the room is out of service and the
+    night still sells it. With the lock the closure blocks on ``hsp_room_types`` until the booking
+    commits, then its scan finds the night and takes the room off it.
+
+    The gate opens after the booking has INSERTED its night (``_row_for_update``) and after the
+    closure has read its room, so the closure is released straight into the lock the booking holds.
+    """
+    arrival = _tomorrow() + timedelta(days=7)
+    room_type_id, rate_plan_id = await _seed_property(factory, pg_tenant, rooms_count=3)
+    assert await _sellable(pg_engine, pg_tenant, room_type_id) == {}, "the night must be UNMADE"
+    booking_id = await _take_booking(
+        factory, pg_tenant, room_type_id, rate_plan_id, arrival, 1, "Arriving"
+    )
+    closing = (await _room_ids(factory, pg_tenant))[2]
+
+    async with interleaved((allotment, "_row_for_update"), (rooms, "get_room")):
+        results = await asyncio.wait_for(
+            asyncio.gather(
+                _move(
+                    factory,
+                    pg_tenant,
+                    booking_id,
+                    room_reservations.confirm_room_reservation,
+                    "confirmed",
+                ),
+                _set_status(
+                    factory, pg_tenant, closing, HousekeepingStatus.OUT_OF_ORDER, "closed"
+                ),
+            ),
+            timeout=GATE_TIMEOUT * 3,
+        )
+
+    assert sorted(results) == ["closed", "confirmed"], results
+    assert await _sellable(pg_engine, pg_tenant, room_type_id) == {arrival: 2}, (
+        "the closure never reached a night that materialised beside it"
+    )
+    assert await _sold(pg_engine, pg_tenant, room_type_id) == {arrival: 1}

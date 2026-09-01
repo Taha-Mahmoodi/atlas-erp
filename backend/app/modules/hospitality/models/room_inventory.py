@@ -74,10 +74,12 @@ class RoomTypeInventory(UuidPKMixin, TenantMixin, TimestampMixin, Base):
     The two CHECKs are the DB backstop under the service's pre-flight refusal, the
     ``inv_stock_quants`` shape (D-020/D-036): ``adjust_allotment`` refuses
     ``hospitality.room_type_sold_out`` BEFORE writing, and the CHECK is what fires if that is ever
-    bypassed. Plain CHECKs, so they hold on both engines (D-003), and named BARE: the metadata's
-    convention is ``ck_%(table_name)s_%(constraint_name)s``, so a ``ck_``-prefixed name here would
-    double-prefix to 71+ chars past PostgreSQL's 63-byte cap and stop matching what migration 0056
-    creates.
+    bypassed. Plain CHECKs, so they hold on both engines (D-003), and named BARE **here AND in
+    migration 0056**: the metadata's convention is ``ck_%(table_name)s_%(constraint_name)s``, and
+    alembic applies it too (``schemaobj.metadata()`` copies ``naming_convention`` off ``env.py``'s
+    ``target_metadata``), so a ``ck_``-prefixed literal double-prefixes to 71 chars on BOTH sides —
+    which PostgreSQL then hash-truncates to 60 while SQLite keeps all 71. A bare name composes once
+    everywhere; making only one side bare is what actually makes the two disagree.
     """
 
     __tablename__ = "hsp_room_type_inventory"
