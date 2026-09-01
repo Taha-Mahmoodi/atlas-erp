@@ -196,7 +196,7 @@ async def build_ar_setup(session: AsyncSession, tenant_id: uuid.UUID) -> ArSetup
 
 async def seed_advance_account(session: AsyncSession, tenant_id: uuid.UUID) -> uuid.UUID:
     """The advance-deposit control account an UNAPPLIED receipt credits, mapped to the
-    ``customer_advances`` posting purpose (PLAN 20.4, D-084), and its id.
+    ``customer_advances`` posting purpose (PLAN 20.4, D-086), and its id.
 
     "2100 Advance Deposits" is the hospitality template's own account: a LIABILITY, because money
     taken before arrival is owed back, not earned. Kept out of build_ar_setup so the mapping stays a

@@ -1,4 +1,4 @@
-"""Applying a customer receipt's unapplied (on-account) balance to open invoices (PLAN 20.4, D-084).
+"""Applying a customer receipt's unapplied (on-account) balance to open invoices (PLAN 20.4, D-086).
 
 The second half of the deposit widening. ``customer_receipts.py`` books cash that clears nothing to
 the ``customer_advances`` control; this file spends that balance: it validates the target invoices
@@ -62,7 +62,7 @@ async def apply_receipt(
     *,
     application_date: date | None = None,
 ) -> CustomerReceipt:
-    """Apply part or all of a receipt's unapplied balance to open invoices (PLAN 20.4, D-084).
+    """Apply part or all of a receipt's unapplied balance to open invoices (PLAN 20.4, D-086).
 
     Posts ONE reclass entry (Dr advance control / Cr AR control + realized FX), reduces the
     receipt's ``unapplied_amount``, draws down each invoice's ``open_amount`` and flips its status,
@@ -190,7 +190,7 @@ async def _advance_functional(
     applied_total: Decimal,
 ) -> Decimal | None:
     """The functional amount to DEBIT off the advance control for this application, or None to let
-    the clearing builder value it as an ordinary cash movement (D-084).
+    the clearing builder value it as an ordinary cash movement (D-086).
 
     The liability was credited ONCE, as one quantized ``original x rate``. Re-deriving each
     application's debit as ``quantize(applied x rate)`` quantizes N times against that single

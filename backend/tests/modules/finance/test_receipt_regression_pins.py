@@ -123,7 +123,7 @@ async def test_a_receipt_with_no_allocations_is_now_an_unapplied_receipt(
     db_session: AsyncSession, ar_setup: ArSetup
 ) -> None:
     """WAS: finance.receipt_no_allocations refused an allocationless receipt. Task 2 RELAXED that
-    rule deliberately (PLAN 20.4, D-084) and this pin is updated in the same commit, not deleted:
+    rule deliberately (PLAN 20.4, D-086) and this pin is updated in the same commit, not deleted:
     the receipt is now ACCEPTED and its whole amount stands as ``unapplied_amount``, on-account
     money awaiting an invoice. What the rule cost — a receipt that clears nothing and posts
     nowhere — is now bought by the advance control account instead.

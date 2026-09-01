@@ -52,7 +52,7 @@ async def _post_eur_invoice(
     partner_id: uuid.UUID | None = None,
 ) -> CustomerInvoice:
     # ``partner_id`` lets a caller post SEVERAL invoices for the SAME customer (the deposit
-    # applied in parts, D-084); omitted, each invoice gets its own customer as before.
+    # applied in parts, D-086); omitted, each invoice gets its own customer as before.
     partner = uuid.uuid4() if partner_id is None else partner_id
     with tenant_context(fx_setup.tenant_id):
         invoice = await service.create_customer_invoice(

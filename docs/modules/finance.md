@@ -532,7 +532,7 @@ realized-FX math is shared with AP in `service/clearing_fx.py` (AP debits the co
 credits it — `control_is_debit` flips the sign; the gain/loss direction inverts accordingly). When
 the receipt currency *is* the functional currency, R1 = R2 and there is no FX line.
 
-**Unapplied (on-account) receipts — deposits (PLAN 20.4, D-084).** `allocations` is optional and
+**Unapplied (on-account) receipts — deposits (PLAN 20.4, D-086).** `allocations` is optional and
 `amount` need only be **>=** their sum. The excess is the receipt's `unapplied_amount`, credited to
 the `customer_advances` posting-default account (a LIABILITY — money taken before an invoice exists
 is owed back, not earned) on a line carrying `partner_type` + `partner_id`, so the pooled control
