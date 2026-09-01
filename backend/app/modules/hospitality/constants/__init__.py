@@ -5,7 +5,8 @@ document constants were added to Phase 19's ordering set and Phase 21's reservat
 KIND rather than by phase — the ``sales/constants/`` and ``finance/constants/`` precedent, both of
 which made the same move at the same cap:
 
-- ``enums``: every status/lifecycle StrEnum with its transition table, plus the numeric defaults.
+- ``enums``: the RESTAURANT's status/lifecycle StrEnums with their transition tables and defaults.
+- ``rooms``: the same for the HOTEL — the room's condition, housekeeping, the room booking.
 - ``permissions``: the ``hospitality.*`` keys, registered into the RBAC catalog AT IMPORT (D-009).
 - ``documents``: doc types, number sequences, docflow link types, domain-event keys, job keys.
 
@@ -46,28 +47,18 @@ from app.modules.hospitality.constants.enums import (
     DEFAULT_COVERS_MAX,
     DEFAULT_MAX_PARTY,
     DEFAULT_MIN_PARTY,
-    DEFAULT_OVERBOOKING_LIMIT,
     DEFAULT_PARTIES_MAX,
     DEFAULT_SERVICE_CLOSE,
     DEFAULT_SERVICE_OPEN,
     DEPLETE_MAX_COMPONENTS_PER_JOB,
-    HOUSEKEEPING_FLOW,
-    HOUSEKEEPING_TASK_FLOW,
-    HOUSEKEEPING_UNSELLABLE,
     RESERVATION_FLOW,
-    ROOM_RESERVATION_FLOW,
-    ROOM_RESERVATION_HOLDS_ALLOTMENT,
     SLOT_MINUTES,
     TICKET_FLOW,
     TICKET_PROGRESS_STATES,
     AvailabilitySource,
     AvailabilityState,
-    HousekeepingStatus,
-    HousekeepingTaskStatus,
-    HousekeepingTrigger,
     OrderTicketStatus,
     ReservationStatus,
-    RoomReservationStatus,
 )
 from app.modules.hospitality.constants.permissions import (
     HOSPITALITY_HOUSEKEEPING_MANAGE,
@@ -84,6 +75,18 @@ from app.modules.hospitality.constants.permissions import (
     HOSPITALITY_TICKET_MANAGE,
     HOSPITALITY_TICKET_READ,
     HOSPITALITY_TICKET_SETTLE,
+)
+from app.modules.hospitality.constants.rooms import (
+    DEFAULT_OVERBOOKING_LIMIT,
+    HOUSEKEEPING_FLOW,
+    HOUSEKEEPING_TASK_FLOW,
+    HOUSEKEEPING_UNSELLABLE,
+    ROOM_RESERVATION_FLOW,
+    ROOM_RESERVATION_HOLDS_ALLOTMENT,
+    HousekeepingStatus,
+    HousekeepingTaskStatus,
+    HousekeepingTrigger,
+    RoomReservationStatus,
 )
 
 __all__ = [
